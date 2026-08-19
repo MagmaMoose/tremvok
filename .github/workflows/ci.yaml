@@ -58,45 +58,16 @@ jobs:
       - name: shellcheck
         run: uv run shellcheck -S warning scripts/*.sh scripts/lib/*.sh terraform/localstack/*.sh
 
-      - name: The action metadata parses, and every step it names is real
-        run: |
-          uv run python - <<'PY'
-          import pathlib, re, sys, yaml
-
-          action = yaml.safe_load(pathlib.Path("action.yml").read_text())
-          steps = action["runs"]["steps"]
-
-          # A step naming a script that does not exist is a runtime failure on somebody else's
-          # deploy, and nothing else here would catch it.
-          missing = [
-              f'{step.get("name")}: {name}'
-              for step in steps
-              for name in re.findall(r"scripts/[A-Za-z0-9_.-]+\.sh", step.get("run", ""))
-              if not pathlib.Path(name).is_file()
-          ]
-          if missing:
-              sys.exit("action.yml names scripts that do not exist:\n  " + "\n  ".join(missing))
-
-          ids = {s["id"] for s in steps if "id" in s}
-          for key, spec in action.get("outputs", {}).items():
-              for referenced in re.findall(r"steps\.([A-Za-z0-9_-]+)\.outputs", spec["value"]):
-                  if referenced not in ids:
-                      sys.exit(f"output {key} references unknown step id {referenced!r}")
-          print(f"{len(action['inputs'])} inputs, {len(action['outputs'])} outputs, {len(steps)} steps")
-          PY
+      - name: The action.yml contract
+        # Same checks as a pytest file rather than inline YAML, so a contributor runs them with
+        # `uv run pytest` and CI cannot drift from what they saw: every script the action names
+        # exists, every output points at a real step, every env var a step sets is read by the
+        # script it runs, every input is documented, and every notification step is gated on
+        # `always()`.
+        run: uv run pytest tests/test_action_contract.py -q
 
       - name: bats
         run: bats tests/bats
-
-      - name: Every script is executable and fails closed
-        run: |
-          set -euo pipefail
-          rc=0
-          for script in scripts/*.sh; do
-            [ -x "$script" ] || { echo "::error::$script is not executable"; rc=1; }
-            grep -q 'set -euo pipefail' "$script" || { echo "::error::$script does not set -euo pipefail"; rc=1; }
-          done
-          exit $rc
 
   api:
     name: API (ruff + mypy + pytest)
