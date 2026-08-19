@@ -3,7 +3,7 @@
 **Action surface (repo root):**
 ```bash
 shellcheck -S warning scripts/*.sh scripts/lib/*.sh   # lint
-bats tests/bats                                        # 88 shell tests
+bats tests/bats                                        # 126 shell tests
 python3 -c 'import yaml; yaml.safe_load(open("action.yml"))'   # action metadata parses
 git update-index --chmod=+x scripts/<file>.sh          # mark a new script executable
 ```
