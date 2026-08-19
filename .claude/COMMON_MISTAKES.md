@@ -114,3 +114,15 @@ flag once it fails to recognise `compose` as a command. Nothing says "the plugin
 
 `harness.sh` uses `docker run` and there is no compose file any more. One container needs no
 orchestrator, and the laptop and the runner now run the identical command.
+
+## `aws --value https://...` downloads the URL instead of storing it
+
+The AWS CLI's *paramfile* feature expands any argument value starting with `http://` or
+`https://` into the contents of that URL. Storing a webhook URL in Parameter Store is exactly
+the case that trips it, and the error names the wrong thing:
+
+    Error parsing parameter '--value': Unable to retrieve https://hooks.slack.invalid/...
+
+On by default in CLI v1 (`cli_follow_urlparam`). Use `--cli-input-json`, which is not subject to
+the expansion on any version — `seed.sh` and the production instructions in
+`terraform/README.md` both do.

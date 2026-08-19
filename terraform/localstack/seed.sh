@@ -14,9 +14,22 @@ export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-test}"
 
 PREFIX="${1:-/tremvok/local}"
 
+# `--cli-input-json`, not `--name/--value`.
+#
+# The AWS CLI's *paramfile* feature treats any argument value beginning with `http://` or
+# `https://` as a URL to FETCH — so `--value https://hooks.slack.com/...` tries to download the
+# webhook and stores whatever comes back, and here failed outright with
+# `Error parsing parameter '--value': Unable to retrieve https://...`. It is on by default in
+# CLI v1 (`cli_follow_urlparam`), and storing a webhook URL is exactly the case that trips it.
+#
+# `--cli-input-json` is not subject to that expansion at all, so it is correct on every CLI
+# version without depending on a config setting the caller may not have.
 put() {
+  local payload
+  payload="$(jq -n --arg name "${PREFIX}/$1" --arg value "$2" \
+    '{Name: $name, Value: $value, Type: "SecureString", Overwrite: true}')"
   aws --endpoint-url="$AWS_ENDPOINT_URL" ssm put-parameter \
-    --name "${PREFIX}/$1" --value "$2" --type SecureString --overwrite >/dev/null
+    --cli-input-json "$payload" >/dev/null
   echo "  ${PREFIX}/$1"
 }
 

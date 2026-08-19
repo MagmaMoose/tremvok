@@ -102,9 +102,18 @@ should be set in the same change.
 Terraform deliberately does not create them — a secret in a Terraform resource is a secret in
 Terraform state:
 
+**Do not use `--value` for these.** The AWS CLI's *paramfile* feature treats any argument
+beginning with `http://` or `https://` as a URL to **fetch**, so `--value https://hooks.slack…`
+tries to download the webhook and store the response. It is on by default in CLI v1
+(`cli_follow_urlparam`), and a webhook URL is precisely the case that trips it. `--cli-input-json`
+is not subject to the expansion on any version:
+
 ```bash
-aws ssm put-parameter --name /tremvok/prod/slack-webhook --type SecureString --value "https://hooks.slack.com/…"
-aws ssm put-parameter --name /tremvok/prod/teams-webhook --type SecureString --value "https://…"
+aws ssm put-parameter --cli-input-json "$(jq -n --arg v "https://hooks.slack.com/…" \
+  '{Name: "/tremvok/prod/slack-webhook", Value: $v, Type: "SecureString", Overwrite: true}')"
+
+aws ssm put-parameter --cli-input-json "$(jq -n --arg v "https://…" \
+  '{Name: "/tremvok/prod/teams-webhook", Value: $v, Type: "SecureString", Overwrite: true}')"
 ```
 
 There is a third, optional parameter: `/tremvok/prod/jwks-document`. Set it to a pinned JWKS
