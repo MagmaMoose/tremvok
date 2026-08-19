@@ -98,6 +98,12 @@ dev = [
     "cryptography",
     "httpx",
     "uvicorn",
+    # Both exist so CI needs nothing from the host image: the self-hosted runners are minimal
+    # (no make, no xz, no PyYAML), and every tool CI depends on being installed by hand is a
+    # tool that breaks the build the day the image changes. `shellcheck-py` ships the real
+    # shellcheck binary as a wheel.
+    "shellcheck-py",
+    "PyYAML",
 ]
 docs = ["mkdocs-material>=9.5"]
 

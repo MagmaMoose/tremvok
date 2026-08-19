@@ -32,7 +32,10 @@ def build(tmp_path: Path, arch: str) -> tuple[Path, str]:
     out = tmp_path / f"{arch}.zip"
     result = subprocess.run(
         [sys.executable, str(BUILDER), "--arch", arch, "--out", str(out)],
-        cwd=ROOT, capture_output=True, text=True, check=False,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode != 0:
         pytest.skip(f"could not build the package (offline?): {result.stderr[-300:]}")

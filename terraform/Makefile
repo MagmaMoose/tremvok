@@ -31,7 +31,10 @@ TFBIN ?= $(shell command -v tofu 2>/dev/null || command -v terraform 2>/dev/null
 
 .PHONY: dev up down api-zip apply-local destroy-local smoke logs fmt validate serve
 
-dev: up api-zip apply-local smoke
+# Delegates to harness.sh so CI and a laptop run the identical sequence. The individual
+# targets below stay, because a human debugging one step should not have to run all five.
+dev:
+	$(LS)/harness.sh all
 
 up:
 	docker compose -f $(LS)/docker-compose.yml up -d

@@ -145,21 +145,28 @@ def main() -> int:
     # which means the compiled `pydantic-core` wheel matches the function's architecture, the
     # handler path Terraform declares exists, and the role can write its own logs.
     status, body = request("GET", f"{api_url}/healthz")
-    check("healthz answers 200 (the package imports on this architecture)", status == 200,
-          f"status={status} body={body}")
+    check(
+        "healthz answers 200 (the package imports on this architecture)",
+        status == 200,
+        f"status={status} body={body}",
+    )
     check("healthz identifies the service", body.get("service") == "tremvok", str(body))
 
     status, _ = request("POST", f"{api_url}/v1/deployments", body={"delivery_id": "x"})
     check("an unauthenticated write is refused", status == 401, f"status={status}")
 
     status, _ = request(
-        "POST", f"{api_url}/v1/deployments",
-        token=token(valid_signature=False), body={"delivery_id": "x"},
+        "POST",
+        f"{api_url}/v1/deployments",
+        token=token(valid_signature=False),
+        body={"delivery_id": "x"},
     )
     check("a forged signature is refused", status == 401, f"status={status}")
 
     status, _ = request(
-        "POST", f"{api_url}/v1/deployments", token=token(audience="sigstore"),
+        "POST",
+        f"{api_url}/v1/deployments",
+        token=token(audience="sigstore"),
         body={"delivery_id": "x"},
     )
     check("a token for another audience is refused", status == 401, f"status={status}")
@@ -168,7 +175,9 @@ def main() -> int:
     # repository on github.com, so this is the only thing standing between the table and all
     # of them.
     status, _ = request(
-        "POST", f"{api_url}/v1/deployments", token=token("attacker/evil"),
+        "POST",
+        f"{api_url}/v1/deployments",
+        token=token("attacker/evil"),
         body=_payload("smoke-foreign"),
     )
     check("a repository outside the allowlist is refused", status == 403, f"status={status}")
@@ -177,54 +186,77 @@ def main() -> int:
     status, recorded = request(
         "POST", f"{api_url}/v1/deployments", token=token(), body=_payload(delivery)
     )
-    check("a valid deployment is recorded", status == 200 and not recorded.get("duplicate"),
-          f"status={status} body={recorded}")
-    check("the repository comes from the token, not the body",
-          recorded.get("repository") == "MagmaMoose/website", str(recorded))
+    check(
+        "a valid deployment is recorded",
+        status == 200 and not recorded.get("duplicate"),
+        f"status={status} body={recorded}",
+    )
+    check(
+        "the repository comes from the token, not the body",
+        recorded.get("repository") == "MagmaMoose/website",
+        str(recorded),
+    )
 
     # The seeded webhook URL is deliberately unresolvable, so this asserts the failure is
     # isolated: the sink was attempted, it failed, and the request still succeeded.
-    check("a failing notification sink does not fail the request",
-          recorded.get("notified", {}).get("slack") is False, str(recorded.get("notified")))
+    check(
+        "a failing notification sink does not fail the request",
+        recorded.get("notified", {}).get("slack") is False,
+        str(recorded.get("notified")),
+    )
 
     status, again = request(
         "POST", f"{api_url}/v1/deployments", token=token(), body=_payload(delivery)
     )
-    check("a retry of the same delivery is a duplicate, not a second record",
-          status == 200 and again.get("duplicate") is True, f"status={status} body={again}")
+    check(
+        "a retry of the same delivery is a duplicate, not a second record",
+        status == 200 and again.get("duplicate") is True,
+        f"status={status} body={again}",
+    )
 
     status, listed = request("GET", f"{api_url}/v1/deployments?limit=50", token=token())
     ours = [d for d in listed.get("deployments", []) if d.get("delivery_id") == delivery]
-    check("the deployment appears in history exactly once", status == 200 and len(ours) == 1,
-          f"status={status} matches={len(ours)}")
-
-    status, other = request(
-        "GET", f"{api_url}/v1/deployments", token=token("MagmaMoose/dunmir")
+    check(
+        "the deployment appears in history exactly once",
+        status == 200 and len(ours) == 1,
+        f"status={status} matches={len(ours)}",
     )
-    check("a repository cannot read another's history",
-          status == 200 and other.get("count") == 0, str(other))
+
+    status, other = request("GET", f"{api_url}/v1/deployments", token=token("MagmaMoose/dunmir"))
+    check(
+        "a repository cannot read another's history",
+        status == 200 and other.get("count") == 0,
+        str(other),
+    )
 
     status, _ = request(
-        "POST", f"{api_url}/v1/deployments", token=token(),
+        "POST",
+        f"{api_url}/v1/deployments",
+        token=token(),
         body={**_payload("smoke-js"), "url": "javascript:alert(1)"},
     )
-    check("a javascript: URL is rejected before it reaches a chat card", status == 422,
-          f"status={status}")
+    check(
+        "a javascript: URL is rejected before it reaches a chat card",
+        status == 422,
+        f"status={status}",
+    )
 
     print("\nStorage")
     table = dynamodb.Table(table_name)
-    items = table.query(
-        KeyConditionExpression=Key("pk").eq("repo#MagmaMoose/website")
-    )["Items"]
+    items = table.query(KeyConditionExpression=Key("pk").eq("repo#MagmaMoose/website"))["Items"]
     check("records land in the repository's partition", bool(items), "no items")
-    check("every item carries a TTL, so history cannot grow forever",
-          all("expires_at" in item for item in items))
+    check(
+        "every item carries a TTL, so history cannot grow forever",
+        all("expires_at" in item for item in items),
+    )
     ddb = boto3.client("dynamodb", endpoint_url=ENDPOINT, region_name=REGION)
     description = ddb.describe_table(TableName=table_name)["Table"]
-    check("the table is provisioned, so it cannot scale itself into a bill",
-          description.get("BillingModeSummary", {}).get("BillingMode", "PROVISIONED")
-          == "PROVISIONED",
-          str(description.get("BillingModeSummary")))
+    check(
+        "the table is provisioned, so it cannot scale itself into a bill",
+        description.get("BillingModeSummary", {}).get("BillingMode", "PROVISIONED")
+        == "PROVISIONED",
+        str(description.get("BillingModeSummary")),
+    )
 
     print("\nThe action's S3 target, against a real bucket")
     site = ROOT / "dist" / "smoke-site"
@@ -234,21 +266,27 @@ def main() -> int:
 
     code = _run_script(
         "deploy-s3-cloudfront.sh",
-        BUCKET=site_bucket, ARTIFACT_PATH=str(site), MODE="preview", PREVIEW_ALIAS="pr-1",
+        BUCKET=site_bucket,
+        ARTIFACT_PATH=str(site),
+        MODE="preview",
+        PREVIEW_ALIAS="pr-1",
         SITE_URL="https://example.invalid",
     )
     check("a preview syncs to S3", code == 0, f"exit={code}")
-    keys = {
-        o["Key"] for o in s3.list_objects_v2(Bucket=site_bucket).get("Contents", [])
-    }
-    check("the preview landed under its own prefix",
-          "previews/pr-1/index.html" in keys, str(sorted(keys)))
+    keys = {o["Key"] for o in s3.list_objects_v2(Bucket=site_bucket).get("Contents", [])}
+    check(
+        "the preview landed under its own prefix",
+        "previews/pr-1/index.html" in keys,
+        str(sorted(keys)),
+    )
     html = s3.head_object(Bucket=site_bucket, Key="previews/pr-1/index.html")
     css = s3.head_object(Bucket=site_bucket, Key="previews/pr-1/app.deadbeef.css")
-    check("documents are revalidated, assets are immutable",
-          "must-revalidate" in html.get("CacheControl", "")
-          and "immutable" in css.get("CacheControl", ""),
-          f"html={html.get('CacheControl')} css={css.get('CacheControl')}")
+    check(
+        "documents are revalidated, assets are immutable",
+        "must-revalidate" in html.get("CacheControl", "")
+        and "immutable" in css.get("CacheControl", ""),
+        f"html={html.get('CacheControl')} css={css.get('CacheControl')}",
+    )
 
     empty = ROOT / "dist" / "smoke-empty"
     shutil.rmtree(empty, ignore_errors=True)
@@ -258,15 +296,17 @@ def main() -> int:
     )
     # The guard that matters: a build that quietly produced nothing, followed by
     # `aws s3 sync --delete`, empties the live site and exits 0 while doing it.
-    check("an empty build refuses to sync rather than emptying the site", code != 0,
-          f"exit={code}")
+    check("an empty build refuses to sync rather than emptying the site", code != 0, f"exit={code}")
 
     print("\nThe action's Lambda target, against a real function")
     package = ROOT / "dist" / "tremvok-api.zip"
     code = _run_script(
         "deploy-lambda-zip.sh",
-        FUNCTION_NAME=function_name, ARTIFACT_PATH=str(package),
-        ARTIFACT_BUCKET=artifact_bucket, KEY_PREFIX="smoke", VERSION_LABEL="1.0.0",
+        FUNCTION_NAME=function_name,
+        ARTIFACT_PATH=str(package),
+        ARTIFACT_BUCKET=artifact_bucket,
+        KEY_PREFIX="smoke",
+        VERSION_LABEL="1.0.0",
         MODE="preview",
     )
     check("a preview publishes a Lambda version", code == 0, f"exit={code}")
@@ -281,16 +321,22 @@ def main() -> int:
     tampered.write_bytes(package.read_bytes() + b"\x00")
     code = _run_script(
         "deploy-lambda-zip.sh",
-        FUNCTION_NAME=function_name, ARTIFACT_PATH=str(tampered),
-        ARTIFACT_BUCKET=artifact_bucket, KEY_PREFIX="smoke", VERSION_LABEL="1.0.0",
+        FUNCTION_NAME=function_name,
+        ARTIFACT_PATH=str(tampered),
+        ARTIFACT_BUCKET=artifact_bucket,
+        KEY_PREFIX="smoke",
+        VERSION_LABEL="1.0.0",
         MODE="deploy",
     )
     check("a published key is immutable", code != 0, f"exit={code}")
 
     code = _run_script(
         "deploy-lambda-zip.sh",
-        FUNCTION_NAME=function_name, ARTIFACT_PATH=str(package),
-        ARTIFACT_BUCKET=artifact_bucket, KEY_PREFIX="smoke", VERSION_LABEL="1.0.1",
+        FUNCTION_NAME=function_name,
+        ARTIFACT_PATH=str(package),
+        ARTIFACT_BUCKET=artifact_bucket,
+        KEY_PREFIX="smoke",
+        VERSION_LABEL="1.0.1",
         MODE="deploy",
     )
     check("a deploy moves the alias", code == 0, f"exit={code}")
@@ -330,7 +376,10 @@ def _run_script(name: str, **env: str) -> int:
     }
     result = subprocess.run(  # noqa: S603
         ["bash", str(ROOT / "scripts" / name)],  # noqa: S607
-        env=environment, capture_output=True, text=True, check=False,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode != 0:
         print(f"    ({name} exited {result.returncode}: {result.stdout.strip()[-300:]})")

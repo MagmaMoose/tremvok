@@ -1,5 +1,14 @@
-# Tremvok's own CI. Four jobs, because the repository has three surfaces and one of them can
-# only be proven by standing the whole stack up.
+# Tremvok's own CI.
+#
+# Two constraints shape this file:
+#
+#   * **The runners are the org's self-hosted pool.** GitHub-hosted minutes are metered on
+#     private repositories and this runs on every pull request, so `ubuntu-latest` is only the
+#     fallback for a fork or an org with no pool.
+#   * **The pool's images are minimal.** No `make`, no `xz`, no PyYAML, no `unzip`. Every tool
+#     CI needs is therefore either fetched at a pinned version or comes from `uv`, and nothing
+#     is assumed to be installed. A step that depends on a host package breaks the build the
+#     day the image changes, for a reason nobody will connect to the image.
 #
 # All actions are SHA-pinned (Chargate's pre-commit hook enforces this org-wide); the trailing
 # `# vX.Y.Z` comment tracks the tag each pinned SHA corresponds to.
@@ -23,21 +32,21 @@ concurrency:
 jobs:
   shell:
     name: Action (shellcheck + bats)
-    # The org's self-hosted pool, falling back to a GitHub-hosted runner for anyone who has no
-    # pool. Not a preference: GitHub-hosted minutes are metered on private repositories, and
-    # this workflow runs on every pull request.
     runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
 
-      - name: Bootstrap bats and shellcheck
-        # Fetched rather than installed from host packages: the self-hosted images are minimal
-        # and have no sudo, and pinning the versions means a tool release cannot change what
-        # this workflow enforces between a commit and its rebuild.
-        shell: bash
+      - name: Install the dev toolchain
+        # shellcheck comes from `shellcheck-py`, a wheel carrying the real binary, rather than
+        # from the release tarball — which is `.tar.xz`, and the pool image has no `xz`.
+        run: uv sync --all-groups --frozen
+
+      - name: Bootstrap bats
         env:
           BATS_VERSION: '1.13.0'
-          SHELLCHECK_VERSION: '0.11.0'
         run: |
           set -euo pipefail
           tmp="${RUNNER_TEMP:-/tmp}"
@@ -46,36 +55,28 @@ jobs:
           "${tmp}/bats-core-${BATS_VERSION}/install.sh" "${tmp}/bats"
           echo "${tmp}/bats/bin" >> "$GITHUB_PATH"
 
-          if ! command -v shellcheck >/dev/null 2>&1; then
-            arch="$(uname -m)"; [ "$arch" = "arm64" ] && arch=aarch64
-            curl -fsSL --retry 3 "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${arch}.tar.xz" \
-              | tar -xJ -C "$tmp"
-            echo "${tmp}/shellcheck-v${SHELLCHECK_VERSION}" >> "$GITHUB_PATH"
-          fi
-
       - name: shellcheck
-        run: shellcheck -S warning scripts/*.sh scripts/lib/*.sh terraform/localstack/*.sh
+        run: uv run shellcheck -S warning scripts/*.sh scripts/lib/*.sh terraform/localstack/*.sh
 
-      - name: The action metadata parses, and every script it names exists
+      - name: The action metadata parses, and every step it names is real
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
+          uv run python - <<'PY'
           import pathlib, re, sys, yaml
 
           action = yaml.safe_load(pathlib.Path("action.yml").read_text())
           steps = action["runs"]["steps"]
 
-          # A step referencing a script that does not exist is a runtime failure on somebody
-          # else's deploy, and nothing else in CI would catch it.
-          missing = []
-          for step in steps:
-              for name in re.findall(r"scripts/[A-Za-z0-9_.-]+\.sh", step.get("run", "")):
-                  if not pathlib.Path(name).is_file():
-                      missing.append(f'{step.get("name")}: {name}')
+          # A step naming a script that does not exist is a runtime failure on somebody else's
+          # deploy, and nothing else here would catch it.
+          missing = [
+              f'{step.get("name")}: {name}'
+              for step in steps
+              for name in re.findall(r"scripts/[A-Za-z0-9_.-]+\.sh", step.get("run", ""))
+              if not pathlib.Path(name).is_file()
+          ]
           if missing:
               sys.exit("action.yml names scripts that do not exist:\n  " + "\n  ".join(missing))
 
-          # Every output must point at a step id that exists.
           ids = {s["id"] for s in steps if "id" in s}
           for key, spec in action.get("outputs", {}).items():
               for referenced in re.findall(r"steps\.([A-Za-z0-9_-]+)\.outputs", spec["value"]):
@@ -87,7 +88,7 @@ jobs:
       - name: bats
         run: bats tests/bats
 
-      - name: Every script is executable and sources the shared library
+      - name: Every script is executable and fails closed
         run: |
           set -euo pipefail
           rc=0
@@ -110,6 +111,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
+      # Includes tests/test_build_api_zip.py, which asserts the package is deterministic and
+      # that `--arch` genuinely fetches the other platform's compiled wheels.
       - run: uv run pytest -q
 
       - name: The package is self-contained
@@ -117,20 +120,22 @@ jobs:
         # of `tremvok`. An import the Lambda cannot satisfy otherwise deploys fine and 500s on
         # the first request.
         #
-        # Built for the RUNNER's architecture, not the default. The package ships Linux wheels
+        # Built for the RUNNER's architecture, not the default: the package ships Linux wheels
         # for whichever architecture the function runs on, so an arm64 package cannot be
-        # imported on an x86_64 runner — that is the trap working, not a failure. Determinism
-        # and the cross-build itself are asserted by tests/test_build_api_zip.py, which reads
-        # the archive rather than importing it and therefore works on any host.
+        # imported on an x86_64 runner. That is the cross-build working, not a failure.
+        #
+        # `python -m zipfile` rather than `unzip`, which the pool image does not have.
         run: |
           set -euo pipefail
-          arch="$(uname -m)"
-          [ "$arch" = "aarch64" ] && arch=arm64
-          python3 scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
-          rm -rf dist/unpacked && mkdir -p dist/unpacked
-          unzip -q dist/native.zip -d dist/unpacked
+          case "$(uname -m)" in
+            x86_64|amd64) arch=x86_64 ;;
+            *) arch=arm64 ;;
+          esac
+          uv run python scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
+          rm -rf dist/unpacked
+          uv run python -m zipfile -e dist/native.zip dist/unpacked
           cd dist/unpacked
-          PYTHONPATH=. python3 -c "import tremvok.aws.handler as h; assert h.handler; print('handler imports from the package alone')"
+          PYTHONPATH=. uv run --no-project python -c "import tremvok.aws.handler as h; assert h.handler; print('the handler imports from the package alone')"
 
   terraform:
     name: Infrastructure (fmt + validate)
@@ -142,7 +147,24 @@ jobs:
           tofu_wrapper: false
 
       - run: tofu fmt -check -recursive terraform/
-      - run: make -C terraform validate
+
+      - name: Validate the module a leaf would consume
+        # The Makefile has the same target for humans; this is inlined because the pool image
+        # has no `make`.
+        run: |
+          set -euo pipefail
+          cd terraform/modules/tremvok-api
+          printf 'provider "aws" { region = "eu-west-1" }\n' > _validate_provider.tf
+          trap 'rm -f _validate_provider.tf' EXIT
+          tofu init -backend=false -input=false >/dev/null
+          tofu validate
+
+      - name: Validate the LocalStack root
+        run: |
+          set -euo pipefail
+          cd terraform/localstack
+          tofu init -backend=false -input=false >/dev/null
+          tofu validate
 
   stack:
     name: LocalStack (end to end)
@@ -164,12 +186,14 @@ jobs:
 
       - run: uv sync --all-groups --frozen
 
-      # ARCH is derived from `uname -m`, so this runs x86_64 here and arm64 on a developer's
-      # laptop — which is the point: the cross-architecture wheel trap is only visible when the
-      # two agree, and only caught when something checks.
-      - name: make dev
-        run: make -C terraform dev
+      # The same script `make -C terraform dev` runs, so a laptop and CI cannot drift.
+      - name: Stand the stack up and assert the invariants
+        run: bash terraform/localstack/harness.sh all
 
       - name: LocalStack logs on failure
         if: failure()
         run: docker logs tremvok-localstack 2>&1 | tail -100
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f terraform/localstack/docker-compose.yml down -v || true
