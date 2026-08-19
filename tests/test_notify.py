@@ -52,7 +52,9 @@ def test_teams_payload_is_an_adaptive_card():
     payload = notify.teams_payload(RECORD)
     content = payload["attachments"][0]["content"]
     assert content["type"] == "AdaptiveCard"
-    assert any(fact["title"] == "Environment" for fact in content["body"][1]["facts"])
+    # Repository and environment are the heading, not fact rows — see `_facts`.
+    assert RECORD.environment in content["body"][0]["text"]
+    assert any(fact["title"] == "Mode" for fact in content["body"][1]["facts"])
 
 
 def test_a_sink_outage_is_a_false_not_an_exception(monkeypatch):

@@ -34,19 +34,26 @@ def _mrkdwn_escape(value: str) -> str:
 
 
 def _facts(record: DeploymentRecord) -> list[tuple[str, str]]:
+    """The fact rows, in the order both notifiers show them.
+
+    Deliberately the same set and order as `scripts/notify-webhook.sh`, which posts the same two
+    cards when the API is not in use. `tests/test_notify_parity.py` asserts they agree — the two
+    implementations existing at all is the duplication this project exists to end, and it is
+    only acceptable while something checks. **Mode** used to be missing here, so a card from the
+    API could not tell a deploy from a rollback while one from the runner could.
+
+    Repository and Environment are not rows: both notifiers put them in the headline, and
+    repeating them costs two of Slack's ten permitted fields.
+    """
     facts = [
-        ("Repository", record.repository),
-        ("Environment", record.environment),
-        ("Target", record.target),
         ("Status", record.status),
+        ("Target", record.target),
+        ("Mode", record.mode),
     ]
-    if record.version:
-        facts.append(("Version", record.version))
-    if record.commit:
-        facts.append(("Commit", record.commit[:12]))
-    if record.actor:
-        facts.append(("Actor", record.actor))
-    facts.append(("Verified", "yes" if record.verified else "no"))
+    facts.append(("Version", record.version or "—"))
+    facts.append(("Commit", record.commit[:12] if record.commit else "—"))
+    facts.append(("Actor", record.actor or "—"))
+    facts.append(("Verified", "true" if record.verified else "false"))
     return facts
 
 
