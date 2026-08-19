@@ -94,3 +94,14 @@ turned "did the code change?" into "which machine built it?". The builder now re
 says so; `tests/test_build_api_zip.py` asserts the refusal.
 
 The general shape: a fallback that silently changes the artifact is worse than no fallback.
+
+## The Lambda execution role does not need to read the deployment package
+
+The natural assumption — the function runs from `s3://bucket/api/x.zip`, so its role must be
+able to `GetObject` that — is wrong. Lambda reads the package with the credentials of the
+principal that called `CreateFunction`/`UpdateFunctionCode` (Terraform, or the action's deploy
+role) and copies it; the execution role is never involved. The grant was in
+`modules/tremvok-api/iam.tf` and has been removed.
+
+It is worth naming because it fails *safe*: nothing breaks, so the extra permission stays
+forever, and least privilege is only meaningful if the unused half comes out.

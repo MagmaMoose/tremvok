@@ -74,17 +74,15 @@ resource "aws_iam_role_policy" "lambda" {
   policy = data.aws_iam_policy_document.lambda.json
 }
 
-data "aws_iam_policy_document" "artifact_read" {
-  statement {
-    sid       = "ReadPublishedPackages"
-    effect    = "Allow"
-    actions   = ["s3:GetObject"]
-    resources = ["arn:${local.partition}:s3:::${var.artifact_bucket}/api/*"]
-  }
-}
-
-resource "aws_iam_role_policy" "artifact_read" {
-  name   = "${var.name}-artifacts"
-  role   = aws_iam_role.lambda.id
-  policy = data.aws_iam_policy_document.artifact_read.json
-}
+# There is deliberately NO s3:GetObject grant on this role.
+#
+# The obvious assumption — the function runs from a package in S3, so its role must be able to
+# read it — is wrong, and it is wrong in the direction that quietly widens a policy. Lambda
+# reads the deployment package with the credentials of the principal that called
+# `CreateFunction`/`UpdateFunctionCode` (Terraform, or the action's deploy role), at that
+# moment, and copies it. The execution role is never involved, and this function makes no S3
+# call of any kind: `store.py` talks to DynamoDB, `settings.py` to SSM, and `notify.py` and
+# `oidc.py` to HTTPS.
+#
+# The grant was here and has been removed. Least privilege is only meaningful if the unused
+# half is taken out.
