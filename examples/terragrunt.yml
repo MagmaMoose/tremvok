@@ -1,0 +1,64 @@
+# The Atlantis replacement. Plans on every pull request, applies when somebody other than the
+# author approves, and reports a `Terragrunt apply` check run you can make required — which is
+# what turns "apply before you merge" from a convention into a rule.
+name: Terragrunt
+
+on:
+  pull_request:
+  # An approval is the apply authorisation, so review events have to reach this workflow.
+  pull_request_review:
+    types: [submitted, dismissed]
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  schedule:
+    # The weekday drift run. Plans everything, reports what has moved.
+    - cron: '0 5 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  # Publishes the check run onto the pull request head.
+  checks: write
+  id-token: write
+
+concurrency:
+  # An apply must never be cancelled mid-run: killing terragrunt strands a state lock. A plan
+  # is cheap to redo, so it stays cancellable.
+  group: terragrunt-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  terragrunt:
+    # A self-hosted runner must never execute untrusted fork code with cloud credentials.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.fork == false
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Required: a shallow clone cannot reach the push event's "before" commit, so it
+          # reports zero changed files and discovers zero stacks.
+          fetch-depth: 0
+
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_wrapper: false
+
+      - uses: gruntwork-io/terragrunt-action@v2
+        with:
+          tg_version: '1.0.8'
+          tg_command: '--version'
+
+      - uses: MagmaMoose/tremvok@v1
+        with:
+          target: terragrunt
+          terraform-root: terraform
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.TERRAFORM_ROLE_ARN }}
+          check-name: Terragrunt apply
+          teams-webhook: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}
+          notify: on-failure

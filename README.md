@@ -208,6 +208,7 @@ make -C terraform dev     # LocalStack + build + apply + 25 end-to-end assertion
 | | |
 |---|---|
 | `action.yml` | the composite action — deliberately thin glue |
+| `examples/` | ready-to-copy `deploy.yml` files, one per target |
 | `scripts/*.sh` | the logic, `bats`-tested, portable to bash 3.2 |
 | `src/tremvok/` | the FastAPI service |
 | `scripts/build_api_zip.py` | **the one definition of what ships to Lambda** |

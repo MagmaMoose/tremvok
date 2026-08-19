@@ -6,6 +6,9 @@
     target: s3-cloudfront
 ```
 
+Complete, ready-to-copy workflows for each target live in
+[`examples/`](https://github.com/MagmaMoose/tremvok/tree/main/examples).
+
 ## Permissions
 
 | Need | Permission |

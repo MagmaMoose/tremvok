@@ -1,0 +1,47 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write          # assume the deploy role; authenticate to the Tremvok API
+  pull-requests: write     # the sticky preview comment
+
+concurrency:
+  # A production deploy is never cancelled: killing it half-way leaves the bucket in a state
+  # nobody chose. A superseded preview is, because only the newest one matters.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  deploy:
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # The build stays yours. Tremvok picks up from here.
+      - run: npm ci && npm run build
+
+      - uses: MagmaMoose/tremvok@v1
+        with:
+          target: s3-cloudfront
+          artifact-path: dist
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          bucket: ${{ vars.SITE_BUCKET }}
+          distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION }}
+          site-url: ${{ vars.SITE_URL }}
+          # A 200 alone does not prove the deploy landed — the apex answers 200 from the old
+          # version too. The header assertion is what catches uploaded-but-not-bound.
+          verify-url: ${{ vars.SITE_URL }}
+          verify-header: content-security-policy
+          slack-webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK }}

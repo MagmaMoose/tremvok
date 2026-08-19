@@ -251,11 +251,21 @@ def main() -> int:
     )
     ddb = boto3.client("dynamodb", endpoint_url=ENDPOINT, region_name=REGION)
     description = ddb.describe_table(TableName=table_name)["Table"]
+    # Asserted on the throughput numbers rather than on BillingModeSummary, which a provisioned
+    # table may omit entirely — a check that reads a missing field and defaults to "correct"
+    # cannot fail, which is worse than not checking at all.
+    throughput = description.get("ProvisionedThroughput", {})
     check(
         "the table is provisioned, so it cannot scale itself into a bill",
-        description.get("BillingModeSummary", {}).get("BillingMode", "PROVISIONED")
-        == "PROVISIONED",
-        str(description.get("BillingModeSummary")),
+        throughput.get("ReadCapacityUnits") == 2 and throughput.get("WriteCapacityUnits") == 2,
+        str(throughput),
+    )
+    check(
+        "the TTL attribute Terraform declares is the one the code writes",
+        ddb.describe_time_to_live(TableName=table_name)
+        .get("TimeToLiveDescription", {})
+        .get("AttributeName")
+        == "expires_at",
     )
 
     print("\nThe action's S3 target, against a real bucket")

@@ -12,6 +12,7 @@ This repository has two surfaces: the **composite action** (`action.yml` + `scri
 - [API reference](docs/api.md): endpoints, the OIDC authentication model, and the storage schema.
 - [Infrastructure](terraform/README.md): the free-tier accounting, the cost ceiling, secrets handling, and what a LocalStack run does not prove.
 - [AGENTS.md](AGENTS.md): contributor/agent guide — editing rules, local validation, repository boundaries.
+- [Examples](examples/README.md): complete, ready-to-copy `deploy.yml` workflows, one per target.
 - [Changelog](CHANGELOG.md): Keep a Changelog + Semantic Versioning.
 
 ## Targets

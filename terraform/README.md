@@ -67,6 +67,29 @@ after that is **$0.02/day** — a third budget would itself be the surprise bill
 to the account, not to this stack; `MagmaMoose/infra`'s `cost-report` leaf already owns them
 and reports daily spend and free-tier headroom to Slack.
 
+### Why there is no CDN in front of the API
+
+[caldrith#68 / chargate#54](https://github.com/MagmaMoose/caldrith/issues/68) argues for putting
+Cloudflare in front of an API Gateway front door so abusive volume is absorbed at a free edge
+instead of being metered by AWS. It is a good argument for nievah's front door, which takes
+~950 GitHub deliveries a day from the public internet.
+
+It is **not** taken here, for three reasons:
+
+1. **No Cloudflare, by decision.** Everything Tremvok needs is AWS.
+2. **The traffic is nothing like nievah's.** This endpoint is called a few times a day, by
+   workflows, and every request that is not a valid OIDC token for an allowed owner is refused
+   `401`/`403` before anything is written. There is no expensive work behind the door to protect.
+3. **That issue's own conclusion applies regardless.** It ends with *"keep the API Gateway
+   throttle sized as though Cloudflare were not there — it is the only control that still holds
+   when someone finds the origin."* That is exactly what the 2 req/s throttle is, and it is
+   sized without assuming anything in front of it.
+
+The one piece of that issue that would apply — `disable_execute_api_endpoint = true` — is
+deliberately **not** set, because there is no custom domain here: the `execute-api` endpoint is
+the front door, and disabling it would close the only one there is. Add a custom domain and it
+should be set in the same change.
+
 ### Secrets
 
 **SSM Parameter Store `SecureString`, never Secrets Manager, never environment variables.**
