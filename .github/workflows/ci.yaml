@@ -139,9 +139,19 @@ jobs:
 
   stack:
     name: LocalStack (end to end)
-    # `pool-amd64` rather than the default pool: this job runs Docker, and it is the pool the
-    # org's other container-based job (Chargate/MegaLinter) already uses.
-    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER && 'pool-amd64' || 'ubuntu-latest' }}
+    # The broad pool, not `pool-amd64`.
+    #
+    # `pool-amd64` looked right — it is where the org's other container-based job
+    # (Chargate/MegaLinter) runs — but that scale set is `maxRunners: 1` and MegaLinter holds
+    # the slot for ~15 minutes, so this job simply queued behind it indefinitely. Every scale
+    # set in both clusters carries `pool-self-hosted`, the arm64 set has two slots, and both
+    # sets run a dind sidecar, so this lands on whichever is free and still gets a Docker
+    # daemon.
+    #
+    # Floating across architectures is safe because `harness.sh` derives ARCH from `uname -m`
+    # and passes it to both the package builder and the Terraform module — which is the whole
+    # reason that plumbing exists rather than a hardcoded `arm64`.
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
     # The only job that proves the wiring: that the package imports on the function's
     # architecture, that the IAM policy permits what the code does, that the DynamoDB schema
     # matches the keys the code writes, and that Terraform and settings.py spell the
