@@ -35,7 +35,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spend cap.
 - **LocalStack harness** (`make -C terraform dev`) proving the whole stack without an AWS
   account.
-- Tests: 126 `bats` cases over the shell scripts, 90 `pytest` cases over the API, and an
+- Tests: 126 `bats` cases over the shell scripts, 96 `pytest` cases over the API, and an
   end-to-end smoke suite against LocalStack.
 
 [Unreleased]: https://github.com/MagmaMoose/tremvok/commits/main

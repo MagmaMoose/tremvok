@@ -50,7 +50,8 @@
     "tests/bats/": "126 cases over the shell scripts, with aws/curl stubbed",
     "tests/test_action_contract.py": "the action.yml <-> scripts <-> README contract: unread env vars, dead inputs, undocumented inputs, notification steps not gated on always()",
     "tests/test_notify_parity.py": "asserts the shell and Python notifiers still send the same card",
-    "tests/": "90 pytest cases over the API; no network, no AWS (moto + a generated RSA key)",
+    "tests/test_terraform_contract.py": "the module <-> settings.py env-var contract, the handler path, and the IAM actions the code needs — what the LocalStack run proves, without Docker",
+    "tests/": "96 pytest cases over the API; no network, no AWS (moto + a generated RSA key)",
     "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring"
   }
 }
