@@ -105,3 +105,12 @@ role) and copies it; the execution role is never involved. The grant was in
 
 It is worth naming because it fails *safe*: nothing breaks, so the extra permission stays
 forever, and least privilege is only meaningful if the unused half comes out.
+
+## `docker compose` is not available everywhere `docker` is
+
+The org's dind sidecar ships the Docker CLI without the compose plugin, and the failure is
+genuinely misleading: `unknown shorthand flag: 'f' in -f`, because docker parses `-f` as its own
+flag once it fails to recognise `compose` as a command. Nothing says "the plugin is missing".
+
+`harness.sh` uses `docker run` and there is no compose file any more. One container needs no
+orchestrator, and the laptop and the runner now run the identical command.

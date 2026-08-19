@@ -37,15 +37,10 @@ dev:
 	$(LS)/harness.sh all
 
 up:
-	docker compose -f $(LS)/docker-compose.yml up -d
-	@echo "waiting for localstack..."
-	@for i in $$(seq 1 60); do \
-	  curl -sf http://localhost:4566/_localstack/health >/dev/null && exit 0; \
-	  sleep 2; \
-	done; echo "localstack did not become healthy" >&2; exit 1
+	$(LS)/harness.sh up
 
 down:
-	docker compose -f $(LS)/docker-compose.yml down -v
+	$(LS)/harness.sh down
 
 api-zip:
 	cd $(ROOT) && python3 scripts/build_api_zip.py --arch $(ARCH)

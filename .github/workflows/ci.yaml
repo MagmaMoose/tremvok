@@ -177,4 +177,4 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose -f terraform/localstack/docker-compose.yml down -v || true
+        run: bash terraform/localstack/harness.sh down || true

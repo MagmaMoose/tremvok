@@ -6,6 +6,7 @@
 # self-hosted runner images have no `make`, so CI could not have called the Makefile anyway.
 #
 #   up          start LocalStack and wait for it
+#   down        remove it
 #   api-zip     build the Lambda package with THIS repo's own script
 #   apply       stand the module up inside LocalStack
 #   seed        write the parameters Terraform deliberately does not create
@@ -64,20 +65,67 @@ python_runner() {
   fi
 }
 
+CONTAINER="${CONTAINER:-tremvok-localstack}"
+IMAGE="${IMAGE:-localstack/localstack:4}"
+
+# `docker run`, not `docker compose`. The org's dind sidecar ships the Docker CLI without the
+# compose plugin, so `docker compose -f …` there fails with the genuinely misleading
+# `unknown shorthand flag: 'f' in -f` — docker parsing `-f` as its own flag because `compose`
+# is not a command it knows. One container needs no orchestrator, and this way the laptop and
+# the runner run the identical command.
+#
+# Every setting that used to live in docker-compose.yml is here, and this is now its only
+# definition:
+#
+#   SERVICES               named explicitly rather than left to the default, so a service this
+#                          stack starts depending on fails at boot instead of at the first API
+#                          call. `s3control` is here for a non-obvious reason: AWS provider v6
+#                          reads a bucket's tags through the S3 Control API rather than the S3
+#                          API, so every `aws_s3_bucket` apply 501s without it.
+#   LAMBDA_RUNTIME_EXECUTOR=docker
+#                          Lambda runs in sibling containers on the host daemon, which is why
+#                          the socket is mounted. The alternative (`local`) skips the container
+#                          and with it the runtime's own import path — and the import path is
+#                          exactly what a cross-architecture wheel mismatch breaks, so the
+#                          cheap executor would hide the bug this harness most needs to catch.
 step_up() {
   command -v docker >/dev/null 2>&1 || { echo "no docker on PATH" >&2; exit 1; }
-  docker compose -f "${HERE}/docker-compose.yml" up -d
+
+  # Idempotent: a previous run that died before its teardown must not block this one.
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+
+  docker run -d --name "$CONTAINER" \
+    -p 4566:4566 \
+    -e "SERVICES=lambda,s3,s3control,dynamodb,ssm,kms,iam,sts,logs,cloudwatch,sns,apigateway" \
+    -e "DEBUG=0" \
+    -e "LAMBDA_RUNTIME_EXECUTOR=docker" \
+    -e "LAMBDA_REMOVE_CONTAINERS=1" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    "$IMAGE" >/dev/null
+
   echo "waiting for localstack..."
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 90); do
     if curl -sf "${AWS_ENDPOINT_URL}/_localstack/health" >/dev/null; then
       echo "localstack is healthy"
       return 0
     fi
+    # A container that has already exited will never become healthy; say so now rather than
+    # after three minutes of polling something that is gone.
+    if ! docker ps -q --filter "name=^${CONTAINER}$" | grep -q .; then
+      echo "the localstack container exited during startup" >&2
+      docker logs "$CONTAINER" 2>&1 | tail -50 >&2 || true
+      return 1
+    fi
     sleep 2
   done
   echo "localstack did not become healthy" >&2
-  docker compose -f "${HERE}/docker-compose.yml" logs --tail 50 >&2 || true
+  docker logs "$CONTAINER" 2>&1 | tail -50 >&2 || true
   return 1
+}
+
+step_down() {
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  echo "removed ${CONTAINER}"
 }
 
 step_api_zip() {
@@ -102,6 +150,7 @@ step_smoke() {
 
 case "${1:-all}" in
   up) step_up ;;
+  down) step_down ;;
   api-zip) step_api_zip ;;
   apply) step_apply ;;
   seed) require_aws; "${HERE}/seed.sh" ;;
@@ -115,5 +164,5 @@ case "${1:-all}" in
     "${HERE}/seed.sh"
     step_smoke
     ;;
-  *) echo "usage: harness.sh [all|up|api-zip|apply|seed|smoke]" >&2; exit 2 ;;
+  *) echo "usage: harness.sh [all|up|down|api-zip|apply|seed|smoke]" >&2; exit 2 ;;
 esac

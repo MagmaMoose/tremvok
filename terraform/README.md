@@ -15,7 +15,7 @@ GitHub Actions ──► API Gateway ──► tremvok-api ──┬──► Dy
 | | |
 |---|---|
 | `modules/tremvok-api` | the whole stack: table, function, API, IAM, logs, alarms |
-| `localstack/` | a root that instantiates the module against LocalStack |
+| `localstack/` | a root that instantiates the module against LocalStack, plus `harness.sh` — the one definition of the local sequence, which CI runs too |
 | `Makefile` | `make dev` — up, build, apply, smoke |
 
 ## What it costs
