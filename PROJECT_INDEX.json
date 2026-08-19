@@ -1,0 +1,54 @@
+{
+  "name": "tremvok",
+  "description": "Deployment orchestration + notifications: a composite GitHub action targeting AWS, plus an optional FastAPI deployment-record service on Lambda.",
+  "generated_for": "agents \u2014 read this before grepping the tree",
+  "surfaces": {
+    "action": {
+      "entrypoint": "action.yml",
+      "note": "Glue only. Every decision lives in scripts/, which is bats-tested and bash 3.2-compatible.",
+      "scripts": {
+        "scripts/lib/common.sh": "logging, set_output (heredoc form for multi-line), require, retry, is_true, slug",
+        "scripts/resolve-mode.sh": "event -> deploy|preview|rollback, environment, preview alias",
+        "scripts/preflight.sh": "fork / no-credential -> honest skip with a reason",
+        "scripts/assume-role.sh": "GitHub OIDC -> STS -> masked short-lived credentials",
+        "scripts/deploy-s3-cloudfront.sh": "static site to S3 + CloudFront invalidation; refuses an empty artifact dir",
+        "scripts/deploy-lambda-zip.sh": "immutable S3 key, publish version, verify CodeSha256, move alias (deploy only)",
+        "scripts/deploy-terragrunt.sh": "discover -> plan -> approval gate -> apply; the Atlantis replacement",
+        "scripts/terragrunt-discover.sh": "changed files -> stacks; modules map to nothing on purpose",
+        "scripts/terragrunt-run.sh": "plan|apply|redact one stack, buffered, -detailed-exitcode",
+        "scripts/approval-gate.sh": "independent approvers; exits non-zero rather than reporting 'nobody'",
+        "scripts/publish-check.sh": "the check run that makes apply-before-merge enforceable",
+        "scripts/verify-live.sh": "curl status + header with retries; catches uploaded-but-unbound",
+        "scripts/notify-pr.sh": "sticky PR comment, GHE-aware, failure-isolated",
+        "scripts/notify-webhook.sh": "Slack + Teams cards, jq-built, failure-isolated",
+        "scripts/record-deployment.sh": "OIDC-authenticated POST to the Tremvok API, failure-isolated"
+      }
+    },
+    "api": {
+      "entrypoint": "src/tremvok/aws/handler.py",
+      "factory": "src/tremvok/api/app.py:create_app",
+      "modules": {
+        "src/tremvok/oidc.py": "RS256 verification with no crypto dependency; authorize() is deny-by-default",
+        "src/tremvok/store.py": "DynamoDB; dedup token written first and compensated on failure",
+        "src/tremvok/notify.py": "Slack/Teams payloads; every function returns bool and never raises",
+        "src/tremvok/models.py": "the wire contract; `repository` is absent by design",
+        "src/tremvok/settings.py": "env for config, SSM SecureString for secrets"
+      }
+    },
+    "infrastructure": {
+      "module": "terraform/modules/tremvok-api",
+      "harness": "terraform/localstack",
+      "commands": "make -C terraform dev | validate | serve"
+    }
+  },
+  "hotspots": [
+    "src/tremvok/api/app.py: the auth dependency MUST stay module-level \u2014 see .claude/COMMON_MISTAKES.md",
+    "scripts/deploy-terragrunt.sh: longest script; the apply authorisation decision is the part to read first",
+    "scripts/build_api_zip.py: the one definition of what ships; determinism and --arch are both load-bearing"
+  ],
+  "tests": {
+    "tests/bats/": "88 cases over the shell scripts, with aws/curl stubbed",
+    "tests/": "59 pytest cases over the API; no network, no AWS (moto + a generated RSA key)",
+    "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring"
+  }
+}

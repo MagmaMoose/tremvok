@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bats:*)",
+      "Bash(shellcheck:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run mypy:*)",
+      "Bash(make -C terraform validate)",
+      "Bash(tofu fmt:*)",
+      "Bash(tofu validate:*)",
+      "Bash(python3 scripts/build_api_zip.py:*)"
+    ]
+  }
+}

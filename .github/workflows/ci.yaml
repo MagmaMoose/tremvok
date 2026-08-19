@@ -1,0 +1,152 @@
+# Tremvok's own CI. Four jobs, because the repository has three surfaces and one of them can
+# only be proven by standing the whole stack up.
+#
+# All actions are SHA-pinned (Chargate's pre-commit hook enforces this org-wide); the trailing
+# `# vX.Y.Z` comment tracks the tag each pinned SHA corresponds to.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - docs/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shell:
+    name: Action (shellcheck + bats)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install bats
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bats
+
+      - name: shellcheck
+        run: shellcheck -S warning scripts/*.sh scripts/lib/*.sh terraform/localstack/*.sh
+
+      - name: The action metadata parses, and every script it names exists
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, re, sys, yaml
+
+          action = yaml.safe_load(pathlib.Path("action.yml").read_text())
+          steps = action["runs"]["steps"]
+
+          # A step referencing a script that does not exist is a runtime failure on somebody
+          # else's deploy, and nothing else in CI would catch it.
+          missing = []
+          for step in steps:
+              for name in re.findall(r"scripts/[A-Za-z0-9_.-]+\.sh", step.get("run", "")):
+                  if not pathlib.Path(name).is_file():
+                      missing.append(f'{step.get("name")}: {name}')
+          if missing:
+              sys.exit("action.yml names scripts that do not exist:\n  " + "\n  ".join(missing))
+
+          # Every output must point at a step id that exists.
+          ids = {s["id"] for s in steps if "id" in s}
+          for key, spec in action.get("outputs", {}).items():
+              for referenced in re.findall(r"steps\.([A-Za-z0-9_-]+)\.outputs", spec["value"]):
+                  if referenced not in ids:
+                      sys.exit(f"output {key} references unknown step id {referenced!r}")
+          print(f"{len(action['inputs'])} inputs, {len(action['outputs'])} outputs, {len(steps)} steps")
+          PY
+
+      - name: bats
+        run: bats tests/bats
+
+      - name: Every script is executable and sources the shared library
+        run: |
+          set -euo pipefail
+          rc=0
+          for script in scripts/*.sh; do
+            [ -x "$script" ] || { echo "::error::$script is not executable"; rc=1; }
+            grep -q 'set -euo pipefail' "$script" || { echo "::error::$script does not set -euo pipefail"; rc=1; }
+          done
+          exit $rc
+
+  api:
+    name: API (ruff + mypy + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-groups --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest -q
+
+      - name: The Lambda package builds reproducibly
+        # Built twice and compared. The deploy path decides whether to ship by comparing
+        # digests, so a non-reproducible build would open a redeploy pull request on every
+        # release until nobody read them.
+        run: |
+          set -euo pipefail
+          first="$(python3 scripts/build_api_zip.py --out dist/a.zip | tail -1)"
+          second="$(python3 scripts/build_api_zip.py --out dist/b.zip | tail -1)"
+          echo "$first"
+          [ "$first" = "$second" ] || { echo "::error::the package build is not deterministic"; exit 1; }
+
+      - name: The package is self-contained
+        # Unzipped into an empty directory and imported with that directory as the only source
+        # of `tremvok`, in a subprocess with a scrubbed path. An import the Lambda cannot
+        # satisfy otherwise deploys fine and 500s on the first request.
+        run: |
+          set -euo pipefail
+          rm -rf dist/unpacked && mkdir -p dist/unpacked
+          unzip -q dist/a.zip -d dist/unpacked
+          cd dist/unpacked
+          PYTHONPATH=. python3 -c "import tremvok.aws.handler as h; assert h.handler; print('handler imports from the package alone')"
+
+  terraform:
+    name: Infrastructure (fmt + validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_wrapper: false
+
+      - run: tofu fmt -check -recursive terraform/
+      - run: make -C terraform validate
+
+  stack:
+    name: LocalStack (end to end)
+    runs-on: ubuntu-latest
+    # The only job that proves the wiring: that the package imports on the function's
+    # architecture, that the IAM policy permits what the code does, that the DynamoDB schema
+    # matches the keys the code writes, and that Terraform and settings.py spell the
+    # environment variables the same way.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_wrapper: false
+
+      - run: uv sync --all-groups --frozen
+
+      # ARCH is derived from `uname -m`, so this runs x86_64 here and arm64 on a developer's
+      # laptop — which is the point: the cross-architecture wheel trap is only visible when the
+      # two agree, and only caught when something checks.
+      - name: make dev
+        run: make -C terraform dev
+
+      - name: LocalStack logs on failure
+        if: failure()
+        run: docker logs tremvok-localstack 2>&1 | tail -100

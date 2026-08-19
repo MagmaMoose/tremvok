@@ -1,0 +1,163 @@
+"""Human-channel notifications, and the rule that they can never fail a deployment.
+
+Every function here returns a bool and swallows its own errors. A Slack outage must not turn a
+successful production deploy red — the deploy already happened, and failing the job would
+invite a re-run that deploys again to fix a chat message. This is Diatreme's visibility-first
+rule for its security sinks, applied to the same class of problem.
+
+The payloads are plain `urllib` POSTs rather than an SDK. Both sinks are one unauthenticated
+webhook URL and a JSON body, so a dependency here would buy nothing and cost a wheel in the
+Lambda package.
+"""
+
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+
+from .models import DeploymentRecord
+
+_TIMEOUT_SECONDS = 6
+
+_EMOJI = {
+    "success": "✅",
+    "failure": "❌",
+    "skipped": "⏭️",
+    "rolled-back": "⏪",
+}
+
+
+def _mrkdwn_escape(value: str) -> str:
+    """Slack mrkdwn is not Markdown; `&`, `<` and `>` are the only characters it eats."""
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _facts(record: DeploymentRecord) -> list[tuple[str, str]]:
+    facts = [
+        ("Repository", record.repository),
+        ("Environment", record.environment),
+        ("Target", record.target),
+        ("Status", record.status),
+    ]
+    if record.version:
+        facts.append(("Version", record.version))
+    if record.commit:
+        facts.append(("Commit", record.commit[:12]))
+    if record.actor:
+        facts.append(("Actor", record.actor))
+    facts.append(("Verified", "yes" if record.verified else "no"))
+    return facts
+
+
+def slack_payload(record: DeploymentRecord) -> dict:
+    emoji = _EMOJI.get(record.status, "•")
+    headline = (
+        f"{emoji} *{_mrkdwn_escape(record.repository)}* → "
+        f"*{_mrkdwn_escape(record.environment)}* — {record.status}"
+    )
+    fields = [
+        {"type": "mrkdwn", "text": f"*{label}*\n{_mrkdwn_escape(value)}"}
+        for label, value in _facts(record)
+    ]
+    blocks: list[dict] = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": headline}},
+        # Slack rejects a section with more than 10 fields with a 400, which the
+        # failure-isolated caller would log as an unexplained false. Slice rather than trust
+        # that `_facts` never grows.
+        {"type": "section", "fields": fields[:10]},
+    ]
+    links = []
+    if record.url:
+        links.append(f"<{record.url}|Open the deployment>")
+    if record.run_url:
+        links.append(f"<{record.run_url}|Workflow run>")
+    if links:
+        blocks.append(
+            {"type": "context", "elements": [{"type": "mrkdwn", "text": " · ".join(links)}]}
+        )
+    # `text` is the notification/fallback string: without it the push notification and the
+    # accessibility reading of the message are both empty.
+    return {
+        "text": f"{record.repository} → {record.environment}: {record.status}",
+        "blocks": blocks,
+    }
+
+
+def teams_payload(record: DeploymentRecord) -> dict:
+    """An Adaptive Card in the `message`/`attachments` envelope Workflows and connectors take."""
+    actions = []
+    if record.url:
+        actions.append({"type": "Action.OpenUrl", "title": "Open deployment", "url": record.url})
+    if record.run_url:
+        actions.append({"type": "Action.OpenUrl", "title": "Workflow run", "url": record.run_url})
+    return {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "text": (
+                                f"{_EMOJI.get(record.status, '•')} {record.repository} → "
+                                f"{record.environment}"
+                            ),
+                            "style": "heading",
+                            "wrap": True,
+                        },
+                        {
+                            "type": "FactSet",
+                            "facts": [
+                                {"title": label, "value": value} for label, value in _facts(record)
+                            ],
+                        },
+                    ],
+                    "actions": actions,
+                },
+            }
+        ],
+    }
+
+
+def post_webhook(url: str, payload: dict, *, timeout: int = _TIMEOUT_SECONDS) -> bool:
+    """POST JSON to a webhook. Returns success; never raises, never logs the URL."""
+    if not url or not url.startswith("https://"):
+        return False
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(  # noqa: S310 - https enforced above
+        url,
+        data=body,
+        headers={"content-type": "application/json", "user-agent": "tremvok"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            return 200 <= response.status < 300
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+
+
+def fan_out(
+    record: DeploymentRecord, *, slack_url: str | None = None, teams_url: str | None = None
+) -> dict[str, bool]:
+    """Send to every configured sink. An unconfigured sink is absent, not False."""
+    results: dict[str, bool] = {}
+    if slack_url:
+        results["slack"] = post_webhook(slack_url, slack_payload(record))
+    if teams_url:
+        results["teams"] = post_webhook(teams_url, teams_payload(record))
+    return results
+
+
+def should_notify(policy: str, status: str) -> bool:
+    """`always` | `on-success` | `on-failure`, evaluated the same way everywhere."""
+    if policy == "on-success":
+        return status == "success"
+    if policy == "on-failure":
+        return status in ("failure", "rolled-back")
+    return True
