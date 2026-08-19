@@ -11,7 +11,7 @@ git update-index --chmod=+x scripts/<file>.sh          # mark a new script execu
 **API surface:**
 ```bash
 uv sync --all-groups
-uv run pytest -q            # 59 tests, no network, no AWS
+uv run pytest -q            # 63 tests, no network, no AWS
 uv run ruff check .         # E,F,I,UP,B,SIM,RUF,S,BLE
 uv run ruff format .
 uv run mypy src

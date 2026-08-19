@@ -89,25 +89,23 @@ jobs:
       - run: uv run mypy src
       - run: uv run pytest -q
 
-      - name: The Lambda package builds reproducibly
-        # Built twice and compared. The deploy path decides whether to ship by comparing
-        # digests, so a non-reproducible build would open a redeploy pull request on every
-        # release until nobody read them.
-        run: |
-          set -euo pipefail
-          first="$(python3 scripts/build_api_zip.py --out dist/a.zip | tail -1)"
-          second="$(python3 scripts/build_api_zip.py --out dist/b.zip | tail -1)"
-          echo "$first"
-          [ "$first" = "$second" ] || { echo "::error::the package build is not deterministic"; exit 1; }
-
       - name: The package is self-contained
         # Unzipped into an empty directory and imported with that directory as the only source
-        # of `tremvok`, in a subprocess with a scrubbed path. An import the Lambda cannot
-        # satisfy otherwise deploys fine and 500s on the first request.
+        # of `tremvok`. An import the Lambda cannot satisfy otherwise deploys fine and 500s on
+        # the first request.
+        #
+        # Built for the RUNNER's architecture, not the default. The package ships Linux wheels
+        # for whichever architecture the function runs on, so an arm64 package cannot be
+        # imported on an x86_64 runner — that is the trap working, not a failure. Determinism
+        # and the cross-build itself are asserted by tests/test_build_api_zip.py, which reads
+        # the archive rather than importing it and therefore works on any host.
         run: |
           set -euo pipefail
+          arch="$(uname -m)"
+          [ "$arch" = "aarch64" ] && arch=arm64
+          python3 scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
           rm -rf dist/unpacked && mkdir -p dist/unpacked
-          unzip -q dist/a.zip -d dist/unpacked
+          unzip -q dist/native.zip -d dist/unpacked
           cd dist/unpacked
           PYTHONPATH=. python3 -c "import tremvok.aws.handler as h; assert h.handler; print('handler imports from the package alone')"
 

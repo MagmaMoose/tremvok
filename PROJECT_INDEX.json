@@ -48,7 +48,7 @@
   ],
   "tests": {
     "tests/bats/": "88 cases over the shell scripts, with aws/curl stubbed",
-    "tests/": "59 pytest cases over the API; no network, no AWS (moto + a generated RSA key)",
+    "tests/": "63 pytest cases over the API; no network, no AWS (moto + a generated RSA key)",
     "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring"
   }
 }

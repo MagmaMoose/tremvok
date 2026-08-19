@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -25,6 +26,7 @@ import urllib.request
 from pathlib import Path
 
 import boto3
+from boto3.dynamodb.conditions import Key
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
@@ -212,14 +214,13 @@ def main() -> int:
     print("\nStorage")
     table = dynamodb.Table(table_name)
     items = table.query(
-        KeyConditionExpression=boto3.dynamodb.conditions.Key("pk").eq("repo#MagmaMoose/website")
+        KeyConditionExpression=Key("pk").eq("repo#MagmaMoose/website")
     )["Items"]
     check("records land in the repository's partition", bool(items), "no items")
     check("every item carries a TTL, so history cannot grow forever",
           all("expires_at" in item for item in items))
-    description = boto3.client("dynamodb", endpoint_url=ENDPOINT, region_name=REGION).describe_table(
-        TableName=table_name
-    )["Table"]
+    ddb = boto3.client("dynamodb", endpoint_url=ENDPOINT, region_name=REGION)
+    description = ddb.describe_table(TableName=table_name)["Table"]
     check("the table is provisioned, so it cannot scale itself into a bill",
           description.get("BillingModeSummary", {}).get("BillingMode", "PROVISIONED")
           == "PROVISIONED",
@@ -250,9 +251,8 @@ def main() -> int:
           f"html={html.get('CacheControl')} css={css.get('CacheControl')}")
 
     empty = ROOT / "dist" / "smoke-empty"
-    empty.mkdir(parents=True, exist_ok=True)
-    for stale in empty.iterdir():
-        stale.unlink()
+    shutil.rmtree(empty, ignore_errors=True)
+    empty.mkdir(parents=True)
     code = _run_script(
         "deploy-s3-cloudfront.sh", BUCKET=site_bucket, ARTIFACT_PATH=str(empty), MODE="deploy"
     )

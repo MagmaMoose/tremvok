@@ -75,3 +75,12 @@ stacks. "This change touches no Terraform" is a success, not silence.
 `approval-gate.sh` exits non-zero when it cannot read the reviews. A caller that treats that as
 an empty approver list will refuse to apply when it should — or, worse, a caller that treats an
 API error as "no objections" will apply when it must not.
+
+## The package cannot be import-tested on a macOS laptop, and that is correct
+
+`build_api_zip.py` fetches **Linux** wheels for the function's architecture. Unzipping it on
+macOS and importing `tremvok.aws.handler` fails with `No module named
+'pydantic_core._pydantic_core'` — not a bug, the cross-build working. CI's import check builds
+for the runner's own architecture first (`uname -m`); the host-independent guard is
+`tests/test_build_api_zip.py`, which reads the archive and asserts the `.so` filenames carry
+the expected architecture tag rather than trying to load them.
