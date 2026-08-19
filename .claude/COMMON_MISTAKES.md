@@ -84,3 +84,13 @@ macOS and importing `tremvok.aws.handler` fails with `No module named
 for the runner's own architecture first (`uname -m`); the host-independent guard is
 `tests/test_build_api_zip.py`, which reads the archive and asserts the `.so` filenames carry
 the expected architecture tag rather than trying to load them.
+
+## "Deterministic" held per-installer, which is not deterministic
+
+`build_api_zip.py` used uv when present and fell back to pip. Both are reproducible on their
+own — and they lay the target directory out differently, so the same commit built 2796 KiB one
+way and 2812 KiB the other. The deploy path compares digests, so that fallback would have
+turned "did the code change?" into "which machine built it?". The builder now requires uv and
+says so; `tests/test_build_api_zip.py` asserts the refusal.
+
+The general shape: a fallback that silently changes the artifact is worse than no fallback.

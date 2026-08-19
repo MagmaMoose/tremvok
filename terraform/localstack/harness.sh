@@ -31,21 +31,28 @@ if [[ -z "${ARCH:-}" ]]; then
   esac
 fi
 
+# Preconditions are checked by the step that needs them, not up front: `harness.sh api-zip`
+# builds a Lambda package and needs neither Terraform nor an AWS CLI, and failing it for a
+# missing tofu would be a confusing way to say "you are holding it wrong".
 TFBIN="${TFBIN:-$(command -v tofu 2>/dev/null || command -v terraform 2>/dev/null || true)}"
-[[ -n "$TFBIN" ]] || { echo "no tofu or terraform on PATH" >&2; exit 1; }
+
+require_tofu() {
+  [[ -n "$TFBIN" ]] || { echo "no tofu or terraform on PATH" >&2; exit 1; }
+}
 
 # The smoke suite runs the action's own deploy scripts, and those call `aws` directly. The
 # self-hosted runner images do not ship it, so fall back to the one in this project's dev group
 # — which also means `make -C terraform dev` works on a laptop that has never installed it.
-if ! command -v aws >/dev/null 2>&1; then
-  venv_bin="${ROOT}/.venv/bin"
+require_aws() {
+  command -v aws >/dev/null 2>&1 && return 0
+  local venv_bin="${ROOT}/.venv/bin"
   if [[ -x "${venv_bin}/aws" ]]; then
     export PATH="${venv_bin}:${PATH}"
-  else
-    echo "no aws CLI on PATH and none in ${venv_bin} — run 'uv sync --all-groups'" >&2
-    exit 1
+    return 0
   fi
-fi
+  echo "no aws CLI on PATH and none in ${venv_bin} — run 'uv sync --all-groups'" >&2
+  exit 1
+}
 
 # `uv run` when available so the smoke suite gets boto3 and cryptography without the caller
 # having to arrange an environment; a plain interpreter otherwise.
@@ -58,6 +65,7 @@ python_runner() {
 }
 
 step_up() {
+  command -v docker >/dev/null 2>&1 || { echo "no docker on PATH" >&2; exit 1; }
   docker compose -f "${HERE}/docker-compose.yml" up -d
   echo "waiting for localstack..."
   for _ in $(seq 1 60); do
@@ -77,6 +85,7 @@ step_api_zip() {
 }
 
 step_apply() {
+  require_tofu
   ( cd "$HERE" \
     && "$TFBIN" init -input=false \
     && "$TFBIN" apply -auto-approve -input=false \
@@ -85,6 +94,8 @@ step_apply() {
 }
 
 step_smoke() {
+  require_tofu
+  require_aws
   ( cd "$HERE" && "$TFBIN" output -json > "${HERE}/.outputs.json" )
   python_runner "${HERE}/smoke.py" "${HERE}/.outputs.json"
 }
@@ -93,9 +104,11 @@ case "${1:-all}" in
   up) step_up ;;
   api-zip) step_api_zip ;;
   apply) step_apply ;;
-  seed) "${HERE}/seed.sh" ;;
+  seed) require_aws; "${HERE}/seed.sh" ;;
   smoke) step_smoke ;;
   all)
+    require_tofu
+    require_aws
     step_up
     step_api_zip
     step_apply

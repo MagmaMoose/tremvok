@@ -3,10 +3,11 @@
 
 Two properties this script exists to guarantee:
 
-**Deterministic.** Fixed timestamps, fixed modes, sorted entry order, and pinned dependency
-versions from `requirements-lambda.txt`. The deploy path compares digests to decide whether
-anything changed, so a build that varied byte-for-byte between two runs of the same commit
-would open a redeploy pull request on every release until nobody read them.
+**Deterministic.** Fixed timestamps, fixed modes, sorted entry order, pinned dependency
+versions from `requirements-lambda.txt`, and exactly one installer. The deploy path compares
+digests to decide whether anything changed, so a build that varied byte-for-byte between two
+runs of the same commit would open a redeploy pull request on every release until nobody read
+them.
 
 **Cross-architecture.** Lambda runs the function on the architecture Terraform declares, not
 the one that built the zip. `pydantic-core` is a compiled wheel, so a package built on an Apple
@@ -26,7 +27,6 @@ import hashlib
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -63,43 +63,35 @@ def _install_dependencies(target: Path, arch: str, python_version: str) -> None:
         raise SystemExit(f"missing {REQUIREMENTS} — regenerate it with `make lock`")
     platform = ARCH_PLATFORM[arch]
 
-    if shutil.which("uv"):
-        command = [
-            "uv",
-            "pip",
-            "install",
-            "--target",
-            str(target),
-            "--python-platform",
-            platform,
-            "--python-version",
-            python_version,
-            "--no-installer-metadata",
-            "--requirement",
-            str(REQUIREMENTS),
-        ]
-    else:
-        # pip's equivalent. `--only-binary=:all:` is not optional: without it pip will happily
-        # build a source distribution for the *host*, which is the exact failure --arch exists
-        # to prevent, and it fails at runtime rather than at build time.
-        command = [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--target",
-            str(target),
-            "--platform",
-            platform.split("-", 1)[1] + "_" + platform.split("-", 1)[0],
-            "--python-version",
-            python_version,
-            "--only-binary=:all:",
-            "--implementation",
-            "cp",
-            "--no-compile",
-            "--requirement",
-            str(REQUIREMENTS),
-        ]
+    # uv, and only uv. There WAS a pip fallback here, and it was a bug: pip and uv lay the
+    # target directory out slightly differently, so the same commit produced two different
+    # digests depending on which happened to be installed — 2796 KiB one way and 2812 KiB the
+    # other. That is precisely the "a local run and a released artifact built differently"
+    # failure this script exists to prevent, and a fallback that silently changes the artifact
+    # is worse than no fallback at all.
+    if not shutil.which("uv"):
+        raise SystemExit(
+            "uv is required to build the Lambda package, so that every build of a commit "
+            "produces the same bytes. Install it: https://docs.astral.sh/uv/"
+        )
+
+    command = [
+        "uv",
+        "pip",
+        "install",
+        "--target",
+        str(target),
+        # Not optional. Without an explicit platform uv resolves for the HOST, and a package
+        # built on a laptop imports fine there and dies on the function with
+        # `No module named 'pydantic_core._pydantic_core'`.
+        "--python-platform",
+        platform,
+        "--python-version",
+        python_version,
+        "--no-installer-metadata",
+        "--requirement",
+        str(REQUIREMENTS),
+    ]
     subprocess.run(command, check=True, cwd=ROOT)
 
 

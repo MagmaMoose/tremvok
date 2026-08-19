@@ -17,6 +17,7 @@ Linux wheels and the test runner may not be Linux.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import zipfile
@@ -90,3 +91,20 @@ def test_every_entry_has_a_fixed_timestamp_and_mode(tmp_path):
     assert infos
     assert {info.date_time for info in infos} == {(1980, 1, 1, 0, 0, 0)}
     assert {info.external_attr >> 16 for info in infos} == {0o644}
+
+
+def test_the_builder_refuses_to_run_without_uv(tmp_path):
+    """The pip fallback that used to live here produced a *different digest* for the same
+    commit — 2796 KiB one way, 2812 KiB the other — which is exactly the failure the
+    determinism guarantee exists to prevent. Refusing is the correct behaviour."""
+    scrubbed = {**os.environ, "PATH": "/usr/bin:/bin"}
+    result = subprocess.run(
+        [sys.executable, str(BUILDER), "--out", str(tmp_path / "x.zip")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=scrubbed,
+    )
+    assert result.returncode != 0
+    assert "uv is required" in (result.stdout + result.stderr)
