@@ -23,12 +23,35 @@ concurrency:
 jobs:
   shell:
     name: Action (shellcheck + bats)
-    runs-on: ubuntu-latest
+    # The org's self-hosted pool, falling back to a GitHub-hosted runner for anyone who has no
+    # pool. Not a preference: GitHub-hosted minutes are metered on private repositories, and
+    # this workflow runs on every pull request.
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install bats
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq bats
+      - name: Bootstrap bats and shellcheck
+        # Fetched rather than installed from host packages: the self-hosted images are minimal
+        # and have no sudo, and pinning the versions means a tool release cannot change what
+        # this workflow enforces between a commit and its rebuild.
+        shell: bash
+        env:
+          BATS_VERSION: '1.13.0'
+          SHELLCHECK_VERSION: '0.11.0'
+        run: |
+          set -euo pipefail
+          tmp="${RUNNER_TEMP:-/tmp}"
+          curl -fsSL --retry 3 "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" \
+            | tar -xz -C "$tmp"
+          "${tmp}/bats-core-${BATS_VERSION}/install.sh" "${tmp}/bats"
+          echo "${tmp}/bats/bin" >> "$GITHUB_PATH"
+
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            arch="$(uname -m)"; [ "$arch" = "arm64" ] && arch=aarch64
+            curl -fsSL --retry 3 "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${arch}.tar.xz" \
+              | tar -xJ -C "$tmp"
+            echo "${tmp}/shellcheck-v${SHELLCHECK_VERSION}" >> "$GITHUB_PATH"
+          fi
 
       - name: shellcheck
         run: shellcheck -S warning scripts/*.sh scripts/lib/*.sh terraform/localstack/*.sh
@@ -76,7 +99,7 @@ jobs:
 
   api:
     name: API (ruff + mypy + pytest)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -111,7 +134,7 @@ jobs:
 
   terraform:
     name: Infrastructure (fmt + validate)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
@@ -123,7 +146,9 @@ jobs:
 
   stack:
     name: LocalStack (end to end)
-    runs-on: ubuntu-latest
+    # `pool-amd64` rather than the default pool: this job runs Docker, and it is the pool the
+    # org's other container-based job (Chargate/MegaLinter) already uses.
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER && 'pool-amd64' || 'ubuntu-latest' }}
     # The only job that proves the wiring: that the package imports on the function's
     # architecture, that the IAM policy permits what the code does, that the DynamoDB schema
     # matches the keys the code writes, and that Terraform and settings.py spell the
