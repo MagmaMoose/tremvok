@@ -104,6 +104,10 @@ dev = [
     # shellcheck binary as a wheel.
     "shellcheck-py",
     "PyYAML",
+    # The LocalStack smoke suite runs the action's deploy scripts, which shell out to `aws`.
+    # v1 rather than v2 because v2 is not pip-installable, and the runner images have neither
+    # `unzip` nor sudo to install it the official way.
+    "awscli",
 ]
 docs = ["mkdocs-material>=9.5"]
 

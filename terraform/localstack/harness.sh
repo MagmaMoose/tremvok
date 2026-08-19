@@ -34,6 +34,19 @@ fi
 TFBIN="${TFBIN:-$(command -v tofu 2>/dev/null || command -v terraform 2>/dev/null || true)}"
 [[ -n "$TFBIN" ]] || { echo "no tofu or terraform on PATH" >&2; exit 1; }
 
+# The smoke suite runs the action's own deploy scripts, and those call `aws` directly. The
+# self-hosted runner images do not ship it, so fall back to the one in this project's dev group
+# — which also means `make -C terraform dev` works on a laptop that has never installed it.
+if ! command -v aws >/dev/null 2>&1; then
+  venv_bin="${ROOT}/.venv/bin"
+  if [[ -x "${venv_bin}/aws" ]]; then
+    export PATH="${venv_bin}:${PATH}"
+  else
+    echo "no aws CLI on PATH and none in ${venv_bin} — run 'uv sync --all-groups'" >&2
+    exit 1
+  fi
+fi
+
 # `uv run` when available so the smoke suite gets boto3 and cryptography without the caller
 # having to arrange an environment; a plain interpreter otherwise.
 python_runner() {
