@@ -139,7 +139,8 @@ for stack in "${stacks[@]}"; do
   else
     excerpt='No plan output was produced; see the workflow run.'
   fi
-  # shellcheck disable=SC2016 - single quotes around printf format string prevent %-interpretation; $short/$status/$excerpt expand as positional args
+  # Single quotes here are the printf format string; %s args expand as positional parameters
+  # shellcheck disable=SC2016
   details+="$(printf '<details><summary><code>%s</code> — %s</summary>\n\n```text\n%s\n```\n</details>' "$short" "$status" "$excerpt")"$'\n'
 done
 
