@@ -25,12 +25,7 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - docs/**
-      - mkdocs.yml
-      - LICENSE
-      - .gitignore
+    paths-ignore: ['**/*.md', 'docs/**', 'mkdocs.yml', 'LICENSE', '.gitignore']
   workflow_dispatch:
 
 permissions:
@@ -46,7 +41,7 @@ jobs:
   diatreme:
     # Same visibility-based routing as security.yml — see `template_vars` at the
     # top of settings.yml.
-    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: detect
