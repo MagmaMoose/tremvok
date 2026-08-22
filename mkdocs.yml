@@ -1,0 +1,43 @@
+site_name: Tremvok
+site_description: Deployment orchestration and notifications for MagmaMoose — the deploy-side counterpart to Diatreme.
+site_url: https://magmamoose.github.io/tremvok/
+repo_url: https://github.com/MagmaMoose/tremvok
+repo_name: MagmaMoose/tremvok
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  # Peridot: the one common gem born in the mantle and carried to the surface by an eruption.
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: light green
+      accent: light green
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: light green
+      accent: light green
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+
+nav:
+  - Home: index.md
+  - Action reference: action.md
+  - Setup: setup.md
+  - Architecture: architecture.md
+  - API reference: api.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - toc: { permalink: true }

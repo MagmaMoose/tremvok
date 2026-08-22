@@ -1,0 +1,40 @@
+# Tremvok
+
+> Tremvok is deployment orchestration and notifications for MagmaMoose: a GitHub Marketplace composite action that ships an already-built artifact to an AWS target (S3/CloudFront, Lambda, or Terragrunt), verifies it went live, and announces the result — plus an optional FastAPI service on AWS Lambda that records deployment history and fans notifications out, authenticated by GitHub OIDC. Install the action with `uses: MagmaMoose/tremvok@v1`. It is the deploy-side counterpart to Diatreme, which decides what version is released.
+
+This repository has two surfaces: the **composite action** (`action.yml` + `scripts/*.sh`) and the **API** (`src/tremvok/`, FastAPI on Lambda). They communicate over HTTP and neither imports the other. Most users only need the action; the API is optional and off unless `api-url` is set.
+
+## Documentation
+
+- [README](README.md): user guide — quickstart, targets, the full input/output tables, skip and failure-isolation behaviour.
+- [Architecture](docs/architecture.md): how the pieces fit, and the specific production failures each guard exists to prevent.
+- [Action reference](docs/action.md): every input and output, per target.
+- [API reference](docs/api.md): endpoints, the OIDC authentication model, and the storage schema.
+- [Infrastructure](terraform/README.md): the free-tier accounting, the cost ceiling, secrets handling, and what a LocalStack run does not prove.
+- [AGENTS.md](AGENTS.md): contributor/agent guide — editing rules, local validation, repository boundaries.
+- [Examples](examples/README.md): complete, ready-to-copy `deploy.yml` workflows, one per target.
+- [Changelog](CHANGELOG.md): Keep a Changelog + Semantic Versioning.
+
+## Targets
+
+- `s3-cloudfront`: sync a built static site to S3 with per-class cache headers, invalidate CloudFront, previews under their own key prefix. Refuses to sync an empty artifact directory, because `sync --delete` from an empty source empties the site and exits 0.
+- `lambda-zip`: upload to an immutable S3 key, update the function, publish a version, move an alias. A preview publishes a version without moving the alias. The deployed `CodeSha256` is verified against the local artifact.
+- `terragrunt`: discover affected stacks, plan each, post a rolling pull-request comment, and apply only on an independent approval. Publishes a check run that can be made required, which is what enforces apply-before-merge. Replaces Atlantis, whose stored IAM credential is the reason to migrate.
+
+## API
+
+- Endpoints: `GET /healthz`, `POST /v1/deployments`, `GET /v1/deployments`.
+- Authentication: GitHub Actions OIDC only. The `repository` a record lands under is the token's claim, not a request field. `allowed_owners` is deny-by-default because GitHub issues a token to every repository on github.com.
+- Storage: DynamoDB, one partition per repository, 90-day TTL, provisioned capacity so it cannot scale into a bill.
+- Deployment: AWS Lambda (arm64) behind an API Gateway HTTP API throttled to 2 req/s. Secrets in SSM Parameter Store, never environment variables.
+
+## Constraints
+
+- AWS only; no Cloudflare anywhere. Everything sits inside the always-free allowances except the API Gateway and the artifact bucket, which are under a cent a month.
+- Shell scripts must run on bash 3.2 (GitHub's macOS runners), enforced by a test.
+- Notification sinks are failure-isolated: a webhook outage never fails a successful deploy.
+
+## Related
+
+- [MagmaMoose/diatreme](https://github.com/MagmaMoose/diatreme): the release-side counterpart — versioning, image promotion, GitHub Releases.
+- [MagmaMoose/nievah](https://github.com/MagmaMoose/nievah): the AWS free-tier front-door pattern this stack's cost discipline follows.

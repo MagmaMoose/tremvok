@@ -1,0 +1,122 @@
+[project]
+name = "tremvok"
+# Dynamic, sourced from `tremvok.__version__` — a literal here is recorded in uv.lock's
+# entry for this package, so every release would bump pyproject.toml and leave uv.lock
+# behind. Same reasoning as nievah; see the semantic_release block below.
+dynamic = ["version"]
+description = "Deployment orchestration + notifications for MagmaMoose: the deploy-side counterpart to Diatreme. Composite action plus a FastAPI deployment-record and notifier service on AWS."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Caleb Sargeant", email = "caleb@magmamoose.com" }]
+keywords = ["github-actions", "deployment", "aws", "lambda", "fastapi", "notifications"]
+
+# RUNTIME dependencies are the Lambda package contract: `scripts/build_api_zip.py` installs
+# exactly this list into the zip. Keep it short — every entry is bytes in a cold start.
+#
+# boto3 is deliberately NOT here: the Lambda runtime ships it, and adding it to the zip both
+# grows the package and shadows the runtime's version. It is a dev dependency instead, which
+# is what pytest and the local uvicorn need.
+dependencies = [
+    "fastapi",
+    "mangum",
+    "pydantic>=2",
+]
+
+[project.urls]
+Homepage = "https://github.com/MagmaMoose/tremvok"
+Source = "https://github.com/MagmaMoose/tremvok"
+Issues = "https://github.com/MagmaMoose/tremvok/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tremvok"]
+
+[tool.hatch.version]
+path = "src/tremvok/__init__.py"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# `S` (bandit) and `BLE` (blind except) are on because this service verifies signatures and
+# posts to webhooks: the rules that catch a swallowed exception or an unvalidated URL scheme
+# are exactly the ones worth failing CI over here. Where a broad catch IS the design — a
+# notification sink that must never fail a deploy — the `noqa` says so and names the reason.
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S", "BLE"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest is built on `assert`, and a test that shells out or hardcodes a token is doing its job.
+"tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+"scripts/**" = ["S603", "S607"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+# python-semantic-release, driven by Diatreme on release (versioning-tool:
+# semantic-release-python). PSR computes the next version from conventional commits and
+# writes it to the ONE location below — do not bump it by hand.
+[tool.semantic_release]
+version_variables = ["src/tremvok/__init__.py:__version__"]
+build_command = ""          # version-only release: a git tag + GitHub Release, no PyPI build
+major_on_zero = false
+tag_format = "v{version}"
+commit_message = "chore(release): v{version}"
+
+[tool.semantic_release.branches.main]
+match = "(main|master)"
+prerelease = false
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.remote]
+type = "github"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff",
+    "mypy",
+    "boto3",
+    "moto[dynamodb,s3,ssm]",
+    # Signs the RSA test tokens that tests/test_oidc.py verifies. Dev-only on purpose: the
+    # verifier in src/tremvok/oidc.py is pure stdlib, so `cryptography` never enters the
+    # Lambda zip (see docs/architecture.md, "Why the OIDC verifier has no dependencies").
+    "cryptography",
+    "httpx",
+    "uvicorn",
+    # Both exist so CI needs nothing from the host image: the self-hosted runners are minimal
+    # (no make, no xz, no PyYAML), and every tool CI depends on being installed by hand is a
+    # tool that breaks the build the day the image changes. `shellcheck-py` ships the real
+    # shellcheck binary as a wheel.
+    "shellcheck-py",
+    "PyYAML",
+    # The LocalStack smoke suite runs the action's deploy scripts, which shell out to `aws`.
+    # v1 rather than v2 because v2 is not pip-installable, and the runner images have neither
+    # `unzip` nor sudo to install it the official way.
+    "awscli",
+]
+docs = ["mkdocs-material>=9.5"]
+
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "botocore", "botocore.*", "mangum", "mangum.*"]
+ignore_missing_imports = true
+
+[tool.bandit]
+# B101: assert is the pytest idiom; ruff already ignores S101 for tests/**
+# B404, B603, B607: subprocess use is controlled in build/test/localstack scripts;
+#   ruff already ignores S603/S607 for scripts/**
+skips = ["B101", "B404", "B603", "B607"]

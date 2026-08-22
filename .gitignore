@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+*.egg-info/
+
+# Terraform / OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+terraform/localstack/.outputs.json
+terraform/localstack/_validate_provider.tf
+
+# Docs
+site/
+
+# Agent scratch
+.claude/last_output.txt
+.claude/settings.local.json
