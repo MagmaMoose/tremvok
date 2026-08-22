@@ -40,7 +40,8 @@ GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 # ASN.1 DigestInfo for SHA-256, per RFC 8017 §9.2 note 1. The bytes are fixed; SHA-256 is the
 # only digest GitHub signs OIDC tokens with, and accepting a second one would only widen the
 # surface.
-_SHA256_DIGEST_INFO = binascii.unhexlify("3031300d060960864801650304020105000420")  # DevSkim: ignore DS173237  # noqa: E501
+# DevSkim: ignore DS173237 - public RFC 8017 §9.2 ASN.1 DigestInfo constant, not a secret
+_SHA256_DIGEST_INFO = binascii.unhexlify("3031300d060960864801650304020105000420")
 
 # Clock skew tolerated on exp/nbf/iat. GitHub tokens live 5-15 minutes, so a minute of slack
 # costs nothing and stops a runner whose clock drifted from failing every deploy.

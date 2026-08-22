@@ -104,7 +104,8 @@ def teams_payload(record: DeploymentRecord) -> dict:
             {
                 "contentType": "application/vnd.microsoft.card.adaptive",
                 "content": {
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",  # DevSkim: ignore DS137138  # noqa: E501
+                    # DevSkim: ignore DS137138 - Adaptive Cards schema URI requires http://
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                     "type": "AdaptiveCard",
                     "version": "1.4",
                     "body": [
