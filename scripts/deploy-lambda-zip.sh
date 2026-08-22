@@ -41,7 +41,8 @@ tremvok::require ARTIFACT_BUCKET "the S3 bucket that holds published artifacts"
 [[ -s "$ARTIFACT_PATH" ]] || tremvok::fail "artifact-path '${ARTIFACT_PATH}' is empty"
 
 if [[ -z "$VERSION_LABEL" ]]; then
-  VERSION_LABEL="${GITHUB_SHA:0:12}"
+  VERSION_LABEL="${GITHUB_SHA:-}"
+  VERSION_LABEL="${VERSION_LABEL:0:12}"
   [[ -n "$VERSION_LABEL" ]] || tremvok::fail "version-label is required when GITHUB_SHA is unset"
 fi
 [[ -z "$ARTIFACT_KEY" ]] && ARTIFACT_KEY="${KEY_PREFIX%/}/${VERSION_LABEL}.zip"

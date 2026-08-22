@@ -90,6 +90,19 @@ run_aws s3 sync "$ARTIFACT_PATH" "$destination" \
   --exclude '*' \
   --include '*.html' --include '*.json' --include '*.xml' --include '*.txt' --include '*.md'
 
+# Delete-reconciliation pass. Neither upload pass can carry --delete and filter by object class at
+# the same time: the assets pass protects documents from its --delete via --exclude, and the
+# documents pass has no --delete at all. A file removed from the build would persist in S3
+# indefinitely. This third pass over the full tree (no class filters) removes those orphans.
+# --size-only: all files were just uploaded above, so sizes match and no content is re-uploaded;
+# only objects absent from the local tree are deleted.
+if [[ ${#sync_flags[@]} -gt 0 ]]; then
+  run_aws s3 sync "$ARTIFACT_PATH" "$destination" \
+    --no-progress \
+    --delete \
+    --size-only
+fi
+
 invalidation_id=""
 if [[ -n "$DISTRIBUTION_ID" ]]; then
   paths="$INVALIDATION_PATHS"
