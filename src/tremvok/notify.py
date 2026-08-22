@@ -104,7 +104,7 @@ def teams_payload(record: DeploymentRecord) -> dict:
             {
                 "contentType": "application/vnd.microsoft.card.adaptive",
                 "content": {
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",  # DevSkim: ignore DS137138
                     "type": "AdaptiveCard",
                     "version": "1.4",
                     "body": [
@@ -136,14 +136,15 @@ def post_webhook(url: str, payload: dict, *, timeout: int = _TIMEOUT_SECONDS) ->
     if not url or not url.startswith("https://"):
         return False
     body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(  # noqa: S310 - https enforced above
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+    request = urllib.request.Request(  # noqa: S310  # nosec B310 - https enforced above
         url,
         data=body,
         headers={"content-type": "application/json", "user-agent": "tremvok"},
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310
             return 200 <= response.status < 300
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         return False

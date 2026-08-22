@@ -40,7 +40,7 @@ GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 # ASN.1 DigestInfo for SHA-256, per RFC 8017 §9.2 note 1. The bytes are fixed; SHA-256 is the
 # only digest GitHub signs OIDC tokens with, and accepting a second one would only widen the
 # surface.
-_SHA256_DIGEST_INFO = binascii.unhexlify("3031300d060960864801650304020105000420")
+_SHA256_DIGEST_INFO = binascii.unhexlify("3031300d060960864801650304020105000420")  # DevSkim: ignore DS173237 - public RFC 8017 §9.2 ASN.1 constant, not a secret
 
 # Clock skew tolerated on exp/nbf/iat. GitHub tokens live 5-15 minutes, so a minute of slack
 # costs nothing and stops a runner whose clock drifted from failing every deploy.
@@ -149,13 +149,13 @@ class JwksCache:
             raise OidcError("the pinned JWKS document is not usable") from exc
 
     def _fetch(self) -> dict[str, tuple[int, int]]:
-        request = urllib.request.Request(  # noqa: S310 - scheme is fixed by the issuer config
+        request = urllib.request.Request(  # noqa: S310  # nosec B310 - scheme is fixed by the issuer config
             self.jwks_uri, headers={"accept": "application/json", "user-agent": "tremvok"}
         )
         if not self.jwks_uri.startswith("https://"):
             raise OidcError("refusing to fetch JWKS over a non-HTTPS URL")
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+            with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310  # nosec B310
                 document = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             raise OidcError(f"could not fetch JWKS from {self.jwks_uri}") from exc

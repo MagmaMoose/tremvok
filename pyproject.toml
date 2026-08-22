@@ -114,3 +114,9 @@ docs = ["mkdocs-material>=9.5"]
 [[tool.mypy.overrides]]
 module = ["boto3", "boto3.*", "botocore", "botocore.*", "mangum", "mangum.*"]
 ignore_missing_imports = true
+
+[tool.bandit]
+# B101: assert is the pytest idiom; ruff already ignores S101 for tests/**
+# B404, B603, B607: subprocess use is controlled in build/test/localstack scripts;
+#   ruff already ignores S603/S607 for scripts/**
+skips = ["B101", "B404", "B603", "B607"]

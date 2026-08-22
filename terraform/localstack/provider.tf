@@ -1,9 +1,10 @@
 # Everything points at LocalStack. The credentials are the literal strings LocalStack expects;
 # they authenticate nothing and reach nothing.
+# nosemgrep: terraform.aws.security.aws-provider-static-credentials.aws-provider-static-credentials
 provider "aws" {
   region     = "eu-west-1"
-  access_key = "test"
-  secret_key = "test"
+  access_key = "test" # nosemgrep: terraform.aws.security.aws-provider-static-credentials.aws-provider-static-credentials
+  secret_key = "test" # nosemgrep: terraform.aws.security.aws-provider-static-credentials.aws-provider-static-credentials
 
   # Without these the provider spends the first minute of every apply trying to reach the real
   # IAM and STS endpoints before failing in a way that reads like a network problem.

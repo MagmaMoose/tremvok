@@ -32,13 +32,14 @@ if [[ -z "$VERIFY_URL" ]]; then
 fi
 
 case "$VERIFY_URL" in
-  https://*|http://*) ;;
+  https://*|http://*) ;; # DevSkim: ignore DS137138 - case pattern, not an http call
   *) tremvok::fail "verify-url must be an http(s) URL, got '${VERIFY_URL}'" ;;
 esac
 
 headers_file="$(mktemp)"
 trap 'rm -f "$headers_file"' EXIT
 
+# shellcheck disable=SC2329 - check_once IS called: tremvok::retry passes it by name on line below
 check_once() {
   local status
   # -D dumps the response headers so one request answers both questions. `--fail` is
@@ -79,4 +80,5 @@ fi
 
 tremvok::set_output verified "false"
 tremvok::set_output verify-skipped "false"
+# shellcheck disable=SC2016 - single quotes inside ${VERIFY_HEADER:+...} expansion are literal chars, not quoting
 tremvok::fail "post-deploy verification failed after ${ATTEMPTS} attempts: ${VERIFY_URL} never answered ${EXPECT_STATUS}${VERIFY_HEADER:+ with a '${VERIFY_HEADER}' header}. The upload may have succeeded while the old version is still being served."

@@ -96,7 +96,10 @@ if [[ -n "$SLACK_WEBHOOK" ]]; then
 fi
 
 if [[ -n "$TEAMS_WEBHOOK" ]]; then
+  # Adaptive Cards schema URI is intentionally http:// — the MS spec requires this exact string
+  _teams_schema="http://adaptivecards.io/schemas/adaptive-card.json"  # DevSkim: ignore DS137138
   teams_payload="$(jq -n \
+    --arg schema "$_teams_schema" \
     --arg title "${emoji} ${REPOSITORY} → ${ENVIRONMENT}" \
     --arg status "$STATUS" --arg target "$TARGET" --arg mode "$MODE" \
     --arg version "${VERSION:-—}" --arg commit "${short_commit:-—}" \
@@ -107,7 +110,7 @@ if [[ -n "$TEAMS_WEBHOOK" ]]; then
       attachments: [{
         contentType: "application/vnd.microsoft.card.adaptive",
         content: {
-          "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+          "$schema": $schema,
           type: "AdaptiveCard",
           version: "1.4",
           body: [

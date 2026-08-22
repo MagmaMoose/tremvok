@@ -66,7 +66,7 @@ def test_a_sink_outage_is_a_false_not_an_exception(monkeypatch):
 
 
 def test_non_https_webhooks_are_refused():
-    assert notify.post_webhook("http://hooks.slack.test/x", {}) is False
+    assert notify.post_webhook("http://hooks.slack.test/x", {}) is False  # DevSkim: ignore DS137138
     assert notify.post_webhook("file:///etc/passwd", {}) is False
 
 

@@ -1,6 +1,11 @@
 # Deployment history. One partition per repository, sorted by time, with a TTL so it cannot
 # grow without bound. See `src/tremvok/store.py` for the item shapes.
+#trivy:ignore:AWS-0024
+#trivy:ignore:AWS-0025
 resource "aws_dynamodb_table" "deployments" {
+  #checkov:skip=CKV_AWS_28:PITR deliberately off — every row is a rolling 90-day deployment record re-derivable from workflow runs; backup bills per GB for data that is already a cache
+  #checkov:skip=CKV_AWS_119:Customer-managed KMS key costs $1/month; most sensitive field is a git SHA; AWS-managed encryption is sufficient
+  #checkov:skip=CKV2_AWS_16:Auto Scaling conflicts with PROVISIONED billing, which is the cost cap: on-demand cannot be capped so this table uses provisioned throttling instead
   name = var.name
 
   # PROVISIONED, not PAY_PER_REQUEST, and that is a cost control rather than a performance
@@ -41,6 +46,7 @@ resource "aws_dynamodb_table" "deployments" {
 
   # Encryption at rest with the AWS-owned key, which is free. A customer-managed KMS key would
   # add $1/month for a table whose most sensitive field is a git commit SHA.
+  # nosemgrep: terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
   server_side_encryption {
     enabled = false
   }

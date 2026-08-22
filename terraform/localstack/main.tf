@@ -52,9 +52,26 @@ variable "artifact_version" {
   default     = "0.0.0-local"
 }
 
+#trivy:ignore:AWS-0089
+#trivy:ignore:AWS-0090
+#trivy:ignore:AWS-0132
 resource "aws_s3_bucket" "artifacts" {
+  #checkov:skip=CKV2_AWS_62:LocalStack test bucket — event notifications not required for local dev
+  #checkov:skip=CKV_AWS_144:LocalStack test bucket — cross-region replication not applicable to a local emulator
+  #checkov:skip=CKV_AWS_21:LocalStack test bucket — versioning not required; force_destroy signals this is ephemeral test data
+  #checkov:skip=CKV_AWS_18:LocalStack test bucket — access logging not required for a local emulator
+  #checkov:skip=CKV_AWS_145:LocalStack test bucket — KMS encryption not applicable; LocalStack does not enforce it
+  #checkov:skip=CKV2_AWS_61:LocalStack test bucket — lifecycle rules not required for ephemeral test data
   bucket        = "tremvok-artifacts-local"
   force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "artifacts" {
+  bucket                  = aws_s3_bucket.artifacts.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # Stands in for the publish step, which is the only thing that writes here in production.
@@ -71,9 +88,26 @@ resource "aws_s3_object" "api" {
 # A second bucket, standing in for a product's static site. Nothing in the API uses it; it is
 # what `make smoke` points the action's `s3-cloudfront` target at, so the deploy path is
 # exercised against a real S3 rather than a stub.
+#trivy:ignore:AWS-0089
+#trivy:ignore:AWS-0090
+#trivy:ignore:AWS-0132
 resource "aws_s3_bucket" "site" {
+  #checkov:skip=CKV2_AWS_62:LocalStack test bucket — event notifications not required for local dev
+  #checkov:skip=CKV_AWS_144:LocalStack test bucket — cross-region replication not applicable to a local emulator
+  #checkov:skip=CKV_AWS_21:LocalStack test bucket — versioning not required; force_destroy signals this is ephemeral test data
+  #checkov:skip=CKV_AWS_18:LocalStack test bucket — access logging not required for a local emulator
+  #checkov:skip=CKV_AWS_145:LocalStack test bucket — KMS encryption not applicable; LocalStack does not enforce it
+  #checkov:skip=CKV2_AWS_61:LocalStack test bucket — lifecycle rules not required for ephemeral test data
   bucket        = "tremvok-site-local"
   force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "site" {
+  bucket                  = aws_s3_bucket.site.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 module "api" {

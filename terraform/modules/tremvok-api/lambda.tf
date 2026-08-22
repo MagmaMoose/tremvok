@@ -1,13 +1,21 @@
 # The log group is created here, with a retention policy, rather than left to the function to
 # create on first use — a Lambda-created group defaults to `never expire`, which is the one way
 # this stack accumulates storage nobody is watching.
+#trivy:ignore:AWS-0017
 resource "aws_cloudwatch_log_group" "lambda" {
+  #checkov:skip=CKV_AWS_158:KMS CMK for CloudWatch costs $1/month per key on a personally-funded account; AWS-managed encryption is sufficient
+  #checkov:skip=CKV_AWS_338:Retention period is set via var.log_retention_days; compliance duration is the caller's responsibility
   name              = "/aws/lambda/${var.name}"
   retention_in_days = var.log_retention_days
   tags              = local.tags
 }
 
+#trivy:ignore:AWS-0066
 resource "aws_lambda_function" "api" {
+  #checkov:skip=CKV_AWS_116:DLQ not applicable — function is behind API Gateway and failure-isolated; a failed delivery record is a deploy retry, not a dead letter
+  #checkov:skip=CKV_AWS_117:Lambda does not need VPC placement — its job is receiving public HTTPS webhooks; VPC + NAT gateway adds real cost with no benefit here
+  #checkov:skip=CKV_AWS_173:Environment variables are configuration only (table name, prefix, audience); every secret is read from SSM at runtime per the hard constraint
+  #checkov:skip=CKV_AWS_272:Code signing not in use for this project; signing infrastructure would cost more than the service it protects
   function_name = var.name
   role          = aws_iam_role.lambda.arn
 
@@ -27,6 +35,10 @@ resource "aws_lambda_function" "api" {
   # purpose: the throttle protects the front door, this protects the function even if
   # something reaches it another way.
   reserved_concurrent_executions = var.reserved_concurrency
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {
@@ -111,6 +123,7 @@ resource "aws_lambda_permission" "api_gateway" {
 }
 
 resource "aws_lambda_function_url" "local" {
+  #checkov:skip=CKV_AWS_258:AuthType NONE only exists when localstack=true; in production (count=0) this resource is never created and the front door is API Gateway
   count = var.localstack ? 1 : 0
 
   function_name = aws_lambda_function.api.function_name

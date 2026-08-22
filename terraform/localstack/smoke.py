@@ -18,7 +18,7 @@ import base64
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 import urllib.error
@@ -62,9 +62,9 @@ def request(
     headers = {"content-type": "application/json"}
     if token:
         headers["authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310  # nosec B310
     try:
-        with urllib.request.urlopen(req, timeout=60) as response:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=60) as response:  # noqa: S310  # nosec B310
             return response.status, json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as exc:
         raw = exc.read()
@@ -384,8 +384,8 @@ def _run_script(name: str, **env: str) -> int:
         "GITHUB_OUTPUT": str(ROOT / "dist" / "smoke-outputs.txt"),
         **env,
     }
-    result = subprocess.run(  # noqa: S603
-        ["bash", str(ROOT / "scripts" / name)],  # noqa: S607
+    result = subprocess.run(  # noqa: S603  # nosec B603
+        ["bash", str(ROOT / "scripts" / name)],  # noqa: S607  # nosec B607
         env=environment,
         capture_output=True,
         text=True,

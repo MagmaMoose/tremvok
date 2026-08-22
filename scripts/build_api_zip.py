@@ -26,7 +26,7 @@ import argparse
 import hashlib
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 import zipfile
 from pathlib import Path
@@ -92,7 +92,7 @@ def _install_dependencies(target: Path, arch: str, python_version: str) -> None:
         "--requirement",
         str(REQUIREMENTS),
     ]
-    subprocess.run(command, check=True, cwd=ROOT)
+    subprocess.run(command, check=True, cwd=ROOT)  # nosec B603
 
 
 def _collect(root: Path) -> list[tuple[str, Path]]:
