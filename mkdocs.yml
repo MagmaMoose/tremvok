@@ -1,0 +1,48 @@
+site_name: Tremvok
+site_description: >-
+  Ship it, prove it went live — build an MkDocs site strictly, publish it to GitHub
+  Pages, and verify the published URL actually answers.
+site_url: https://magmamoose.github.io/tremvok/
+repo_url: https://github.com/MagmaMoose/tremvok
+repo_name: MagmaMoose/tremvok
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: light green
+      accent: light green
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: light green
+      accent: light green
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+
+nav:
+  - Home: index.md
+  - Setup: setup.md
+  - Reference:
+      - Action: action-reference.md
+  - Roadmap: roadmap.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true

@@ -1,0 +1,127 @@
+name: Docs
+
+# Reusable workflow: build an MkDocs site, publish it to GitHub Pages, verify it is
+# actually serving.
+#
+# This exists as a WORKFLOW rather than only an action because a composite action cannot
+# declare `permissions:` or `environment:`, and actions/deploy-pages needs both
+# (`pages: write` + `id-token: write`, and the `github-pages` environment). The action
+# owns build-and-stage; only a workflow can own the deploy.
+#
+# Call it with:
+#
+#   jobs:
+#     docs:
+#       permissions:
+#         contents: read
+#         pages: write
+#         id-token: write
+#       uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing mkdocs.yml.'
+        type: string
+        required: false
+        default: '.'
+      toolchain:
+        description: 'auto | uv | pip. auto detects uv.lock, else requirements.'
+        type: string
+        required: false
+        default: 'auto'
+      docs-group:
+        description: 'uv dependency-group holding the docs tooling.'
+        type: string
+        required: false
+        default: 'docs'
+      requirements:
+        description: 'Requirements file pinning the docs build (pip toolchain).'
+        type: string
+        required: false
+        default: 'docs/requirements.txt'
+      python-version:
+        type: string
+        required: false
+        default: '3.12'
+      runs-on:
+        type: string
+        required: false
+        default: 'ubuntu-latest'
+      publish:
+        description: >-
+          Deploy to GitHub Pages. Set false to build and verify only — the gate half
+          without the publish half, which is what a pull-request check wants.
+        type: boolean
+        required: false
+        default: true
+      verify:
+        description: >-
+          After deploying, request the published URL and fail on a non-2xx. A deploy that
+          reports success while the site 404s is the failure mode worth catching.
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      page-url:
+        description: 'The published site URL.'
+        value: ${{ jobs.deploy.outputs.page-url }}
+
+# One Pages deployment at a time, and never cancel one midway: a cancelled deploy can
+# leave the site serving a half-uploaded artifact.
+concurrency:
+  group: pages-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - uses: MagmaMoose/tremvok@v1
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          toolchain: ${{ inputs.toolchain }}
+          docs-group: ${{ inputs.docs-group }}
+          requirements: ${{ inputs.requirements }}
+          python-version: ${{ inputs.python-version }}
+          stage-pages: ${{ inputs.publish }}
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    if: inputs.publish
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+      # deploy-pages reports success once GitHub accepts the artifact, which is not the
+      # same as the site answering. Ask it.
+      - name: Verify the site is serving
+        if: inputs.verify
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$PAGE_URL" || echo 000)
+            if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+              echo "$PAGE_URL -> $code" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "attempt $attempt: $PAGE_URL -> $code, retrying" >&2
+            sleep $((attempt * 5))
+          done
+          echo "::error::Deployed, but $PAGE_URL never answered 2xx (last: $code)." >&2
+          exit 1

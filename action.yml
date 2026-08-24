@@ -1,0 +1,147 @@
+name: 'Tremvok Docs'
+description: 'Build an MkDocs site strictly and stage it for a GitHub Pages deploy — toolchain auto-detected.'
+author: 'Magma Moose'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'green'
+
+inputs:
+  working-directory:
+    description: 'Directory containing mkdocs.yml.'
+    required: false
+    default: '.'
+  toolchain:
+    description: >-
+      How to install MkDocs: auto (default) | uv | pip. `auto` picks uv when a uv.lock is
+      present, otherwise pip against `requirements`. Detection exists so a caller does not
+      have to declare per-repo what is already visible in the repo.
+    required: false
+    default: 'auto'
+  docs-group:
+    description: 'uv dependency-group holding the docs tooling (uv toolchain only).'
+    required: false
+    default: 'docs'
+  requirements:
+    description: 'Requirements file pinning the docs build (pip toolchain only).'
+    required: false
+    default: 'docs/requirements.txt'
+  python-version:
+    description: 'Python version used to build the site.'
+    required: false
+    default: '3.12'
+  strict:
+    description: >-
+      Build with `--strict`, so a broken internal link or a nav entry pointing at a missing
+      file fails rather than publishing a site with holes in it.
+    required: false
+    default: 'true'
+  site-dir:
+    description: 'Directory the built site is written to.'
+    required: false
+    default: 'site'
+  stage-pages:
+    description: >-
+      Upload the built site as a GitHub Pages artifact, ready for actions/deploy-pages.
+      Set false to build only and handle the upload yourself.
+    required: false
+    default: 'true'
+  checkout:
+    description: 'Run actions/checkout first. Set false if the caller already checked out.'
+    required: false
+    default: 'true'
+
+outputs:
+  site-dir:
+    description: 'Absolute path to the built site.'
+    value: ${{ steps.build.outputs.site-dir }}
+  toolchain:
+    description: 'The toolchain actually used: uv or pip.'
+    value: ${{ steps.detect.outputs.toolchain }}
+  pages-staged:
+    description: 'true when a Pages artifact was uploaded.'
+    value: ${{ steps.detect.outputs.stage-pages }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      if: inputs.checkout == 'true'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    # Detection rather than declaration: uv.lock in the tree is the fact, and a caller
+    # restating it in config is one more thing that can disagree with the repo.
+    - name: Detect toolchain
+      id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        REQUESTED: ${{ inputs.toolchain }}
+        REQUIREMENTS: ${{ inputs.requirements }}
+        STAGE_PAGES: ${{ inputs.stage-pages }}
+      run: |
+        set -euo pipefail
+        case "$REQUESTED" in
+          uv|pip) resolved="$REQUESTED" ;;
+          auto)
+            if [ -f uv.lock ]; then resolved=uv
+            elif [ -f "$REQUIREMENTS" ]; then resolved=pip
+            else
+              echo "::error::No uv.lock and no $REQUIREMENTS — cannot tell how to install MkDocs. Set toolchain: explicitly." >&2
+              exit 1
+            fi ;;
+          *) echo "::error::toolchain must be auto, uv or pip (got '$REQUESTED')" >&2; exit 1 ;;
+        esac
+        if [ ! -f mkdocs.yml ]; then
+          echo "::error::No mkdocs.yml in ${PWD} — nothing to build." >&2
+          exit 1
+        fi
+        echo "toolchain=$resolved" >> "$GITHUB_OUTPUT"
+        echo "stage-pages=$STAGE_PAGES" >> "$GITHUB_OUTPUT"
+        echo "Toolchain: $resolved" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Set up uv
+      if: steps.detect.outputs.toolchain == 'uv'
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Set up Python
+      if: steps.detect.outputs.toolchain == 'pip'
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.requirements }}
+
+    - name: Build site
+      id: build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLCHAIN: ${{ steps.detect.outputs.toolchain }}
+        DOCS_GROUP: ${{ inputs.docs-group }}
+        REQUIREMENTS: ${{ inputs.requirements }}
+        SITE_DIR: ${{ inputs.site-dir }}
+        STRICT: ${{ inputs.strict }}
+      run: |
+        set -euo pipefail
+        strict_flag=""
+        [ "$STRICT" = "true" ] && strict_flag="--strict"
+        if [ "$TOOLCHAIN" = "uv" ]; then
+          uv run --group "$DOCS_GROUP" mkdocs build $strict_flag --site-dir "$SITE_DIR"
+        else
+          pip install --disable-pip-version-check --quiet -r "$REQUIREMENTS"
+          mkdocs build $strict_flag --site-dir "$SITE_DIR"
+        fi
+        echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
+
+    - name: Configure Pages
+      if: steps.detect.outputs.stage-pages == 'true'
+      uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+    - name: Stage the Pages artifact
+      if: steps.detect.outputs.stage-pages == 'true'
+      uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      with:
+        path: ${{ inputs.working-directory }}/${{ inputs.site-dir }}
