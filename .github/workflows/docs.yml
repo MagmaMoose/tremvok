@@ -45,6 +45,21 @@ on:
         type: string
         required: false
         default: '3.12'
+      lint:
+        description: 'Run the repo-shape checks before building.'
+        type: boolean
+        required: false
+        default: true
+      profile:
+        description: 'Repo profile for the shape checks: auto | action | service | spec.'
+        type: string
+        required: false
+        default: 'auto'
+      readme-budget:
+        description: 'Override the README line budget. 0 uses the profile default.'
+        type: number
+        required: false
+        default: 0
       runs-on:
         type: string
         required: false
@@ -87,6 +102,9 @@ jobs:
           requirements: ${{ inputs.requirements }}
           python-version: ${{ inputs.python-version }}
           stage-pages: ${{ inputs.publish }}
+          lint: ${{ inputs.lint }}
+          profile: ${{ inputs.profile }}
+          readme-budget: ${{ inputs.readme-budget }}
 
   deploy:
     name: Deploy to Pages

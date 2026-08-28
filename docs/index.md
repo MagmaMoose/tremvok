@@ -46,6 +46,28 @@ Across MagmaMoose that one rule covers both cases: brimyr, chargate and draventi
 docs through a `docs` dependency-group in `uv.lock`; diatreme is not a uv project at all
 and pins `docs/requirements.txt`.
 
+## What the shape checks cover
+
+Five hard errors, and deliberately no more. A linter with forty rules on a
+one-maintainer org gets bypassed in week two.
+
+| Check | Catches |
+| --- | --- |
+| README shape | budget, required section order, banned headings (`## Contents`, `## Examples`, a full `## Inputs` table) |
+| Licence agreement | a README or `pyproject.toml` claiming a licence the LICENSE file contradicts |
+| Link targets | dangling relative links, and `docs/*.md` links that 404 on a Marketplace listing |
+| Marketplace preflight | missing `branding.icon` / `branding.color`, which Marketplace rejects at publish time |
+| INHERIT clobber | a repo declaring `markdown_extensions` while inheriting a shared base |
+
+Everything else is left to MegaLinter, which already runs markdownlint and link checking
+on every pull request in every repo. Two places to keep in step is one too many.
+
+That last check earns its place because the failure is silent. MkDocs merges `INHERIT`
+dicts recursively but **replaces lists wholesale**: a base declaring
+`[admonition, tables]` and a repo declaring `[toc]` resolves to `[toc]`, and `admonition`
+is gone with nothing reported. The visible symptom is a page rendering as a wall of code
+instead of a diagram.
+
 ## Next
 
 - [Setup](setup.md) — the caller workflow, and the Pages prerequisite

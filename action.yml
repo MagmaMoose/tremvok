@@ -50,6 +50,22 @@ inputs:
     description: 'Run actions/checkout first. Set false if the caller already checked out.'
     required: false
     default: 'true'
+  lint:
+    description: >-
+      Run the repo-shape checks (README budget and section order, licence agreement,
+      link targets, Marketplace preflight, INHERIT clobber) before building. These are
+      the rules nothing else covers: MegaLinter already runs markdownlint and link
+      checking, and --strict already catches broken internal links.
+    required: false
+    default: 'true'
+  profile:
+    description: 'Repo profile for the shape checks: auto | action | service | spec.'
+    required: false
+    default: 'auto'
+  readme-budget:
+    description: 'Override the README line budget. 0 uses the profile default.'
+    required: false
+    default: '0'
 
 outputs:
   site-dir:
@@ -114,14 +130,48 @@ runs:
         cache: pip
         cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.requirements }}
 
-    - name: Build site
-      id: build
+    # Installed as its own step so the lint below can import PyYAML, which arrives
+    # transitively with MkDocs. Hand-rolling a YAML parser to avoid this would be a
+    # worse trade than one extra step.
+    - name: Install docs toolchain
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
         TOOLCHAIN: ${{ steps.detect.outputs.toolchain }}
         DOCS_GROUP: ${{ inputs.docs-group }}
         REQUIREMENTS: ${{ inputs.requirements }}
+      run: |
+        set -euo pipefail
+        if [ "$TOOLCHAIN" = "uv" ]; then
+          uv sync --group "$DOCS_GROUP"
+        else
+          pip install --disable-pip-version-check --quiet -r "$REQUIREMENTS"
+        fi
+
+    - name: Lint repo shape
+      if: inputs.lint == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLCHAIN: ${{ steps.detect.outputs.toolchain }}
+        SCRIPT: ${{ github.action_path }}/scripts/lint_docs.py
+        PROFILE: ${{ inputs.profile }}
+        BUDGET: ${{ inputs.readme-budget }}
+      run: |
+        set -euo pipefail
+        args=(--root . --profile "$PROFILE" --readme-budget "$BUDGET" --github-annotations)
+        if [ "$TOOLCHAIN" = "uv" ]; then
+          uv run --no-sync python "$SCRIPT" "${args[@]}"
+        else
+          python "$SCRIPT" "${args[@]}"
+        fi
+
+    - name: Build site
+      id: build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLCHAIN: ${{ steps.detect.outputs.toolchain }}
         SITE_DIR: ${{ inputs.site-dir }}
         STRICT: ${{ inputs.strict }}
       run: |
@@ -129,9 +179,8 @@ runs:
         strict_flag=""
         [ "$STRICT" = "true" ] && strict_flag="--strict"
         if [ "$TOOLCHAIN" = "uv" ]; then
-          uv run --group "$DOCS_GROUP" mkdocs build $strict_flag --site-dir "$SITE_DIR"
+          uv run --no-sync mkdocs build $strict_flag --site-dir "$SITE_DIR"
         else
-          pip install --disable-pip-version-check --quiet -r "$REQUIREMENTS"
           mkdocs build $strict_flag --site-dir "$SITE_DIR"
         fi
         echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"

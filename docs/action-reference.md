@@ -7,7 +7,7 @@ task-shaped version, see [Setup](setup.md).
 
 ## Action inputs
 
-`MagmaMoose/tremvok@v1` — all 9 inputs are optional.
+`MagmaMoose/tremvok@v1` — all 12 inputs are optional.
 
 | Input | Default | Description |
 | --- | --- | --- |
@@ -20,6 +20,9 @@ task-shaped version, see [Setup](setup.md).
 | `site-dir` | `site` | Directory the built site is written to. |
 | `stage-pages` | `true` | Upload the built site as a GitHub Pages artifact, ready for actions/deploy-pages. Set false to build only and handle the upload yourself. |
 | `checkout` | `true` | Run actions/checkout first. Set false if the caller already checked out. |
+| `lint` | `true` | Run the repo-shape checks (README budget and section order, licence agreement, link targets, Marketplace preflight, INHERIT clobber) before building. These are the rules nothing else covers: MegaLinter already runs markdownlint and link checking, and --strict already catches broken internal links. |
+| `profile` | `auto` | Repo profile for the shape checks: auto | action | service | spec. |
+| `readme-budget` | `0` | Override the README line budget. 0 uses the profile default. |
 
 ## Action outputs
 
@@ -41,6 +44,9 @@ that only a workflow can act on.
 | `docs-group` | `string` | `docs` | uv dependency-group holding the docs tooling. |
 | `requirements` | `string` | `docs/requirements.txt` | Requirements file pinning the docs build (pip toolchain). |
 | `python-version` | `string` | `3.12` |  |
+| `lint` | `boolean` | `True` | Run the repo-shape checks before building. |
+| `profile` | `string` | `auto` | Repo profile for the shape checks: auto | action | service | spec. |
+| `readme-budget` | `number` | `0` | Override the README line budget. 0 uses the profile default. |
 | `runs-on` | `string` | `ubuntu-latest` |  |
 | `publish` | `boolean` | `True` | Deploy to GitHub Pages. Set false to build and verify only — the gate half without the publish half, which is what a pull-request check wants. |
 | `verify` | `boolean` | `True` | After deploying, request the published URL and fail on a non-2xx. A deploy that reports success while the site 404s is the failure mode worth catching. |

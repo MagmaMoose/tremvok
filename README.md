@@ -50,6 +50,9 @@ per repository.
   a missing file fails instead of publishing a site with holes in it.
 - **Deploys to Pages** — and only the workflow half does, because a composite action
   cannot hold the permissions this needs.
+- **Checks the repo shape** — README budget and section order, licence agreement,
+  link targets, Marketplace preflight. Only the rules nothing else covers; markdownlint
+  and link checking already run under MegaLinter.
 - **Verifies it is serving** — requests the published URL with backoff and fails on a
   non-2xx. `deploy-pages` reports success when GitHub *accepts* the artifact, which is
   not the same as the site answering.
