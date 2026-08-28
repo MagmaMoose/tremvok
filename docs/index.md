@@ -59,8 +59,10 @@ one-maintainer org gets bypassed in week two.
 | Marketplace preflight | missing `branding.icon` / `branding.color`, which Marketplace rejects at publish time |
 | INHERIT clobber | a repo declaring `markdown_extensions` while inheriting a shared base |
 
-Everything else is left to MegaLinter, which already runs markdownlint and link checking
-on every pull request in every repo. Two places to keep in step is one too many.
+Markdown style is checked separately, by markdownlint, and it runs **here** rather than
+under MegaLinter. MegaLinter's `security` flavor carries no markdown linter at all, and
+`MARKDOWN_MARKDOWNLINT` emits no SARIF, so it could never reach Chargate's net-new gate
+even if it were enabled. Config for a linter that never loads is worse than no config.
 
 That last check earns its place because the failure is silent. MkDocs merges `INHERIT`
 dicts recursively but **replaces lists wholesale**: a base declaring

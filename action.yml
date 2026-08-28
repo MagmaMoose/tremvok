@@ -66,6 +66,15 @@ inputs:
     description: 'Override the README line budget. 0 uses the profile default.'
     required: false
     default: '0'
+  markdownlint:
+    description: >-
+      Run markdownlint-cli2 over docs/ and README.md when a markdownlint config is
+      present. Runs here rather than under MegaLinter because MegaLinter's `security`
+      flavor carries no markdown linter, and MARKDOWN_MARKDOWNLINT emits no SARIF, so it
+      could never gate on net-new findings anyway. Node is preinstalled on GitHub
+      runners, so this costs an npx download and nothing else.
+    required: false
+    default: 'true'
 
 outputs:
   site-dir:
@@ -165,6 +174,24 @@ runs:
         else
           python "$SCRIPT" "${args[@]}"
         fi
+
+    - name: Lint markdown
+      if: inputs.markdownlint == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        DOCS_DIR: docs
+      run: |
+        set -euo pipefail
+        cfg=""
+        for c in .markdownlint.jsonc .markdownlint.json .markdownlint.yaml .markdownlint.yml; do
+          [ -f "$c" ] && { cfg="$c"; break; }
+        done
+        if [ -z "$cfg" ]; then
+          echo "No markdownlint config found; skipping."
+          exit 0
+        fi
+        npx --yes markdownlint-cli2 --config "$cfg" "$DOCS_DIR/**/*.md" "README.md"
 
     - name: Build site
       id: build
