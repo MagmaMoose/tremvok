@@ -28,6 +28,10 @@ src = ["scripts", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.bandit]
+# B101 (assert used) is expected and correct in test code — pytest depends on assert.
+skips = ["B101"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["scripts"]

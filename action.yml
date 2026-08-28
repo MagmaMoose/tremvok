@@ -54,8 +54,7 @@ inputs:
     description: >-
       Run the repo-shape checks (README budget and section order, licence agreement,
       link targets, Marketplace preflight, INHERIT clobber) before building. These are
-      the rules nothing else covers: MegaLinter already runs markdownlint and link
-      checking, and --strict already catches broken internal links.
+      the rules nothing else covers; --strict already catches broken internal links.
     required: false
     default: 'true'
   profile:
