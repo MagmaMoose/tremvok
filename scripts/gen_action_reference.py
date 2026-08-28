@@ -49,6 +49,10 @@ def render() -> str:
     action = yaml.safe_load(ACTION.read_text(encoding="utf-8"))
     wf_in = workflow_inputs()
 
+    assert not any(
+        spec.get("required") for spec in action["inputs"].values()
+    ), "action.yml has a required input — update the prose in render() to match"
+
     lines = [
         "# Action reference",
         "",
