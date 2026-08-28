@@ -121,13 +121,13 @@ def run(root: Path, *extra: str) -> int:
 
 def test_root_action_yml_means_the_action_profile(tmp_path: Path) -> None:
     (tmp_path / "action.yml").write_text(ACTION_YML, encoding="utf-8")
-    assert detect_profile(tmp_path) == "action"
+    assert detect_profile(tmp_path) == "action"  # nosec: B101
 
 
 @pytest.mark.parametrize("surface", ["pyproject.toml", "package.json", "Dockerfile"])
 def test_a_manifest_means_service(tmp_path: Path, surface: str) -> None:
     (tmp_path / surface).write_text("{}", encoding="utf-8")
-    assert detect_profile(tmp_path) == "service"
+    assert detect_profile(tmp_path) == "service"  # nosec: B101
 
 
 @pytest.mark.parametrize("surface", ["backend", "agent", "control-plane", "charts"])
@@ -139,12 +139,12 @@ def test_a_shipped_directory_means_service(tmp_path: Path, surface: str) -> None
     going to meet.
     """
     (tmp_path / surface).mkdir()
-    assert detect_profile(tmp_path) == "service"
+    assert detect_profile(tmp_path) == "service"  # nosec: B101
 
 
 def test_nothing_shipped_means_spec(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("# Nothing yet\n", encoding="utf-8")
-    assert detect_profile(tmp_path) == "spec"
+    assert detect_profile(tmp_path) == "spec"  # nosec: B101
 
 
 # --------------------------------------------------------------------- shape
@@ -152,19 +152,19 @@ def test_nothing_shipped_means_spec(tmp_path: Path) -> None:
 
 def test_a_conforming_action_readme_passes(tmp_path: Path) -> None:
     build(tmp_path, readme=GOOD_ACTION_README)
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101
 
 
 def test_over_budget_fails(tmp_path: Path) -> None:
     padded = GOOD_ACTION_README + "\n" * (LINE_BUDGET["action"] + 5)
     build(tmp_path, readme=padded)
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_budget_is_overridable(tmp_path: Path) -> None:
     padded = GOOD_ACTION_README + "\n" * 200
     build(tmp_path, readme=padded)
-    assert run(tmp_path, "--readme-budget", "500") == 0
+    assert run(tmp_path, "--readme-budget", "500") == 0  # nosec: B101
 
 
 @pytest.mark.parametrize(
@@ -172,19 +172,19 @@ def test_budget_is_overridable(tmp_path: Path) -> None:
 )
 def test_banned_headings_fail(tmp_path: Path, banned: str) -> None:
     build(tmp_path, readme=GOOD_ACTION_README + f"\n## {banned}\n\nstuff\n")
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_most_used_inputs_is_not_caught_by_the_inputs_ban(tmp_path: Path) -> None:
     """The allowed section and the banned one differ by two words; keep them apart."""
-    assert "## Most-used inputs" in GOOD_ACTION_README
+    assert "## Most-used inputs" in GOOD_ACTION_README  # nosec: B101
     build(tmp_path, readme=GOOD_ACTION_README)
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101
 
 
 def test_missing_required_section_fails(tmp_path: Path) -> None:
     build(tmp_path, readme=GOOD_ACTION_README.replace("## Quickstart", "## Getting going"))
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_required_sections_out_of_order_fail(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def test_required_sections_out_of_order_fail(tmp_path: Path) -> None:
         .replace("## TEMP", "## What it does")
     )
     build(tmp_path, readme=swapped)
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 # --------------------------------------------------------------------- licence
@@ -207,7 +207,7 @@ def test_readme_claiming_the_wrong_licence_fails(tmp_path: Path) -> None:
         readme=GOOD_ACTION_README.replace("Apache-2.0, see", "MIT License, see"),
         licence=APACHE,
     )
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_pyproject_claiming_the_wrong_licence_fails(tmp_path: Path) -> None:
@@ -218,7 +218,7 @@ def test_pyproject_claiming_the_wrong_licence_fails(tmp_path: Path) -> None:
         licence=PROPRIETARY,
         pyproject='[project]\nname = "x"\nlicense = "MIT"\n',
     )
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_agreeing_licences_pass(tmp_path: Path) -> None:
@@ -228,7 +228,7 @@ def test_agreeing_licences_pass(tmp_path: Path) -> None:
         licence=APACHE,
         pyproject='[project]\nname = "x"\nlicense = "Apache-2.0"\n',
     )
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101
 
 
 def test_an_incidental_mit_in_prose_is_not_a_licence_claim(tmp_path: Path) -> None:
@@ -238,7 +238,7 @@ def test_an_incidental_mit_in_prose_is_not_a_licence_claim(tmp_path: Path) -> No
         "Wraps [tool](https://example.com), MIT License licensed. We commit often.",
     )
     build(tmp_path, readme=readme, licence=APACHE)
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101
 
 
 # --------------------------------------------------------------------- links
@@ -248,24 +248,24 @@ def test_relative_docs_link_fails_for_an_action(tmp_path: Path) -> None:
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "setup.md").write_text("# Setup\n", encoding="utf-8")
     build(tmp_path, readme=GOOD_ACTION_README + "\nSee [setup](docs/setup.md).\n")
-    assert run(tmp_path) == 1, "exists on disk, but 404s on the Marketplace listing"
+    assert run(tmp_path) == 1, "exists on disk, but 404s on the Marketplace listing"  # nosec: B101
 
 
 def test_a_dangling_relative_link_fails(tmp_path: Path) -> None:
     build(tmp_path, readme=GOOD_ACTION_README + "\nSee [x](CONTRIBUTING.md).\n")
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_absolute_link_to_a_page_not_in_the_nav_fails(tmp_path: Path) -> None:
     readme = GOOD_ACTION_README + "\n[gone](https://magmamoose.github.io/thing/nope/)\n"
     build(tmp_path, readme=readme, mkdocs=NAV_MKDOCS)
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_absolute_link_to_a_nav_page_passes(tmp_path: Path) -> None:
     readme = GOOD_ACTION_README + "\n[setup](https://magmamoose.github.io/thing/setup/)\n"
     build(tmp_path, readme=readme, mkdocs=NAV_MKDOCS)
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101
 
 
 # --------------------------------------------------------------------- marketplace
@@ -280,7 +280,7 @@ def test_marketplace_preflight_fails_without_required_metadata(tmp_path: Path, d
     else:
         action = action.replace("author: 'Magma Moose'\n", "")
     build(tmp_path, readme=GOOD_ACTION_README, action=action)
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_marketplace_preflight_is_skipped_for_a_service(tmp_path: Path) -> None:
@@ -290,7 +290,7 @@ def test_marketplace_preflight_is_skipped_for_a_service(tmp_path: Path) -> None:
         action=None,
         pyproject='[project]\nname = "x"\n',
     )
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101
 
 
 # --------------------------------------------------------------------- INHERIT
@@ -307,18 +307,18 @@ def test_declaring_markdown_extensions_under_inherit_fails(tmp_path: Path) -> No
     mkdocs = "INHERIT: mkdocs.base.yml\nsite_name: Thing\nmarkdown_extensions:\n  - toc\n"
     build(tmp_path, readme=GOOD_ACTION_README, mkdocs=mkdocs)
     (tmp_path / "mkdocs.base.yml").write_text("theme:\n  name: material\n", encoding="utf-8")
-    assert run(tmp_path) == 1
+    assert run(tmp_path) == 1  # nosec: B101
 
 
 def test_inheriting_without_declaring_lists_passes(tmp_path: Path) -> None:
     mkdocs = "INHERIT: mkdocs.base.yml\nsite_name: Thing\nnav:\n  - Home: index.md\n"
     build(tmp_path, readme=GOOD_ACTION_README, mkdocs=mkdocs)
     (tmp_path / "mkdocs.base.yml").write_text("theme:\n  name: material\n", encoding="utf-8")
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101
 
 
 def test_markdown_extensions_without_inherit_is_fine(tmp_path: Path) -> None:
     """Nothing to clobber when there is no base."""
     mkdocs = "site_name: Thing\nmarkdown_extensions:\n  - toc\n"
     build(tmp_path, readme=GOOD_ACTION_README, mkdocs=mkdocs)
-    assert run(tmp_path) == 0
+    assert run(tmp_path) == 0  # nosec: B101

@@ -94,9 +94,8 @@ jobs:
     name: Build site
     runs-on: ${{ inputs.runs-on }}
     steps:
-      # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
-      # This is the same repo's own action; v1 is owner-controlled. Pin to SHA after v1 is cut.
-      - uses: MagmaMoose/tremvok@v1
+      # Same-repo action; v1 is owner-controlled. Pin to SHA after v1 is cut.
+      - uses: MagmaMoose/tremvok@v1 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           working-directory: ${{ inputs.working-directory }}
           toolchain: ${{ inputs.toolchain }}
