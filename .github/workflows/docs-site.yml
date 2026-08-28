@@ -1,0 +1,62 @@
+name: Docs
+
+# Tremvok's own docs site — and the action's end-to-end test.
+#
+# This deliberately calls the action by local path (`uses: ./`) rather than by tag, so
+# every pull request exercises the code IN THAT PR. Pinning `MagmaMoose/tremvok@v1` here
+# would test the last release instead, which is the one thing a dogfood workflow must
+# not do.
+#
+# Consumers should not copy this file. They want the reusable workflow, which is twelve
+# lines: see docs/setup.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'action.yml'
+      - '.github/workflows/docs-site.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'action.yml'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./
+        with:
+          checkout: 'false'
+          # On a pull request there is nothing to deploy, so skip staging the artifact —
+          # the build itself is the check.
+          stage-pages: ${{ github.event_name != 'pull_request' }}
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

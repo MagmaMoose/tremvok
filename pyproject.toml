@@ -1,0 +1,38 @@
+[project]
+name = "tremvok"
+version = "0.0.0"
+description = "Ship it, prove it went live."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+# Docs tooling (non-default group): `uv run --group docs mkdocs serve|build`.
+# PyYAML arrives transitively via mkdocs, which is what scripts/lint_docs.py reads
+# action.yml and mkdocs.yml with — it runs after the toolchain is installed.
+docs = [
+  "mkdocs-material>=9.5",
+  # Transitive via mkdocs-material. Floor pinned so a future re-lock cannot resolve
+  # back under GHSA-gm37-52c6-37mw (high: ReDoS in the inline processors) or
+  # GHSA-9xwg-3r6f-jcx2 (medium: path traversal in the b64 extension), both fixed
+  # in 11.0.1.
+  "pymdown-extensions>=11.0.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.bandit]
+# B101 (assert used) is expected and correct in test code — pytest depends on assert.
+skips = ["B101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]
+addopts = "-ra"
