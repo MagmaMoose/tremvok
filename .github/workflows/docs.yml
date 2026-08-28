@@ -42,6 +42,7 @@ on:
         required: false
         default: 'docs/requirements.txt'
       python-version:
+        description: 'Python version used to build the site.'
         type: string
         required: false
         default: '3.12'
