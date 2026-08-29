@@ -7,7 +7,7 @@ workflow, not this page. For the task-shaped version, see [Setup](setup.md).
 
 ## Action inputs
 
-`MagmaMoose/tremvok@v1` — all 13 inputs are optional.
+`MagmaMoose/tremvok@v1` — all 18 inputs are optional.
 
 | Input | Default | Description |
 | --- | --- | --- |
@@ -18,7 +18,12 @@ workflow, not this page. For the task-shaped version, see [Setup](setup.md).
 | `python-version` | `3.12` | Python version used to build the site. |
 | `strict` | `true` | Build with `--strict`, so a broken internal link or a nav entry pointing at a missing file fails rather than publishing a site with holes in it. |
 | `site-dir` | `site` | Directory the built site is written to. |
-| `stage-pages` | `true` | Upload the built site as a GitHub Pages artifact, ready for actions/deploy-pages. Set false to build only and handle the upload yourself. |
+| `target` | `github-pages` | Where the built site goes: github-pages (default) \| cloudflare-pages \| none. github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING workflow must run: a composite action cannot hold `pages: write` or declare an `environment:`. cloudflare-pages needs neither, so this action deploys it outright. none builds and stops, which is what a pull-request check wants. |
+| `stage-pages` | not set | Deprecated alias for `target`. 'false' means target: none. Kept so existing callers keep working; prefer `target`. |
+| `cloudflare-project` | not set | Cloudflare Pages project name. Defaults to `<repo>-docs`. Created on first deploy if it does not already exist. |
+| `cloudflare-account-id` | not set | Cloudflare account id. Required for target: cloudflare-pages. |
+| `cloudflare-api-token` | not set | Cloudflare API token with Pages:Edit. Required for target: cloudflare-pages. Pass a secret, never a literal. |
+| `cloudflare-branch` | not set | Branch Cloudflare records the deployment against. The project's production branch yields a production deploy; anything else is a preview. Defaults to the ref. |
 | `checkout` | `true` | Run actions/checkout first. Set false if the caller already checked out. |
 | `lint` | `true` | Run the repo-shape checks (README budget and section order, licence agreement, link targets, Marketplace preflight, INHERIT clobber) before building. These are the rules nothing else covers; --strict already catches broken internal links. |
 | `profile` | `auto` | Repo profile for the shape checks: auto \| action \| service \| spec. |
@@ -31,7 +36,8 @@ workflow, not this page. For the task-shaped version, see [Setup](setup.md).
 | --- | --- |
 | `site-dir` | Absolute path to the built site. |
 | `toolchain` | The toolchain actually used: uv or pip. |
-| `pages-staged` | true when a Pages artifact was uploaded. |
+| `target` | The deploy target actually used. |
+| `page-url` | Deployed URL. Set for cloudflare-pages; empty for github-pages, whose deploy the calling workflow owns. |
 
 ## Workflow inputs
 
@@ -40,16 +46,19 @@ two that only a workflow can act on.
 
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
+| `target` | `string` | `github-pages` | github-pages \| cloudflare-pages \| none. |
 | `working-directory` | `string` | `.` | Directory containing mkdocs.yml. |
 | `toolchain` | `string` | `auto` | auto \| uv \| pip. auto detects uv.lock, else requirements. |
 | `docs-group` | `string` | `docs` | uv dependency-group holding the docs tooling. |
 | `requirements` | `string` | `docs/requirements.txt` | Requirements file pinning the docs build (pip toolchain). |
 | `python-version` | `string` | `3.12` | Python version used to build the site. |
 | `lint` | `boolean` | `True` | Run the repo-shape checks before building. |
+| `markdownlint` | `boolean` | `True` | Run markdownlint when a markdownlint config is present. |
 | `profile` | `string` | `auto` | Repo profile for the shape checks: auto \| action \| service \| spec. |
 | `readme-budget` | `number` | `0` | Override the README line budget. 0 uses the profile default. |
-| `runs-on` | `string` | `ubuntu-latest` | — |
-| `publish` | `boolean` | `True` | Deploy to GitHub Pages. Set false to build and verify only — the gate half without the publish half, which is what a pull-request check wants. |
+| `cloudflare-project` | `string` | not set | Cloudflare Pages project name. Defaults to &lt;repo&gt;-docs. |
+| `runs-on` | `string` | `ubuntu-latest` | Runner label for every job. |
+| `publish` | `boolean` | `True` | Deploy at all. false builds and checks without publishing, which is what a pull-request run wants. |
 | `verify` | `boolean` | `True` | After deploying, request the published URL and fail on a non-2xx. A deploy that reports success while the site 404s is the failure mode worth catching. |
 
 ## Required permissions

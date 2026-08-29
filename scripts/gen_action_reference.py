@@ -29,6 +29,16 @@ def cell(text: str | None) -> str:
     what rendered: the tail of every such description was dropped from the page.
     """
     collapsed = re.sub(r"\s+", " ", (text or "").strip()).replace("|", r"\|")
+
+    # `<repo>` outside a code span is parsed as an HTML tag and disappears from the page
+    # — the same silent content loss the pipe escaping above exists to stop. Escape only
+    # OUTSIDE backticks: inside a code span the angle brackets are already literal, and
+    # `&lt;` there would render as the entity itself.
+    parts = collapsed.split("`")
+    for i in range(0, len(parts), 2):  # even indexes are outside code spans
+        parts[i] = parts[i].replace("<", "&lt;").replace(">", "&gt;")
+    collapsed = "`".join(parts)
+
     # An empty cell renders as `|  |`, which markdownlint flags as bad column style and
     # which reads as a missing value rather than a deliberate one.
     return collapsed or "—"

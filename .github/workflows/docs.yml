@@ -1,26 +1,34 @@
 name: Docs
 
-# Reusable workflow: build an MkDocs site, publish it to GitHub Pages, verify it is
-# actually serving.
+# Reusable workflow: build an MkDocs site, publish it, verify it is actually serving.
 #
-# This exists as a WORKFLOW rather than only an action because a composite action cannot
-# declare `permissions:` or `environment:`, and actions/deploy-pages needs both
-# (`pages: write` + `id-token: write`, and the `github-pages` environment). The action
-# owns build-and-stage; only a workflow can own the deploy.
+# Two deploy targets, and they are not symmetric:
 #
-# Call it with:
+#   cloudflare-pages  the ACTION deploys. Cloudflare needs no GitHub permissions and no
+#                     environment, so nothing has to happen at workflow level.
+#   github-pages      the WORKFLOW deploys. actions/deploy-pages needs `pages: write`,
+#                     `id-token: write` and the `github-pages` environment, none of which
+#                     a composite action is allowed to declare.
+#
+# That asymmetry is the whole reason this workflow exists. Call it with:
 #
 #   jobs:
 #     docs:
 #       permissions:
 #         contents: read
-#         pages: write
-#         id-token: write
+#         pages: write        # github-pages target only
+#         id-token: write     # github-pages target only
+#       secrets: inherit      # cloudflare-pages target only
 #       uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
 
 on:
   workflow_call:
     inputs:
+      target:
+        description: 'github-pages | cloudflare-pages | none.'
+        type: string
+        required: false
+        default: 'github-pages'
       working-directory:
         description: 'Directory containing mkdocs.yml.'
         type: string
@@ -51,6 +59,11 @@ on:
         type: boolean
         required: false
         default: true
+      markdownlint:
+        description: 'Run markdownlint when a markdownlint config is present.'
+        type: boolean
+        required: false
+        default: true
       profile:
         description: 'Repo profile for the shape checks: auto | action | service | spec.'
         type: string
@@ -61,14 +74,20 @@ on:
         type: number
         required: false
         default: 0
+      cloudflare-project:
+        description: 'Cloudflare Pages project name. Defaults to <repo>-docs.'
+        type: string
+        required: false
+        default: ''
       runs-on:
+        description: 'Runner label for every job.'
         type: string
         required: false
         default: 'ubuntu-latest'
       publish:
         description: >-
-          Deploy to GitHub Pages. Set false to build and verify only — the gate half
-          without the publish half, which is what a pull-request check wants.
+          Deploy at all. false builds and checks without publishing, which is what a
+          pull-request run wants.
         type: boolean
         required: false
         default: true
@@ -79,39 +98,56 @@ on:
         type: boolean
         required: false
         default: true
+    secrets:
+      CLOUDFLARE_ACCOUNT_ID:
+        description: 'Cloudflare account id. Required for target: cloudflare-pages.'
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        description: 'Cloudflare API token with Pages:Edit. Required for target: cloudflare-pages.'
+        required: false
     outputs:
       page-url:
         description: 'The published site URL.'
-        value: ${{ jobs.deploy.outputs.page-url }}
+        value: ${{ jobs.build.outputs.page-url || jobs.deploy.outputs.page-url }}
 
-# One Pages deployment at a time, and never cancel one midway: a cancelled deploy can
-# leave the site serving a half-uploaded artifact.
+# One deployment at a time, and never cancel one midway: a cancelled deploy can leave the
+# site serving a half-uploaded artifact.
 concurrency:
-  group: pages-${{ github.repository }}
+  group: docs-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   build:
     name: Build site
     runs-on: ${{ inputs.runs-on }}
+    outputs:
+      page-url: ${{ steps.docs.outputs.page-url }}
+      target: ${{ steps.docs.outputs.target }}
     steps:
-      # Same-repo action; v1 is owner-controlled. Pin to SHA after v1 is cut.
-      - uses: MagmaMoose/tremvok@v1 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+      - id: docs
+        uses: MagmaMoose/tremvok@v1
         with:
+          # `publish: false` overrides target, so a pull-request run can never deploy by
+          # accident no matter what the caller passed.
+          target: ${{ inputs.publish && inputs.target || 'none' }}
           working-directory: ${{ inputs.working-directory }}
           toolchain: ${{ inputs.toolchain }}
           docs-group: ${{ inputs.docs-group }}
           requirements: ${{ inputs.requirements }}
           python-version: ${{ inputs.python-version }}
-          stage-pages: ${{ inputs.publish }}
           lint: ${{ inputs.lint }}
+          markdownlint: ${{ inputs.markdownlint }}
           profile: ${{ inputs.profile }}
           readme-budget: ${{ inputs.readme-budget }}
+          cloudflare-project: ${{ inputs.cloudflare-project }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
+  # GitHub Pages only. On the Cloudflare path the deploy already happened in the action.
   deploy:
     name: Deploy to Pages
     needs: build
-    if: inputs.publish
+    if: inputs.publish && inputs.target == 'github-pages'
     runs-on: ${{ inputs.runs-on }}
     permissions:
       pages: write
@@ -125,23 +161,34 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 
-      # deploy-pages reports success once GitHub accepts the artifact, which is not the
-      # same as the site answering. Ask it.
-      - name: Verify the site is serving
-        if: inputs.verify
+  verify:
+    name: Verify it is serving
+    needs: [build, deploy]
+    # `always()` matters here: on the Cloudflare path `deploy` is skipped, and without it
+    # this job would be skipped too and a Cloudflare deploy would never be verified.
+    if: always() && inputs.publish && inputs.verify && needs.build.result == 'success'
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Request the published URL
         shell: bash
         env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PAGE_URL: ${{ needs.build.outputs.page-url || needs.deploy.outputs.page-url }}
         run: |
           set -euo pipefail
+          if [ -z "$PAGE_URL" ]; then
+            echo "::warning::No deployment URL was reported; nothing to verify."
+            exit 0
+          fi
+          # A deploy reports success once the platform ACCEPTS the artifact, which is not
+          # the same as the site answering. Ask it, with backoff for propagation.
           for attempt in 1 2 3 4 5; do
             code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$PAGE_URL" || echo 000)
-            if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+            if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
               echo "$PAGE_URL -> $code" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             echo "attempt $attempt: $PAGE_URL -> $code, retrying" >&2
             sleep $((attempt * 5))
           done
-          echo "::error::Deployed, but $PAGE_URL never answered 2xx (last: $code)." >&2
+          echo "::error::Deployed, but $PAGE_URL never answered (last: $code)." >&2
           exit 1

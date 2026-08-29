@@ -40,12 +40,44 @@ inputs:
     description: 'Directory the built site is written to.'
     required: false
     default: 'site'
+  target:
+    description: >-
+      Where the built site goes: github-pages (default) | cloudflare-pages | none.
+
+      github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING
+      workflow must run: a composite action cannot hold `pages: write` or declare an
+      `environment:`. cloudflare-pages needs neither, so this action deploys it outright.
+      none builds and stops, which is what a pull-request check wants.
+    required: false
+    default: 'github-pages'
   stage-pages:
     description: >-
-      Upload the built site as a GitHub Pages artifact, ready for actions/deploy-pages.
-      Set false to build only and handle the upload yourself.
+      Deprecated alias for `target`. 'false' means target: none. Kept so existing callers
+      keep working; prefer `target`.
     required: false
-    default: 'true'
+    default: ''
+  cloudflare-project:
+    description: >-
+      Cloudflare Pages project name. Defaults to `<repo>-docs`. Created on first deploy
+      if it does not already exist.
+    required: false
+    default: ''
+  cloudflare-account-id:
+    description: 'Cloudflare account id. Required for target: cloudflare-pages.'
+    required: false
+    default: ''
+  cloudflare-api-token:
+    description: >-
+      Cloudflare API token with Pages:Edit. Required for target: cloudflare-pages.
+      Pass a secret, never a literal.
+    required: false
+    default: ''
+  cloudflare-branch:
+    description: >-
+      Branch Cloudflare records the deployment against. The project's production branch
+      yields a production deploy; anything else is a preview. Defaults to the ref.
+    required: false
+    default: ''
   checkout:
     description: 'Run actions/checkout first. Set false if the caller already checked out.'
     required: false
@@ -82,9 +114,14 @@ outputs:
   toolchain:
     description: 'The toolchain actually used: uv or pip.'
     value: ${{ steps.detect.outputs.toolchain }}
-  pages-staged:
-    description: 'true when a Pages artifact was uploaded.'
-    value: ${{ steps.detect.outputs.stage-pages }}
+  target:
+    description: 'The deploy target actually used.'
+    value: ${{ steps.detect.outputs.target }}
+  page-url:
+    description: >-
+      Deployed URL. Set for cloudflare-pages; empty for github-pages, whose deploy the
+      calling workflow owns.
+    value: ${{ steps.cloudflare.outputs.page-url }}
 
 runs:
   using: composite
@@ -103,6 +140,11 @@ runs:
         REQUESTED: ${{ inputs.toolchain }}
         REQUIREMENTS: ${{ inputs.requirements }}
         STAGE_PAGES: ${{ inputs.stage-pages }}
+        TARGET: ${{ inputs.target }}
+        CF_PROJECT: ${{ inputs.cloudflare-project }}
+        CF_ACCOUNT: ${{ inputs.cloudflare-account-id }}
+        CF_TOKEN: ${{ inputs.cloudflare-api-token }}
+        REPO_NAME: ${{ github.event.repository.name }}
       run: |
         set -euo pipefail
         case "$REQUESTED" in
@@ -120,9 +162,30 @@ runs:
           echo "::error::No mkdocs.yml in ${PWD} — nothing to build." >&2
           exit 1
         fi
+        # `stage-pages: false` was the old way of saying "build only". Honour it so
+        # existing callers keep working, but let an explicit `target` win.
+        target="$TARGET"
+        if [ "$STAGE_PAGES" = "false" ] && [ "$TARGET" = "github-pages" ]; then
+          target=none
+        fi
+        case "$target" in
+          github-pages|cloudflare-pages|none) : ;;
+          *) echo "::error::target must be github-pages, cloudflare-pages or none (got '$target')" >&2; exit 1 ;;
+        esac
+        if [ "$target" = "cloudflare-pages" ]; then
+          # Fail now, before a build burns two minutes, rather than at the deploy step.
+          [ -n "$CF_ACCOUNT" ] || { echo "::error::target: cloudflare-pages needs cloudflare-account-id." >&2; exit 1; }
+          [ -n "$CF_TOKEN" ] || { echo "::error::target: cloudflare-pages needs cloudflare-api-token." >&2; exit 1; }
+          echo "cf-project=${CF_PROJECT:-${REPO_NAME}-docs}" >> "$GITHUB_OUTPUT"
+        fi
         echo "toolchain=$resolved" >> "$GITHUB_OUTPUT"
-        echo "stage-pages=$STAGE_PAGES" >> "$GITHUB_OUTPUT"
-        echo "Toolchain: $resolved" >> "$GITHUB_STEP_SUMMARY"
+        echo "target=$target" >> "$GITHUB_OUTPUT"
+        if [ "$target" = "github-pages" ]; then
+          echo "stage-pages=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "stage-pages=false" >> "$GITHUB_OUTPUT"
+        fi
+        echo "Toolchain: $resolved | target: $target" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Set up uv
       if: steps.detect.outputs.toolchain == 'uv'
@@ -210,6 +273,38 @@ runs:
           mkdocs build $strict_flag --site-dir "$SITE_DIR"
         fi
         echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
+
+    # Cloudflare Pages needs no GitHub permissions and no `environment:`, so unlike the
+    # GitHub Pages path the action owns the whole deploy rather than handing an artifact
+    # back to the caller. That asymmetry is the reason `target` exists at all.
+    - name: Deploy to Cloudflare Pages
+      id: cloudflare
+      if: steps.detect.outputs.target == 'cloudflare-pages'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        PROJECT: ${{ steps.detect.outputs.cf-project }}
+        SITE_DIR: ${{ inputs.site-dir }}
+        BRANCH: ${{ inputs.cloudflare-branch }}
+      run: |
+        set -euo pipefail
+        branch="${BRANCH:-${GITHUB_REF_NAME:-main}}"
+        # Idempotent by design: creating a project that already exists is not a failure
+        # worth stopping for, and this is what lets a brand-new repo publish with no
+        # manual Cloudflare setup at all.
+        if ! npx --yes wrangler@4 pages project list 2>/dev/null | grep -q "$PROJECT"; then
+          echo "Creating Cloudflare Pages project $PROJECT"
+          npx --yes wrangler@4 pages project create "$PROJECT" --production-branch main || true
+        fi
+        npx --yes wrangler@4 pages deploy "$SITE_DIR" \
+          --project-name "$PROJECT" --branch "$branch" --commit-dirty=true \
+          2>&1 | tee cf-deploy.log
+        url=$(grep -oE 'https://[a-z0-9.-]+[.]pages[.]dev' cf-deploy.log | tail -1 || true)
+        rm -f cf-deploy.log
+        echo "page-url=$url" >> "$GITHUB_OUTPUT"
+        echo "Deployed **$PROJECT** to ${url:-Cloudflare Pages}" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Configure Pages
       if: steps.detect.outputs.stage-pages == 'true'
