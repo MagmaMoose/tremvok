@@ -46,7 +46,6 @@ two that only a workflow can act on.
 
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
-| `target` | `string` | `github-pages` | github-pages \| cloudflare-pages \| none. |
 | `working-directory` | `string` | `.` | Directory containing mkdocs.yml. |
 | `toolchain` | `string` | `auto` | auto \| uv \| pip. auto detects uv.lock, else requirements. |
 | `docs-group` | `string` | `docs` | uv dependency-group holding the docs tooling. |

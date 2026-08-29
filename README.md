@@ -35,11 +35,13 @@ jobs:
       contents: read
       pages: write        # deploy-pages
       id-token: write     # deploy-pages
+    secrets: inherit
     uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
 ```
 
-That is the entire caller. Requires **Settings → Pages → Source = "GitHub Actions"** once
-per repository.
+That is the entire caller. For GitHub Pages instead, call
+`docs-github-pages.yml@v1` with `pages: write` and `id-token: write`, and set
+**Settings → Pages → Source = "GitHub Actions"** once per repository.
 
 ## What it does
 
@@ -62,7 +64,8 @@ per repository.
 | | What it is | Owns |
 | --- | --- | --- |
 | **Action** — `MagmaMoose/tremvok@v1` | composite `action.yml` | Detect · build · stage the Pages artifact |
-| **Reusable workflow** — `MagmaMoose/tremvok/.github/workflows/docs.yml@v1` | `workflow_call` | The above, plus deploy and verify |
+| **Reusable workflow** — `…/docs.yml@v1` | `workflow_call` | The above, plus a Cloudflare Pages deploy and verify |
+| **Reusable workflow** — `…/docs-github-pages.yml@v1` | `workflow_call` | The above, plus a GitHub Pages deploy and verify |
 
 A composite action **cannot declare `permissions:` or `environment:`**, and
 `actions/deploy-pages` requires `pages: write`, `id-token: write` and the `github-pages`
