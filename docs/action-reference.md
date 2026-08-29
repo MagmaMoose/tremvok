@@ -28,7 +28,7 @@ workflow, not this page. For the task-shaped version, see [Setup](setup.md).
 | `lint` | `true` | Run the repo-shape checks (README budget and section order, licence agreement, link targets, Marketplace preflight, INHERIT clobber) before building. These are the rules nothing else covers; --strict already catches broken internal links. |
 | `profile` | `auto` | Repo profile for the shape checks: auto \| action \| service \| spec. |
 | `readme-budget` | `0` | Override the README line budget. 0 uses the profile default. |
-| `markdownlint` | `true` | Run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. Node is preinstalled on GitHub runners, so this costs an npx download and nothing else. |
+| `markdownlint` | `true` | Run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN\_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. Node is preinstalled on GitHub runners, so this costs an npx download and nothing else. |
 
 ## Action outputs
 
