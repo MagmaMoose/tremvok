@@ -27,3 +27,17 @@ def test_cell_strips_leading_trailing_whitespace() -> None:
 
 def test_cell_pipe_and_whitespace_combined() -> None:
     assert cell("foo  |  bar") == r"foo \| bar"  # nosec: B101
+
+
+def test_angle_brackets_outside_code_spans_are_escaped() -> None:
+    """`<repo>` outside backticks is parsed as an HTML tag and vanishes from the page.
+
+    Same silent content loss as an unescaped pipe: markdownlint reports MD033, and what
+    actually renders is "Defaults to -docs".
+    """
+    assert cell("Defaults to <repo>-docs.") == "Defaults to &lt;repo&gt;-docs."  # nosec: B101
+
+
+def test_angle_brackets_inside_code_spans_are_left_alone() -> None:
+    """Inside a code span they are already literal; `&lt;` there renders as the entity."""
+    assert cell("Defaults to `<repo>-docs`.") == "Defaults to `<repo>-docs`."  # nosec: B101

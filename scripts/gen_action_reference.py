@@ -29,6 +29,28 @@ def cell(text: str | None) -> str:
     what rendered: the tail of every such description was dropped from the page.
     """
     collapsed = re.sub(r"\s+", " ", (text or "").strip()).replace("|", r"\|")
+
+    # Everything below is one lesson learned three times: an action description is prose
+    # written for `--help`, and dropping it into a markdown table renders it as markup.
+    # Each of these silently DELETED content from the published page rather than looking
+    # wrong, which is why they are escaped here rather than fixed per description:
+    #
+    #   `|`        starts a new column, truncating the row
+    #   `<repo>`   parses as an HTML tag and vanishes
+    #   `* a`      parses as emphasis, eating the asterisks
+    #
+    # Escaping happens only OUTSIDE code spans: inside backticks these are already
+    # literal, and an escape there renders as the escape.
+    parts = collapsed.split("`")
+    for i in range(0, len(parts), 2):  # even indexes are outside code spans
+        chunk = parts[i].replace("<", "&lt;").replace(">", "&gt;")
+        chunk = re.sub(r"([*_])", r"\\\1", chunk)
+        # A bare URL is valid markdown but escapes the theme's link styling, so give it
+        # a code span rather than leaving markdownlint to complain about every one.
+        chunk = re.sub(r"(?<!\]\()(?<!`)(https?://[^\s)\]]+)", r"`\1`", chunk)
+        parts[i] = chunk
+    collapsed = "`".join(parts)
+
     # An empty cell renders as `|  |`, which markdownlint flags as bad column style and
     # which reads as a missing value rather than a deliberate one.
     return collapsed or "—"
