@@ -294,11 +294,11 @@ runs:
         # Idempotent by design: creating a project that already exists is not a failure
         # worth stopping for, and this is what lets a brand-new repo publish with no
         # manual Cloudflare setup at all.
-        if ! npx --yes wrangler@4 pages project list 2>/dev/null | grep -q "$PROJECT"; then
+        if ! npx --yes wrangler@4.20.0 pages project list 2>/dev/null | grep -Fxq "$PROJECT"; then
           echo "Creating Cloudflare Pages project $PROJECT"
-          npx --yes wrangler@4 pages project create "$PROJECT" --production-branch main || true
+          npx --yes wrangler@4.20.0 pages project create "$PROJECT" --production-branch main
         fi
-        npx --yes wrangler@4 pages deploy "$SITE_DIR" \
+        npx --yes wrangler@4.20.0 pages deploy "$SITE_DIR" \
           --project-name "$PROJECT" --branch "$branch" --commit-dirty=true \
           2>&1 | tee cf-deploy.log
         url=$(grep -oE 'https://[a-z0-9.-]+[.]pages[.]dev' cf-deploy.log | tail -1 || true)

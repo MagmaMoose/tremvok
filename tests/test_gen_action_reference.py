@@ -35,9 +35,9 @@ def test_angle_brackets_outside_code_spans_are_escaped() -> None:
     Same silent content loss as an unescaped pipe: markdownlint reports MD033, and what
     actually renders is "Defaults to -docs".
     """
-    assert cell("Defaults to <repo>-docs.") == "Defaults to &lt;repo&gt;-docs."
+    assert cell("Defaults to <repo>-docs.") == "Defaults to &lt;repo&gt;-docs."  # nosec: B101
 
 
 def test_angle_brackets_inside_code_spans_are_left_alone() -> None:
     """Inside a code span they are already literal; `&lt;` there renders as the entity."""
-    assert cell("Defaults to `<repo>-docs`.") == "Defaults to `<repo>-docs`."
+    assert cell("Defaults to `<repo>-docs`.") == "Defaults to `<repo>-docs`."  # nosec: B101

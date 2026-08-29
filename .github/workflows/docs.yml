@@ -125,7 +125,7 @@ jobs:
       target: ${{ steps.docs.outputs.target }}
     steps:
       - id: docs
-        uses: MagmaMoose/tremvok@v1
+        uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           # `publish: false` overrides target, so a pull-request run can never deploy by
           # accident no matter what the caller passed.
