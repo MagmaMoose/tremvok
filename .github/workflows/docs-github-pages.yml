@@ -1,22 +1,23 @@
-name: Docs
+name: Docs (GitHub Pages)
 
-# Reusable workflow: build an MkDocs site, publish it, verify it is actually serving.
+# Reusable workflow: build an MkDocs site, publish it to GitHub Pages, verify it serves.
 #
-# Builds, deploys to Cloudflare Pages, and verifies the site actually serves.
+# For Cloudflare Pages use docs.yml instead. The split is not stylistic: a called
+# workflow's job permissions must be a SUBSET of what the caller granted, and GitHub
+# checks the union of every job at STARTUP — a conditionally-skipped job still counts.
+# One workflow carrying both targets would therefore force a Cloudflare caller to grant
+# `pages: write` and `id-token: write` for a job that never runs.
 #
-# For GitHub Pages use docs-github-pages.yml instead. The split is not stylistic: a
-# called workflow's job permissions must be a SUBSET of what the caller granted, and
-# GitHub checks the union of every job at STARTUP — a conditionally-skipped job still
-# counts. One workflow carrying both targets therefore forces every caller to grant
-# `pages: write` and `id-token: write` even when deploying to Cloudflare, which needs
-# neither. Two workflows keep each caller at least privilege.
+# The deploy lives here rather than in the action because a composite action cannot
+# declare `permissions:` or `environment:`, and actions/deploy-pages needs both.
 #
 #   jobs:
 #     docs:
 #       permissions:
 #         contents: read
-#       secrets: inherit
-#       uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
+#         pages: write
+#         id-token: write
+#       uses: MagmaMoose/tremvok/.github/workflows/docs-github-pages.yml@v1
 
 on:
   workflow_call:
@@ -66,11 +67,6 @@ on:
         type: number
         required: false
         default: 0
-      cloudflare-project:
-        description: 'Cloudflare Pages project name. Defaults to <repo>-docs.'
-        type: string
-        required: false
-        default: ''
       runs-on:
         description: 'Runner label for every job.'
         type: string
@@ -90,20 +86,11 @@ on:
         type: boolean
         required: false
         default: true
-    secrets:
-      CLOUDFLARE_ACCOUNT_ID:
-        description: 'Cloudflare account id. Required for target: cloudflare-pages.'
-        required: false
-      CLOUDFLARE_API_TOKEN:
-        description: 'Cloudflare API token with Pages:Edit. Required for target: cloudflare-pages.'
-        required: false
     outputs:
       page-url:
         description: 'The published site URL.'
-        value: ${{ jobs.build.outputs.page-url }}
+        value: ${{ jobs.deploy.outputs.page-url }}
 
-# One deployment at a time, and never cancel one midway: a cancelled deploy can leave the
-# site serving a half-uploaded artifact.
 concurrency:
   group: docs-${{ github.repository }}
   cancel-in-progress: false
@@ -112,16 +99,12 @@ jobs:
   build:
     name: Build site
     runs-on: ${{ inputs.runs-on }}
-    outputs:
-      page-url: ${{ steps.docs.outputs.page-url }}
-      target: ${{ steps.docs.outputs.target }}
     steps:
-      - id: docs
-        uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+      - uses: MagmaMoose/tremvok@v1
         with:
-          # `publish: false` means build and check only, which is what a pull-request run
-          # wants. It can never deploy by accident.
-          target: ${{ inputs.publish && 'cloudflare-pages' || 'none' }}
+          # `publish: false` means build and check only. It can never stage an artifact
+          # by accident, so the deploy below has nothing to publish.
+          target: ${{ inputs.publish && 'github-pages' || 'none' }}
           working-directory: ${{ inputs.working-directory }}
           toolchain: ${{ inputs.toolchain }}
           docs-group: ${{ inputs.docs-group }}
@@ -131,20 +114,34 @@ jobs:
           markdownlint: ${{ inputs.markdownlint }}
           profile: ${{ inputs.profile }}
           readme-budget: ${{ inputs.readme-budget }}
-          cloudflare-project: ${{ inputs.cloudflare-project }}
-          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    if: inputs.publish
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 
   verify:
     name: Verify it is serving
-    needs: build
+    needs: deploy
     if: inputs.publish && inputs.verify
     runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Request the published URL
         shell: bash
         env:
-          PAGE_URL: ${{ needs.build.outputs.page-url }}
+          PAGE_URL: ${{ needs.deploy.outputs.page-url }}
         run: |
           set -euo pipefail
           if [ -z "$PAGE_URL" ]; then

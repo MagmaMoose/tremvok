@@ -13,31 +13,51 @@ You also need a `mkdocs.yml` at the repository root (or wherever
 - a `uv.lock` plus a `docs` dependency-group in `pyproject.toml`, or
 - a `docs/requirements.txt` pinning `mkdocs-material`.
 
-## The caller workflow
+## Pick a workflow for your host
 
-```yaml
-# .github/workflows/docs.yml
-name: Docs
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - '.github/workflows/docs.yml'
-  workflow_dispatch:
+There are two reusable workflows, and which one you call decides what permissions you
+must grant.
 
-jobs:
-  docs:
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
-```
+=== "Cloudflare Pages"
 
-The three permissions are required and must be declared **here**, by the caller — see
-[why](index.md#why-two-surfaces).
+    ```yaml
+    # .github/workflows/docs.yml
+    name: Docs
+    on:
+      push:
+        branches: [main]
+        paths: ['docs/**', 'mkdocs.yml']
+      workflow_dispatch:
+
+    jobs:
+      docs:
+        permissions:
+          contents: read
+        secrets: inherit          # CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN
+        uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
+    ```
+
+=== "GitHub Pages"
+
+    ```yaml
+    jobs:
+      docs:
+        permissions:
+          contents: read
+          pages: write
+          id-token: write
+        uses: MagmaMoose/tremvok/.github/workflows/docs-github-pages.yml@v1
+    ```
+
+    Requires **Settings → Pages → Source → "GitHub Actions"**.
+
+!!! info "Why two workflows rather than a `target:` input"
+
+    A called workflow's job permissions must be a **subset of what the caller granted**,
+    and GitHub checks the union of every job at **startup** — a conditionally-skipped job
+    still counts. A single workflow carrying both targets would therefore force every
+    Cloudflare caller to grant `pages: write` and `id-token: write` for a job that never
+    runs, or fail to start at all. Two workflows keep each caller at least privilege.
 
 ## Checking a pull request without publishing
 
