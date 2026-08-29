@@ -100,7 +100,10 @@ jobs:
     name: Build site
     runs-on: ${{ inputs.runs-on }}
     steps:
-      - uses: MagmaMoose/tremvok@v1
+      # Self-reference, so a SHA pin is a chicken-and-egg: the SHA of the commit that
+      # would contain it does not exist until after the commit is made. `@v1` is the
+      # correct ref here and it moves with each release of this same repo.
+      - uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           # `publish: false` means build and check only. It can never stage an artifact
           # by accident, so the deploy below has nothing to publish.
