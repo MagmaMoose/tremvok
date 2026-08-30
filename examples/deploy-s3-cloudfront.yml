@@ -31,7 +31,7 @@ jobs:
       # The build stays yours. Tremvok picks up from here.
       - run: npm ci && npm run build
 
-      - uses: MagmaMoose/tremvok@v1
+      - uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           target: s3-cloudfront
           artifact-path: dist
