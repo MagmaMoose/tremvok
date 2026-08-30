@@ -21,22 +21,54 @@ import json
 import sys
 
 
+def _normalise(value: str) -> str:
+    """A bare lowercase host: no scheme, no path, no trailing dot or slash."""
+    value = (value or "").strip().lower().rstrip("/")
+    for prefix in ("https://", "http://"):
+        if value.startswith(prefix):
+            value = value[len(prefix) :]
+    return value.split("/", 1)[0].rstrip(".")
+
+
 def covers(domain: str, hostname: str) -> bool:
     """True when an Access application on ``domain`` protects ``hostname``.
 
     An application on a parent domain covers its subdomains, which is how one
-    application on a custom domain can gate every docs site beneath it.
+    application on a custom domain gates every docs site beneath it. A wildcard app
+    (``*.example.com``) is the same rule written differently, and Cloudflare does allow
+    it, so it is matched too — otherwise a site that IS gated reads as ungated and the
+    deploy refuses for no reason anyone can see.
     """
-    domain = (domain or "").strip().lower().rstrip("/")
-    hostname = (hostname or "").strip().lower().rstrip("/")
+    domain = _normalise(domain)
+    hostname = _normalise(hostname)
     if not domain or not hostname:
         return False
-    # Strip a scheme and any path, so an app recorded as a URL still matches.
-    for prefix in ("https://", "http://"):
-        if domain.startswith(prefix):
-            domain = domain[len(prefix) :]
-    domain = domain.split("/", 1)[0]
+    if domain.startswith("*."):
+        # `*.example.com` covers a subdomain but not the apex, which is Cloudflare's rule.
+        return hostname.endswith(domain[1:])
     return hostname == domain or hostname.endswith("." + domain)
+
+
+def _app_domains(app: dict) -> list[str]:
+    """Every hostname an application claims.
+
+    `domain` is the classic field. Newer applications carry their hostnames in
+    `destinations[]` (and `self_hosted_domains` before that), so reading only `domain`
+    reports a genuinely gated site as ungated.
+    """
+    found: list[str] = []
+    value = app.get("domain")
+    if isinstance(value, str):
+        found.append(value)
+    for key in ("self_hosted_domains", "destinations"):
+        for entry in app.get(key) or []:
+            if isinstance(entry, str):
+                found.append(entry)
+            elif isinstance(entry, dict):
+                uri = entry.get("uri") or entry.get("hostname") or entry.get("domain")
+                if isinstance(uri, str):
+                    found.append(uri)
+    return found
 
 
 def verdict(payload: str, hostname: str) -> str:
@@ -54,7 +86,9 @@ def verdict(payload: str, hostname: str) -> str:
     if not isinstance(apps, list):
         return "ERROR:unreadable"
     for app in apps:
-        if isinstance(app, dict) and covers(app.get("domain", ""), hostname):
+        if not isinstance(app, dict):
+            continue
+        if any(covers(d, hostname) for d in _app_domains(app)):
             return "YES"
     return "NO"
 

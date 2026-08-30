@@ -83,3 +83,35 @@ def test_a_malformed_app_entry_does_not_grant_access() -> None:
         verdict(json.dumps({"success": True, "result": ["nonsense", {}, {"domain": None}]}), HOST)
         == "NO"
     )
+
+
+# ------------------------------------------------- shapes Nievah flagged on review
+
+
+def test_wildcard_app_covers_a_subdomain() -> None:
+    """`*.magmamoose.com` gates every docs site beneath it, and must read as covered.
+
+    Missing this fails closed rather than open, but the refusal is baffling: the site
+    genuinely IS gated and the deploy keeps refusing.
+    """
+    assert covers("*.magmamoose.com", "caldrith-docs.magmamoose.com") is True  # nosec: B101
+
+
+def test_wildcard_does_not_cover_the_apex() -> None:
+    """Cloudflare's own rule: `*.example.com` is subdomains, not the apex."""
+    assert covers("*.magmamoose.com", "magmamoose.com") is False  # nosec: B101
+
+
+def test_hostname_in_destinations_is_recognised() -> None:
+    """Newer applications carry hostnames in `destinations[]`, not `domain`."""
+    app = {"destinations": [{"type": "public", "uri": HOST}]}
+    assert verdict(json.dumps({"success": True, "result": [app]}), HOST) == "YES"  # nosec: B101
+
+
+def test_hostname_in_self_hosted_domains_is_recognised() -> None:
+    app = {"domain": "something-else.pages.dev", "self_hosted_domains": [HOST]}
+    assert verdict(json.dumps({"success": True, "result": [app]}), HOST) == "YES"  # nosec: B101
+
+
+def test_a_trailing_dot_still_matches() -> None:
+    assert covers("caldrith-docs.pages.dev.", HOST) is True  # nosec: B101

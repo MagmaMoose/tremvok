@@ -328,7 +328,7 @@ runs:
       run: |
         set -uo pipefail
         resp=$(curl -sS -H "Authorization: Bearer $CF_TOKEN" \
-                 "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/access/apps" 2>/dev/null || printf '')
+                 "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/access/apps?per_page=1000" 2>/dev/null || printf '')
         covered=$(printf '%s' "$resp" | python3 "$CHECK" "$HOST_TO_CHECK" 2>/dev/null || printf 'ERROR:unreadable')
         case "$covered" in
           YES)
