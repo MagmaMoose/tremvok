@@ -57,7 +57,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S", "BLE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "scripts"]
 addopts = "-ra"
 
 # python-semantic-release, driven by Diatreme on release (versioning-tool:
