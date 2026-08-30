@@ -299,10 +299,26 @@ runs:
         # Idempotent by design: creating a project that already exists is not a failure
         # worth stopping for, and this is what lets a brand-new repo publish with no
         # manual Cloudflare setup at all.
-        if ! npx --yes wrangler@4.20.0 pages project list 2>/dev/null | grep -Fxq "$PROJECT"; then
-          echo "Creating Cloudflare Pages project $PROJECT"
-          npx --yes wrangler@4.20.0 pages project create "$PROJECT" --production-branch main
+        # Create the project if it is not there yet, and treat "already exists" as the
+        # success it is. Detecting first by parsing `project list` was the previous
+        # approach and it broke twice: the output is a table, so a whole-line grep never
+        # matched, and every run then tried to create a project that existed and failed
+        # the deploy. Attempting the create and reading the error is the honest version —
+        # anything OTHER than already-exists still fails loudly.
+        create_log=$(mktemp)
+        create_args=(pages project create "$PROJECT" --production-branch main)
+        if ! npx --yes wrangler@4.20.0 "${create_args[@]}" >"$create_log" 2>&1; then
+          if grep -qiE 'already exists|8000002' "$create_log"; then
+            echo "Cloudflare Pages project $PROJECT already exists; deploying to it."
+          else
+            echo "::error::Could not create Cloudflare Pages project $PROJECT" >&2
+            cat "$create_log" >&2
+            rm -f "$create_log"
+            exit 1
+          fi
         fi
+        rm -f "$create_log"
+
         npx --yes wrangler@4.20.0 pages deploy "$SITE_DIR" \
           --project-name "$PROJECT" --branch "$branch" --commit-dirty=true \
           2>&1 | tee cf-deploy.log
