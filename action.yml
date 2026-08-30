@@ -72,6 +72,15 @@ inputs:
       Pass a secret, never a literal.
     required: false
     default: ''
+  require-access:
+    description: >-
+      Refuse to deploy unless a Cloudflare Access application already covers the site's
+      hostname. Set true for anything whose docs must not be world-readable: a Pages
+      project is served on the open internet at <project>.pages.dev by default, so "the
+      repo is private" gates nothing on its own. This makes the gate an enforced
+      precondition rather than a flag someone remembered to set.
+    required: false
+    default: 'false'
   cloudflare-branch:
     description: >-
       Branch Cloudflare records the deployment against. The project's production branch
@@ -298,6 +307,43 @@ runs:
     # Cloudflare Pages needs no GitHub permissions and no `environment:`, so unlike the
     # GitHub Pages path the action owns the whole deploy rather than handing an artifact
     # back to the caller. That asymmetry is the reason `target` exists at all.
+    # Runs BEFORE the deploy, deliberately. A Cloudflare Pages project is served on the
+    # open internet at <project>.pages.dev by default, so "the repo is private" gates
+    # nothing: the moment content is uploaded it is public. Checking afterwards would be
+    # checking after the leak.
+    #
+    # This VERIFIES rather than creates. The org's Cloudflare token has Access read but
+    # not Access write (probed: GET /access/apps returns 200, POST returns 403 code 1010),
+    # so the application itself is created once by a human. What this guarantees is that
+    # nothing publishes until that has happened.
+    - name: Require Cloudflare Access
+      id: access
+      if: steps.detect.outputs.target == 'cloudflare-pages' && inputs.require-access == 'true'
+      shell: bash
+      env:
+        CF_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CF_ACCOUNT: ${{ inputs.cloudflare-account-id }}
+        HOST_TO_CHECK: ${{ steps.detect.outputs.cf-project }}.pages.dev
+        CHECK: ${{ github.action_path }}/scripts/access_covers.py
+      run: |
+        set -uo pipefail
+        resp=$(curl -sS -H "Authorization: Bearer $CF_TOKEN" \
+                 "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/access/apps" 2>/dev/null || printf '')
+        covered=$(printf '%s' "$resp" | python3 "$CHECK" "$HOST_TO_CHECK" 2>/dev/null || printf 'ERROR:unreadable')
+        case "$covered" in
+          YES)
+            echo "Cloudflare Access covers $HOST_TO_CHECK; publishing." ;;
+          NO)
+            echo "::error::require-access is set, but no Cloudflare Access application covers $HOST_TO_CHECK. A Pages project is public on the open internet by default, so publishing now would expose these docs. Create an Access application for that hostname (or a parent domain) and re-run." >&2
+            exit 1 ;;
+          ERROR:denied)
+            echo "::error::Cannot verify Cloudflare Access: the API token was refused. Refusing to publish rather than assuming the site is gated." >&2
+            exit 1 ;;
+          *)
+            echo "::error::Cannot verify Cloudflare Access (unreadable API response). Refusing to publish rather than assuming the site is gated." >&2
+            exit 1 ;;
+        esac
+
     - name: Deploy to Cloudflare Pages
       id: cloudflare
       if: steps.detect.outputs.target == 'cloudflare-pages'

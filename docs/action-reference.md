@@ -7,7 +7,7 @@ workflow, not this page. For the task-shaped version, see [Setup](setup.md).
 
 ## Action inputs
 
-`MagmaMoose/tremvok@v1` — all 18 inputs are optional.
+`MagmaMoose/tremvok@v1` — all 19 inputs are optional.
 
 | Input | Default | Description |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ workflow, not this page. For the task-shaped version, see [Setup](setup.md).
 | `cloudflare-project` | not set | Cloudflare Pages project name. Defaults to `<repo>-docs`. Created on first deploy if it does not already exist. |
 | `cloudflare-account-id` | not set | Cloudflare account id. Required for target: cloudflare-pages. |
 | `cloudflare-api-token` | not set | Cloudflare API token with Pages:Edit. Required for target: cloudflare-pages. Pass a secret, never a literal. |
+| `require-access` | `false` | Refuse to deploy unless a Cloudflare Access application already covers the site's hostname. Set true for anything whose docs must not be world-readable: a Pages project is served on the open internet at &lt;project&gt;.pages.dev by default, so "the repo is private" gates nothing on its own. This makes the gate an enforced precondition rather than a flag someone remembered to set. |
 | `cloudflare-branch` | not set | Branch Cloudflare records the deployment against. The project's production branch yields a production deploy; anything else is a preview. Defaults to the ref. |
 | `checkout` | `true` | Run actions/checkout first. Set false if the caller already checked out. |
 | `lint` | `true` | Run the repo-shape checks (README budget and section order, licence agreement, link targets, Marketplace preflight, INHERIT clobber) before building. These are the rules nothing else covers; --strict already catches broken internal links. |
@@ -56,6 +57,7 @@ two that only a workflow can act on.
 | `markdownlint` | `boolean` | `True` | Run markdownlint when a markdownlint config is present. |
 | `profile` | `string` | `auto` | Repo profile for the shape checks: auto \| action \| service \| spec. |
 | `readme-budget` | `number` | `0` | Override the README line budget. 0 uses the profile default. |
+| `require-access` | `boolean` | `False` | Refuse to deploy unless a Cloudflare Access application already covers the site's hostname. Set true wherever the docs must not be world-readable. |
 | `cloudflare-project` | `string` | not set | Cloudflare Pages project name. Defaults to &lt;repo&gt;-docs. |
 | `runs-on` | `string` | `ubuntu-latest` | Runner label for every job. |
 | `publish` | `boolean` | `True` | Deploy at all. false builds and checks without publishing, which is what a pull-request run wants. |

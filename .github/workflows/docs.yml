@@ -66,6 +66,13 @@ on:
         type: number
         required: false
         default: 0
+      require-access:
+        description: >-
+          Refuse to deploy unless a Cloudflare Access application already covers the
+          site's hostname. Set true wherever the docs must not be world-readable.
+        type: boolean
+        required: false
+        default: false
       cloudflare-project:
         description: 'Cloudflare Pages project name. Defaults to <repo>-docs.'
         type: string
@@ -132,6 +139,7 @@ jobs:
           profile: ${{ inputs.profile }}
           readme-budget: ${{ inputs.readme-budget }}
           cloudflare-project: ${{ inputs.cloudflare-project }}
+          require-access: ${{ inputs.require-access }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
