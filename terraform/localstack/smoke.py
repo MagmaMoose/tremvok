@@ -384,7 +384,7 @@ def _run_script(name: str, **env: str) -> int:
         "GITHUB_OUTPUT": str(ROOT / "dist" / "smoke-outputs.txt"),
         **env,
     }
-    result = subprocess.run(  # noqa: S603  # nosec B603
+    result = subprocess.run(  # noqa: S603  # nosec B603 B607
         ["bash", str(ROOT / "scripts" / name)],  # noqa: S607  # nosec B607
         env=environment,
         capture_output=True,

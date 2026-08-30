@@ -18,7 +18,9 @@ Linux wheels and the test runner may not be Linux.
 from __future__ import annotations
 
 import os
-import subprocess
+# nosec B404 — this test builds the real Lambda zip in a subprocess on purpose;
+# every call below is list-form (shell=False) with sys.executable as argv[0].
+import subprocess  # nosec B404
 import sys
 import zipfile
 from pathlib import Path
@@ -31,7 +33,7 @@ BUILDER = ROOT / "scripts" / "build_api_zip.py"
 
 def build(tmp_path: Path, arch: str) -> tuple[Path, str]:
     out = tmp_path / f"{arch}.zip"
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603
         [sys.executable, str(BUILDER), "--arch", arch, "--out", str(out)],
         cwd=ROOT,
         capture_output=True,
@@ -98,7 +100,7 @@ def test_the_builder_refuses_to_run_without_uv(tmp_path):
     commit — 2796 KiB one way, 2812 KiB the other — which is exactly the failure the
     determinism guarantee exists to prevent. Refusing is the correct behaviour."""
     scrubbed = {**os.environ, "PATH": "/usr/bin:/bin"}
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603
         [sys.executable, str(BUILDER), "--out", str(tmp_path / "x.zip")],
         cwd=ROOT,
         capture_output=True,

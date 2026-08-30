@@ -1,0 +1,34 @@
+# Bandit rules config, read by MegaLinter (and therefore by Chargate) BEFORE its packaged
+# default: the PYTHON_BANDIT descriptor declares `config_file_name: .bandit.yml` and resolves
+# it repo-root-first, passing it as `-c .bandit.yml`. Ported from magmamoose/chargate's own
+# .bandit.yml, which measured this against bandit 1.9.4 — the version MegaLinter v10 ships.
+#
+# WHY: B101 ("assert used") fires on every pytest assertion, on a gate that blocks the merge.
+# `assert` is the pytest idiom; the finding is not real in a test.
+#
+# The two obvious alternatives are both wrong, and chargate shipped each before landing here:
+#
+#   * `PYTHON_BANDIT_ARGUMENTS: --skip B101` turns B101 off EVERYWHERE, src/ included —
+#     where a bare `assert` is a genuine defect, because `python -O` strips assert statements
+#     and a validation check written as one silently disappears.
+#   * `[tool.bandit] skips = ["B101"]` in pyproject.toml does nothing at all. MegaLinter
+#     invokes bandit as `-c <config_file_name>` and never as `-c pyproject.toml`.
+#
+# B101's `assert_used` plugin fnmatches each skip entry against the filename being scanned,
+# which is the precision the other two lack: the rule stays fully armed on application code
+# and goes quiet only under a tests/ directory.
+#
+# KEEP BOTH PATTERNS. Which one fires depends on the shape of the paths bandit is handed,
+# and MegaLinter's cli_lint_mode decides that, not us — bandit may see "tests/test_x.py",
+# "./tests/test_x.py" or an absolute "/tmp/lint/tests/...". Chargate measured two runs that
+# disagreed about which pattern did the work. Deleting the "redundant" one is a coin flip on
+# removing the load-bearing half.
+#
+# Every other plugin is deliberately absent: bandit falls back to its built-in defaults for
+# anything a config file does not mention, so omitting them does NOT disarm them. B105/B106/
+# B108 and friends still fire, here and in tests — which is why the findings this repo does
+# carry have their own inline, reasoned `# nosec` rather than hiding behind this file.
+assert_used:
+  skips:
+    - "*/tests/*"
+    - "tests/*"
