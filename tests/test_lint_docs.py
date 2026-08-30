@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from lint_docs import LINE_BUDGET, detect_profile, main
 
 APACHE = "Apache License\nVersion 2.0, January 2004\n"

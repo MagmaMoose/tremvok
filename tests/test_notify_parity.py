@@ -18,7 +18,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from tremvok import notify
 from tremvok.models import DeploymentRecord
 
