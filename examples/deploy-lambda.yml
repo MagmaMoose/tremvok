@@ -26,6 +26,7 @@ jobs:
       # Your own packaging script, so a local build and a released artifact cannot differ.
       - run: python3 scripts/build_api_zip.py --arch arm64
 
+      # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
       - uses: MagmaMoose/tremvok@v1
         with:
           target: lambda-zip

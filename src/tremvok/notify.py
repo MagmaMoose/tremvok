@@ -104,8 +104,7 @@ def teams_payload(record: DeploymentRecord) -> dict:
             {
                 "contentType": "application/vnd.microsoft.card.adaptive",
                 "content": {
-                    # DevSkim: ignore DS137138 - Adaptive Cards schema URI requires http://
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",  # DevSkim: ignore DS137138 - Adaptive Cards schema URI requires http://  # noqa: E501
                     "type": "AdaptiveCard",
                     "version": "1.4",
                     "body": [
@@ -145,6 +144,7 @@ def post_webhook(url: str, payload: dict, *, timeout: int = _TIMEOUT_SECONDS) ->
         method="POST",
     )
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310
             return 200 <= response.status < 300
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):

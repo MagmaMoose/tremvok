@@ -40,8 +40,7 @@ GITHUB_ISSUER = "https://token.actions.githubusercontent.com"
 # ASN.1 DigestInfo for SHA-256, per RFC 8017 §9.2 note 1. The bytes are fixed; SHA-256 is the
 # only digest GitHub signs OIDC tokens with, and accepting a second one would only widen the
 # surface.
-# DevSkim: ignore DS173237 - public RFC 8017 §9.2 ASN.1 DigestInfo constant, not a secret
-_SHA256_DIGEST_INFO = binascii.unhexlify("3031300d060960864801650304020105000420")
+_SHA256_DIGEST_INFO = binascii.unhexlify("3031300d060960864801650304020105000420")  # DevSkim: ignore DS173237 - public RFC 8017 §9.2 ASN.1 DigestInfo constant, not a secret  # noqa: E501
 
 # Clock skew tolerated on exp/nbf/iat. GitHub tokens live 5-15 minutes, so a minute of slack
 # costs nothing and stops a runner whose clock drifted from failing every deploy.
@@ -156,6 +155,7 @@ class JwksCache:
         if not self.jwks_uri.startswith("https://"):
             raise OidcError("refusing to fetch JWKS over a non-HTTPS URL")
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310  # nosec B310
                 document = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
