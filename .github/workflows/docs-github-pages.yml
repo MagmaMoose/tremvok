@@ -1,0 +1,171 @@
+name: Docs (GitHub Pages)
+
+# Reusable workflow: build an MkDocs site, publish it to GitHub Pages, verify it serves.
+#
+# For Cloudflare Pages use docs.yml instead. The split is not stylistic: a called
+# workflow's job permissions must be a SUBSET of what the caller granted, and GitHub
+# checks the union of every job at STARTUP — a conditionally-skipped job still counts.
+# One workflow carrying both targets would therefore force a Cloudflare caller to grant
+# `pages: write` and `id-token: write` for a job that never runs.
+#
+# The deploy lives here rather than in the action because a composite action cannot
+# declare `permissions:` or `environment:`, and actions/deploy-pages needs both.
+#
+#   jobs:
+#     docs:
+#       permissions:
+#         contents: read
+#         pages: write
+#         id-token: write
+#       uses: MagmaMoose/tremvok/.github/workflows/docs-github-pages.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing mkdocs.yml.'
+        type: string
+        required: false
+        default: '.'
+      toolchain:
+        description: 'auto | uv | pip. auto detects uv.lock, else requirements.'
+        type: string
+        required: false
+        default: 'auto'
+      docs-group:
+        description: 'uv dependency-group holding the docs tooling.'
+        type: string
+        required: false
+        default: 'docs'
+      requirements:
+        description: 'Requirements file pinning the docs build (pip toolchain).'
+        type: string
+        required: false
+        default: 'docs/requirements.txt'
+      python-version:
+        description: 'Python version used to build the site.'
+        type: string
+        required: false
+        default: '3.12'
+      lint:
+        description: 'Run the repo-shape checks before building.'
+        type: boolean
+        required: false
+        default: true
+      markdownlint:
+        description: 'Run markdownlint when a markdownlint config is present.'
+        type: boolean
+        required: false
+        default: true
+      profile:
+        description: 'Repo profile for the shape checks: auto | action | service | spec.'
+        type: string
+        required: false
+        default: 'auto'
+      readme-budget:
+        description: 'Override the README line budget. 0 uses the profile default.'
+        type: number
+        required: false
+        default: 0
+      runs-on:
+        description: 'Runner label for every job.'
+        type: string
+        required: false
+        default: 'ubuntu-latest'
+      publish:
+        description: >-
+          Deploy at all. false builds and checks without publishing, which is what a
+          pull-request run wants.
+        type: boolean
+        required: false
+        default: true
+      verify:
+        description: >-
+          After deploying, request the published URL and fail on a non-2xx. A deploy that
+          reports success while the site 404s is the failure mode worth catching.
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      page-url:
+        description: 'The published site URL.'
+        value: ${{ jobs.deploy.outputs.page-url }}
+
+concurrency:
+  group: docs-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      # Self-reference, so a SHA pin is a chicken-and-egg: the SHA of the commit that
+      # would contain it does not exist until after the commit is made. `@v1` is the
+      # correct ref here and it moves with each release of this same repo.
+      - uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          # `publish: false` means build and check only. It can never stage an artifact
+          # by accident, so the deploy below has nothing to publish.
+          target: ${{ inputs.publish && 'github-pages' || 'none' }}
+          working-directory: ${{ inputs.working-directory }}
+          toolchain: ${{ inputs.toolchain }}
+          docs-group: ${{ inputs.docs-group }}
+          requirements: ${{ inputs.requirements }}
+          python-version: ${{ inputs.python-version }}
+          lint: ${{ inputs.lint }}
+          markdownlint: ${{ inputs.markdownlint }}
+          profile: ${{ inputs.profile }}
+          readme-budget: ${{ inputs.readme-budget }}
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    if: inputs.publish
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+  verify:
+    name: Verify it is serving
+    needs: deploy
+    if: inputs.publish && inputs.verify
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Request the published URL
+        shell: bash
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page-url }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PAGE_URL" ]; then
+            echo "::warning::No deployment URL was reported; nothing to verify."
+            exit 0
+          fi
+          # A deploy reports success once the platform ACCEPTS the artifact, which is not
+          # the same as the site answering. Ask it, with backoff for propagation.
+          # A first deploy has to wait for the host to resolve, so this backs off to
+          # ~4 minutes rather than the ~1 it used to. `|| true` and the default keep a
+          # connection failure reporting as a single `000` — appending another with
+          # `|| echo 000` produced the nonsense "000000" this used to print.
+          for attempt in 1 2 3 4 5 6 7 8; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$PAGE_URL" || true)
+            code=${code:-000}
+            if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+              echo "$PAGE_URL -> $code" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "attempt $attempt: $PAGE_URL -> $code, retrying" >&2
+            sleep $((attempt * 8))
+          done
+          echo "::error::Deployed, but $PAGE_URL never answered (last: $code)." >&2
+          exit 1

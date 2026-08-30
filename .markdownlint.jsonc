@@ -1,0 +1,61 @@
+// Markdown style for MagmaMoose docs.
+//
+// Provisioned by Caldrith from MagmaMoose/admin (files/docs/markdownlint.jsonc).
+// Run by the Tremvok docs action, NOT by MegaLinter: MegaLinter's `security` flavor
+// carries no markdown linter, and MARKDOWN_MARKDOWNLINT emits no SARIF so it could
+// never reach Chargate's net-new gate. Config for a linter that never loads is worse
+// than no config at all.
+{
+  "default": true,
+
+  // Line length: prose is wrapped by hand at ~90, but tables and code blocks cannot be
+  // wrapped without breaking them, and a URL is one token.
+  "MD013": { "line_length": 100, "tables": false, "code_blocks": false, "headings": false },
+
+  // Repeated headings are fine when they are siblings under different parents: every
+  // how-to page legitimately has its own "Usage".
+  "MD024": { "siblings_only": true },
+
+  // Inline HTML, limited to what Material actually needs.
+  "MD033": { "allowed_elements": ["br", "kbd", "sup", "sub", "details", "summary", "img"] },
+
+  // First line must be a top-level heading. This is the one that keeps a docs page from
+  // opening with a stray paragraph and rendering an empty nav entry.
+  "MD041": true,
+
+  // Accept BOTH 1./1./1. and 1./2./3., and flag only a list that mixes them. Picking a
+  // side here was a mistake: `one` diffs better on insertion, `ordered` reads better in
+  // source, and neither changes what a reader sees. Enforcing either one reformats
+  // existing pages across the fleet to settle an argument nobody is having.
+  "MD029": { "style": "one_or_ordered" },
+
+  // Bare URLs are a real defect in published docs (they escape the theme's link
+  // styling), so this stays on.
+  "MD034": true,
+
+  // OFF, and it has to be. Material's admonitions and content tabs are
+  // INDENTATION-based:
+  //
+  //     !!! warning "Title"
+  //
+  //         The body is indented four spaces.
+  //
+  // MD046 cannot tell that from an indented code block, so every admonition in the
+  // org trips it. Enabling this rule does not make anyone write better markdown; it
+  // makes them stop using the theme's own syntax. Fenced code blocks are still the
+  // convention, they are just not enforced by this rule.
+  "MD046": false,
+
+  // OFF, for the same reason MD029 is relaxed above. `|---|---|` and `| --- | --- |`
+  // render identically; this rule only decides which one the source uses. Turning it on
+  // reformats every existing table in the org to settle a question no reader can see.
+  "MD060": false,
+
+  // OFF, same principle. `_italic_` and `*italic*` render identically, as do `__bold__`
+  // and `**bold**`. These rules pick a source spelling, not an outcome. The rules kept
+  // ON above are the ones where the source and the RENDERED PAGE disagree — a table with
+  // the wrong cell count drops content, a bare URL escapes the theme, inline HTML
+  // vanishes. Those are defects. This is a preference.
+  "MD049": false,
+  "MD050": false
+}
