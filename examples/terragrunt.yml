@@ -53,7 +53,7 @@ jobs:
           tg_version: '1.0.8'
           tg_command: '--version'
 
-      - uses: MagmaMoose/tremvok@v1
+      - uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           target: terragrunt
           terraform-root: terraform
