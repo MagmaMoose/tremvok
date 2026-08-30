@@ -144,7 +144,7 @@ def post_webhook(url: str, payload: dict, *, timeout: int = _TIMEOUT_SECONDS) ->
         method="POST",
     )
     try:
-        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected  # noqa: E501
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310
             return 200 <= response.status < 300
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):

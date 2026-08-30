@@ -18,9 +18,7 @@ Linux wheels and the test runner may not be Linux.
 from __future__ import annotations
 
 import os
-# nosec B404 — this test builds the real Lambda zip in a subprocess on purpose;
-# every call below is list-form (shell=False) with sys.executable as argv[0].
-import subprocess  # nosec B404
+import subprocess  # nosec B404 — list-form calls only, shell=False, sys.executable as argv[0]
 import sys
 import zipfile
 from pathlib import Path

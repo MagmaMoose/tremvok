@@ -64,6 +64,7 @@ def request(
         headers["authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310  # nosec B310
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected  # noqa: E501
         with urllib.request.urlopen(req, timeout=60) as response:  # noqa: S310  # nosec B310
             return response.status, json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as exc:

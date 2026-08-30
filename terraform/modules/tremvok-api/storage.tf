@@ -1,8 +1,8 @@
 # Deployment history. One partition per repository, sorted by time, with a TTL so it cannot
 # grow without bound. See `src/tremvok/store.py` for the item shapes.
+# nosemgrep: terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
 #trivy:ignore:AWS-0024
 #trivy:ignore:AWS-0025
-# nosemgrep: terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
 resource "aws_dynamodb_table" "deployments" {
   #checkov:skip=CKV_AWS_28:PITR deliberately off — every row is a rolling 90-day deployment record re-derivable from workflow runs; backup bills per GB for data that is already a cache
   #checkov:skip=CKV_AWS_119:Customer-managed KMS key costs $1/month; most sensitive field is a git SHA; AWS-managed encryption is sufficient

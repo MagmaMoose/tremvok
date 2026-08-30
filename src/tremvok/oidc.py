@@ -155,7 +155,7 @@ class JwksCache:
         if not self.jwks_uri.startswith("https://"):
             raise OidcError("refusing to fetch JWKS over a non-HTTPS URL")
         try:
-            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected  # noqa: E501
             with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310  # nosec B310
                 document = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
