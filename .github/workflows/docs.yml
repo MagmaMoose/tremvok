@@ -153,14 +153,19 @@ jobs:
           fi
           # A deploy reports success once the platform ACCEPTS the artifact, which is not
           # the same as the site answering. Ask it, with backoff for propagation.
-          for attempt in 1 2 3 4 5; do
-            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$PAGE_URL" || echo 000)
+          # A first deploy has to wait for the host to resolve, so this backs off to
+          # ~4 minutes rather than the ~1 it used to. `|| true` and the default keep a
+          # connection failure reporting as a single `000` — appending another with
+          # `|| echo 000` produced the nonsense "000000" this used to print.
+          for attempt in 1 2 3 4 5 6 7 8; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$PAGE_URL" || true)
+            code=${code:-000}
             if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
               echo "$PAGE_URL -> $code" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             echo "attempt $attempt: $PAGE_URL -> $code, retrying" >&2
-            sleep $((attempt * 5))
+            sleep $((attempt * 8))
           done
           echo "::error::Deployed, but $PAGE_URL never answered (last: $code)." >&2
           exit 1

@@ -119,9 +119,14 @@ outputs:
     value: ${{ steps.detect.outputs.target }}
   page-url:
     description: >-
-      Deployed URL. Set for cloudflare-pages; empty for github-pages, whose deploy the
-      calling workflow owns.
+      The site's canonical URL. Set for cloudflare-pages; empty for github-pages, whose
+      deploy the calling workflow owns.
     value: ${{ steps.cloudflare.outputs.page-url }}
+  deployment-url:
+    description: >-
+      The URL of THIS deployment (<hash>.<project>.pages.dev). Per-deployment, so useful
+      for a preview link but not what anyone should link to.
+    value: ${{ steps.cloudflare.outputs.deployment-url }}
 
 runs:
   using: composite
@@ -301,10 +306,20 @@ runs:
         npx --yes wrangler@4.20.0 pages deploy "$SITE_DIR" \
           --project-name "$PROJECT" --branch "$branch" --commit-dirty=true \
           2>&1 | tee cf-deploy.log
-        url=$(grep -oE 'https://[a-z0-9.-]+[.]pages[.]dev' cf-deploy.log | tail -1 || true)
+        # wrangler reports the DEPLOYMENT url (<hash>.<project>.pages.dev). Verify the
+        # CANONICAL one instead: the hashed host is per-deployment and is not what anyone
+        # links to, and on a brand-new project it resolves later than the project host.
+        deployed=$(grep -oE 'https://[a-z0-9.-]+[.]pages[.]dev' cf-deploy.log | tail -1 || true)
         rm -f cf-deploy.log
-        echo "page-url=$url" >> "$GITHUB_OUTPUT"
-        echo "Deployed **$PROJECT** to ${url:-Cloudflare Pages}" >> "$GITHUB_STEP_SUMMARY"
+        canonical="https://${PROJECT}.pages.dev"
+        echo "page-url=$canonical" >> "$GITHUB_OUTPUT"
+        echo "deployment-url=$deployed" >> "$GITHUB_OUTPUT"
+        {
+          echo "Deployed **$PROJECT**"
+          echo ""
+          echo "- site: $canonical"
+          [ -n "$deployed" ] && echo "- this deployment: $deployed"
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Configure Pages
       if: steps.detect.outputs.stage-pages == 'true'

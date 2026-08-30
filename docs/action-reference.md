@@ -37,7 +37,8 @@ workflow, not this page. For the task-shaped version, see [Setup](setup.md).
 | `site-dir` | Absolute path to the built site. |
 | `toolchain` | The toolchain actually used: uv or pip. |
 | `target` | The deploy target actually used. |
-| `page-url` | Deployed URL. Set for cloudflare-pages; empty for github-pages, whose deploy the calling workflow owns. |
+| `page-url` | The site's canonical URL. Set for cloudflare-pages; empty for github-pages, whose deploy the calling workflow owns. |
+| `deployment-url` | The URL of THIS deployment (&lt;hash&gt;.&lt;project&gt;.pages.dev). Per-deployment, so useful for a preview link but not what anyone should link to. |
 
 ## Workflow inputs
 
