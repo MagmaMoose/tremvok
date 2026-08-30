@@ -12,6 +12,7 @@ import json
 import time
 
 import pytest
+
 from tremvok.oidc import OidcError, authorize, rs256_verify, verify_token
 
 from .conftest import TEST_AUDIENCE, TEST_ISSUER, b64url

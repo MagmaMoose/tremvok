@@ -6,6 +6,7 @@ import json
 import urllib.error
 
 import pytest
+
 from tremvok import notify
 from tremvok.models import DeploymentRecord
 
