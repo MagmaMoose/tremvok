@@ -190,6 +190,14 @@ runs:
         else
           echo "stage-pages=false" >> "$GITHUB_OUTPUT"
         fi
+        # Node is preinstalled on GitHub-hosted runners but NOT on a self-hosted one.
+        # The org's private repos route to self-hosted, where `npx` is absent and the
+        # markdown lint died with exit 127 rather than skipping or installing.
+        if command -v npx >/dev/null 2>&1; then
+          echo "has-node=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "has-node=false" >> "$GITHUB_OUTPUT"
+        fi
         echo "Toolchain: $resolved | target: $target" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Set up uv
@@ -241,6 +249,14 @@ runs:
         else
           python "$SCRIPT" "${args[@]}"
         fi
+
+    # Only when the runner has no Node. A GitHub-hosted runner already does, so this
+    # step is skipped there and costs nothing.
+    - name: Set up Node for markdownlint
+      if: inputs.markdownlint == 'true' && steps.detect.outputs.has-node != 'true'
+      uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+      with:
+        node-version: '22'
 
     - name: Lint markdown
       if: inputs.markdownlint == 'true'
