@@ -33,7 +33,7 @@ variable "artifact_version" {
 variable "architecture" {
   description = <<-EOT
     `arm64` (default) or `x86_64`. Graviton is ~20% cheaper per GB-second and is what
-    `scripts/build_api_zip.py` builds for by default — the two must agree, because
+    `deploy/scripts/build_api_zip.py` builds for by default — the two must agree, because
     `pydantic-core` is a compiled wheel and a mismatch fails at the first request with
     `No module named 'pydantic_core._pydantic_core'`, not at deploy time.
   EOT

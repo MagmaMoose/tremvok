@@ -23,7 +23,7 @@ resource "aws_lambda_function" "api" {
   s3_key    = local.artifact_key
 
   # `tremvok.aws.handler.handler` is Mangum wrapping the FastAPI app. Package layout is fixed
-  # by scripts/build_api_zip.py, which is the one definition of what ships.
+  # by deploy/scripts/build_api_zip.py, which is the one definition of what ships.
   handler       = "tremvok.aws.handler.handler"
   runtime       = "python3.12"
   architectures = [var.architecture]

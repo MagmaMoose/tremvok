@@ -129,7 +129,7 @@ step_down() {
 }
 
 step_api_zip() {
-  ( cd "$ROOT" && python3 scripts/build_api_zip.py --arch "$ARCH" )
+  ( cd "$ROOT" && python3 deploy/scripts/build_api_zip.py --arch "$ARCH" )
 }
 
 step_apply() {

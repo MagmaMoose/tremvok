@@ -56,7 +56,7 @@ jobs:
           echo "${tmp}/bats/bin" >> "$GITHUB_PATH"
 
       - name: shellcheck
-        run: uv run shellcheck -S warning scripts/*.sh scripts/lib/*.sh terraform/localstack/*.sh
+        run: uv run shellcheck -S warning deploy/scripts/*.sh deploy/scripts/lib/*.sh terraform/localstack/*.sh
 
       - name: The action.yml contract
         # Same checks as a pytest file rather than inline YAML, so a contributor runs them with
@@ -102,7 +102,7 @@ jobs:
             x86_64|amd64) arch=x86_64 ;;
             *) arch=arm64 ;;
           esac
-          uv run python scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
+          uv run python deploy/scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
           rm -rf dist/unpacked
           uv run python -m zipfile -e dist/native.zip dist/unpacked
           cd dist/unpacked

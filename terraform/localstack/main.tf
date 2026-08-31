@@ -30,7 +30,7 @@ terraform {
 variable "api_zip_path" {
   description = <<-EOT
     The built Lambda package. `make -C terraform api-zip` produces it with this repository's own
-    `scripts/build_api_zip.py` — deliberately the same script CI publishes with, so a local run
+    `deploy/scripts/build_api_zip.py` — deliberately the same script CI publishes with, so a local run
     and a released artifact cannot be built differently.
   EOT
   type        = string

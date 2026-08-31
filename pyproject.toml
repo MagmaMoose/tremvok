@@ -54,10 +54,14 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S", "BLE"]
 # pytest is built on `assert`, and a test that shells out or hardcodes a token is doing its job.
 "tests/**" = ["S101", "S105", "S106", "S603", "S607"]
 "scripts/**" = ["S603", "S607"]
+# The deploy action's scripts moved under deploy/ when the AWS action became a second
+# entrypoint; per-file-ignores keys on the PATH, so the old pattern silently stopped
+# matching and S603 came back on a line that only carried Bandit's marker.
+"deploy/scripts/**" = ["S603", "S607"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "scripts"]
+pythonpath = ["src", "scripts", "deploy/scripts"]
 addopts = "-ra"
 
 # python-semantic-release, driven by Diatreme on release (versioning-tool:

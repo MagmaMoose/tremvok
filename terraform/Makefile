@@ -7,7 +7,7 @@
 #   make smoke         drive it end to end and assert the invariants
 #   make down          stop LocalStack and throw the state away
 #
-# The package is built by `scripts/build_api_zip.py` — the same script CI publishes with — so a
+# The package is built by `deploy/scripts/build_api_zip.py` — the same script CI publishes with — so a
 # local run and a released artifact cannot be built differently.
 
 SHELL := /bin/bash
@@ -43,7 +43,7 @@ down:
 	$(LS)/harness.sh down
 
 api-zip:
-	cd $(ROOT) && python3 scripts/build_api_zip.py --arch $(ARCH)
+	cd $(ROOT) && python3 deploy/scripts/build_api_zip.py --arch $(ARCH)
 
 apply-local:
 	cd $(LS) && $(TFBIN) init -input=false
