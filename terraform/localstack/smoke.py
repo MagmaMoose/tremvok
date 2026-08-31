@@ -386,7 +386,9 @@ def _run_script(name: str, **env: str) -> int:
         **env,
     }
     result = subprocess.run(  # noqa: S603  # nosec B603 B607
-        ["bash", str(ROOT / "scripts" / name)],  # noqa: S607  # nosec B607
+        # deploy/scripts, not scripts/: the AWS action moved to a subdirectory entrypoint so
+        # the root action.yml could stay the docs action's published v1.
+        ["bash", str(ROOT / "deploy" / "scripts" / name)],  # noqa: S607  # nosec B607
         env=environment,
         capture_output=True,
         text=True,

@@ -2,10 +2,10 @@
 
 Two surfaces, one repository, no shared imports.
 
-```
+```text
 GitHub Actions runner
 ┌────────────────────────────────────────────────────────────┐
-│ action.yml (composite, glue only)                          │
+│ deploy/action.yml (composite, glue only)                   │
 │   ├─ resolve-mode.sh      event → deploy | preview          │
 │   ├─ preflight.sh         fork / no credential → skip       │
 │   ├─ assume-role.sh       OIDC → STS → short-lived creds    │
@@ -23,9 +23,9 @@ GitHub Actions runner
 
 ## Why the action is bash over a thin YAML file
 
-`action.yml` maps inputs to environment variables and runs a script. That is all it does. The
+`deploy/action.yml` maps inputs to environment variables and runs a script. That is all it does. The
 alternative — conditions and string assembly in YAML expressions — cannot be tested, cannot be
-run locally, and produces its failures inside a runner. Everything in `scripts/` runs under
+run locally, and produces its failures inside a runner. Everything in `deploy/scripts/` runs under
 `bats` with `aws` and `curl` stubbed, so a test can assert the exact command line a deploy would
 have issued, including the flags that only matter when they are wrong.
 

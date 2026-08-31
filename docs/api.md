@@ -10,7 +10,7 @@ production, a Lambda Function URL under LocalStack.
 A **GitHub Actions OIDC token**, and nothing else. There is no API key to mint, store, rotate or
 leak.
 
-```
+```http
 authorization: Bearer <token minted for audience "tremvok">
 ```
 
@@ -103,7 +103,7 @@ workflow token.
 
 One DynamoDB table, one partition per repository:
 
-```
+```text
 pk = repo#<owner>/<name>   sk = dep#<recorded_at>#<deployment_id>   the record
 pk = repo#<owner>/<name>   sk = dedup#<delivery_id>                 the idempotency token
 ```
