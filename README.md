@@ -59,18 +59,25 @@ That is the entire caller. For GitHub Pages instead, call
   non-2xx. `deploy-pages` reports success when GitHub *accepts* the artifact, which is
   not the same as the site answering.
 
-## Two pieces, and why
+## Surfaces, and why
 
 | | What it is | Owns |
 | --- | --- | --- |
 | **Action** — `MagmaMoose/tremvok@v1` | composite `action.yml` | Detect · build · stage the Pages artifact |
 | **Reusable workflow** — `…/docs.yml@v1` | `workflow_call` | The above, plus a Cloudflare Pages deploy and verify |
 | **Reusable workflow** — `…/docs-github-pages.yml@v1` | `workflow_call` | The above, plus a GitHub Pages deploy and verify |
+| **Deploy action** — `MagmaMoose/tremvok/deploy@v1` | composite `deploy/action.yml` | Ship a built artifact to S3/CloudFront, Lambda or Terragrunt · verify · announce |
+| **API** — `src/tremvok/` | FastAPI on Lambda | Record every deployment, fan notifications out, authenticated by GitHub OIDC |
 
 A composite action **cannot declare `permissions:` or `environment:`**, and
 `actions/deploy-pages` requires `pages: write`, `id-token: write` and the `github-pages`
 environment. So a deploy can only ever be owned by a workflow. Use the action alone if
 you want to build and stage but deploy some other way.
+
+The **deploy action sits at a subdirectory entrypoint on purpose**. `action.yml` at the root
+is the docs action's committed v1, and putting the AWS action there would have removed twelve
+inputs every `@v1` consumer passes. A composite action can be referenced from any directory,
+so both ship without either interface changing.
 
 ## Most-used inputs
 

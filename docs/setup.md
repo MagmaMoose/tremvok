@@ -1,105 +1,62 @@
-# Setup
+# Setting Tremvok up
 
-<!-- sources: .github/workflows/docs.yml -->
+## 1. An IAM role the workflow can assume
 
-## Prerequisite, once per repository
+Tremvok authenticates to AWS with this run's GitHub OIDC token. Nothing is stored in the
+repository. The role's trust policy is what decides who may use it — scope it to the repository
+**and** the refs that may deploy:
 
-**Settings → Pages → Source → "GitHub Actions".** Without it the deploy step fails: Pages
-will not accept a workflow artifact while the source is set to a branch.
-
-You also need a `mkdocs.yml` at the repository root (or wherever
-`working-directory` points), and one of:
-
-- a `uv.lock` plus a `docs` dependency-group in `pyproject.toml`, or
-- a `docs/requirements.txt` pinning `mkdocs-material`.
-
-## Pick a workflow for your host
-
-There are two reusable workflows, and which one you call decides what permissions you
-must grant.
-
-=== "Cloudflare Pages"
-
-    ```yaml
-    # .github/workflows/docs.yml
-    name: Docs
-    on:
-      push:
-        branches: [main]
-        paths: ['docs/**', 'mkdocs.yml']
-      workflow_dispatch:
-
-    jobs:
-      docs:
-        permissions:
-          contents: read
-        secrets: inherit          # CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN
-        uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
-    ```
-
-=== "GitHub Pages"
-
-    ```yaml
-    jobs:
-      docs:
-        permissions:
-          contents: read
-          pages: write
-          id-token: write
-        uses: MagmaMoose/tremvok/.github/workflows/docs-github-pages.yml@v1
-    ```
-
-    Requires **Settings → Pages → Source → "GitHub Actions"**.
-
-!!! info "Why two workflows rather than a `target:` input"
-
-    A called workflow's job permissions must be a **subset of what the caller granted**,
-    and GitHub checks the union of every job at **startup** — a conditionally-skipped job
-    still counts. A single workflow carrying both targets would therefore force every
-    Cloudflare caller to grant `pages: write` and `id-token: write` for a job that never
-    runs, or fail to start at all. Two workflows keep each caller at least privilege.
-
-## Checking a pull request without publishing
-
-Build and verify the docs on a PR without deploying anything:
-
-```yaml
-on: [pull_request]
-
-jobs:
-  docs:
-    permissions:
-      contents: read
-    uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
-    with:
-      publish: false
+```json
+{
+  "Effect": "Allow",
+  "Principal": { "Federated": "arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com" },
+  "Action": "sts:AssumeRoleWithWebIdentity",
+  "Condition": {
+    "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+    "StringLike": { "token.actions.githubusercontent.com:sub": "repo:MagmaMoose/website:ref:refs/heads/main" }
+  }
+}
 ```
 
-!!! warning "Do not make this a required status check while it is path-filtered"
+`StringLike` on `sub` with a `ref:` prefix, not `repo:owner/name:*`. The wildcard form lets a
+pull request from a branch in the same repository assume a production deploy role.
 
-    A workflow filtered on `paths:` never starts for a PR that touches nothing matching,
-    and a job that never starts never reports. Required checks wait forever for a status
-    that is not coming, and the PR cannot merge — including the PR that removes the rule.
-    Either drop the `paths:` filter or leave the check advisory.
+Grant it only what the target needs — for `s3-cloudfront` that is `s3:PutObject`,
+`s3:DeleteObject`, `s3:ListBucket` on the one bucket, and
+`cloudfront:CreateInvalidation` on the one distribution.
 
-## Using the action on its own
+## 2. The workflow
 
-To build and stage but deploy elsewhere:
+Copy the example from the [action reference](action.md) into `.github/workflows/deploy.yml` and
+set the four repository variables it reads. Nothing else is required — the API is optional.
+
+## 3. (Optional) The Tremvok API
+
+Only needed for deployment history, or for notifications that do not put a webhook URL in every
+repository.
+
+Deploying it is described in
+[terraform/README.md](https://github.com/MagmaMoose/tremvok/blob/main/terraform/README.md);
+the short version is that the module needs an artifact bucket, two SSM parameters written by
+hand, and `allowed_owners` set to the GitHub owners you actually control.
+
+Then add to the action:
 
 ```yaml
-- uses: MagmaMoose/tremvok@v1
-  with:
-    stage-pages: 'false'      # skip the Pages artifact entirely
-    site-dir: 'site'
+with:
+  api-url: https://<api-id>.execute-api.eu-west-1.amazonaws.com
 ```
 
-The `site-dir` output carries the absolute path to the built site.
+and `permissions: id-token: write`. The repository stores nothing.
 
-## A monorepo, or docs in a subdirectory
+## 4. Verify it, properly
 
-```yaml
-    with:
-      working-directory: packages/docs
+After the first deploy of any new wiring:
+
+```bash
+curl -si https://your-site/ | head -1        # the site answers
 ```
 
-Every path input (`requirements`, `site-dir`) is resolved relative to it.
+and for the API, a **real signed POST**, not a `GET /healthz`. A health check passing proves the
+function imported; it proves nothing at all about the write path, the table, or the IAM policy.
+The LocalStack smoke suite exists to make that distinction cheap to test.

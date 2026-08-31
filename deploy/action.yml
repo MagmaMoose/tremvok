@@ -1,0 +1,468 @@
+name: 'Tremvok'
+description: 'Deployment orchestration and notifications for AWS: deploy an already-built artifact to S3/CloudFront, Lambda or Terragrunt, verify it went live, and tell humans.'
+author: 'MagmaMoose'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'green'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tremvok deploys an artifact somebody else built. It does not build your app —
+# the build is legitimately per-product, and absorbing it here would re-merge
+# exactly what the `standard` template separates out. Everything from "the
+# artifact exists" to "the humans know" is this action's job.
+#
+# The logic lives in `scripts/*.sh`, which are bats-tested; this file is glue.
+# ─────────────────────────────────────────────────────────────────────────────
+inputs:
+
+  # ── What and where ───────────────────────────────────────────────────────
+  target:
+    description: |
+      The deployment target. One of:
+        s3-cloudfront  Sync a built static site to S3 and invalidate CloudFront.
+        lambda-zip     Publish a Lambda package to S3, update the function, move an alias.
+        terragrunt     Discover, plan and (on an approval) apply Terragrunt stacks.
+    required: true
+
+  mode:
+    description: |
+      What this run should do. One of:
+        auto     (default) push to the default branch = deploy, pull_request = preview,
+                 workflow_dispatch = deploy (pinned to the default branch).
+        deploy   Publish to the environment.
+        preview  Publish somewhere disposable; production is untouched.
+        rollback Re-publish a previously published version.
+    required: false
+    default: 'auto'
+
+  artifact-path:
+    description: 'The built artifact: a directory for s3-cloudfront, a .zip for lambda-zip. Unused by terragrunt.'
+    required: false
+    default: ''
+
+  environment:
+    description: 'Logical environment name, surfaced in notifications and the deployment record. Defaults to "production" (deploy) or "preview".'
+    required: false
+    default: ''
+
+  working-directory:
+    description: 'Directory to run in. Paths in the other inputs are relative to it.'
+    required: false
+    default: '.'
+
+  # ── AWS ──────────────────────────────────────────────────────────────────
+  aws-region:
+    description: 'AWS region. Falls back to the AWS_REGION environment variable.'
+    required: false
+    default: ''
+
+  role-to-assume:
+    description: |
+      IAM role ARN to assume with this run's GitHub OIDC token. Strongly preferred over stored
+      keys: the credential expires in an hour and the role's trust policy decides which
+      repository and ref may use it. Requires `permissions: id-token: write`.
+      Leave empty to use credentials an earlier step already configured.
+    required: false
+    default: ''
+
+  role-duration-seconds:
+    description: 'Lifetime of the assumed-role session.'
+    required: false
+    default: '3600'
+
+  # ── target: s3-cloudfront ────────────────────────────────────────────────
+  bucket:
+    description: 's3-cloudfront: the bucket serving the site. lambda-zip: the bucket holding published artifacts.'
+    required: false
+    default: ''
+
+  key-prefix:
+    description: 'Key prefix within the bucket. Previews are placed under `<key-prefix>/previews/<alias>/`.'
+    required: false
+    default: ''
+
+  distribution-id:
+    description: 'CloudFront distribution to invalidate after the sync. Empty means no invalidation — the CDN keeps serving the old objects until its TTL expires.'
+    required: false
+    default: ''
+
+  site-url:
+    description: 'Base URL the distribution serves, used to build the URL reported in notifications.'
+    required: false
+    default: ''
+
+  delete-orphans:
+    description: 'Pass --delete to `aws s3 sync`, removing bucket objects with no local counterpart. `auto` (default) means yes.'
+    required: false
+    default: 'auto'
+
+  # ── target: lambda-zip ───────────────────────────────────────────────────
+  function-name:
+    description: 'lambda-zip: the function to update.'
+    required: false
+    default: ''
+
+  function-alias:
+    description: 'lambda-zip: the alias moved to the new version in deploy mode. A preview publishes a version and does not move it.'
+    required: false
+    default: 'live'
+
+  version-label:
+    description: 'lambda-zip: names the immutable S3 key (`<key-prefix>/<version-label>.zip`). Defaults to the short commit SHA.'
+    required: false
+    default: ''
+
+  # ── target: terragrunt ───────────────────────────────────────────────────
+  terraform-root:
+    description: 'terragrunt: directory the stacks live under.'
+    required: false
+    default: 'terraform'
+
+  terragrunt-scope:
+    description: 'terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`, or `changed`.'
+    required: false
+    default: 'auto'
+
+  terragrunt-apply:
+    description: 'terragrunt: `auto` (apply when the pull request has an independent approval), `never` (plan only), or `force`.'
+    required: false
+    default: 'auto'
+
+  check-name:
+    description: 'terragrunt: name of the check run published against the head commit. Make it a required check to enforce apply-before-merge.'
+    required: false
+    default: 'Terragrunt apply'
+
+  # ── Verification ─────────────────────────────────────────────────────────
+  verify-url:
+    description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind — the one failure that otherwise looks green.'
+    required: false
+    default: ''
+
+  verify-header:
+    description: 'Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy).'
+    required: false
+    default: ''
+
+  verify-header-match:
+    description: 'Post-deploy: an extended regex the `verify-header` value must match.'
+    required: false
+    default: ''
+
+  verify-status:
+    description: 'Expected HTTP status from `verify-url`.'
+    required: false
+    default: '200'
+
+  verify-attempts:
+    description: 'How many times to try `verify-url` before failing.'
+    required: false
+    default: '6'
+
+  verify-delay:
+    description: 'Seconds between verification attempts.'
+    required: false
+    default: '10'
+
+  # ── Notifications ────────────────────────────────────────────────────────
+  notify:
+    description: '`always` (default), `on-success`, or `on-failure`. Applies to the webhook sinks.'
+    required: false
+    default: 'always'
+
+  pr-comment:
+    description: 'Sticky pull-request comment. `auto` (default) means on for preview mode and for the terragrunt target.'
+    required: false
+    default: 'auto'
+
+  slack-webhook:
+    description: 'Slack incoming-webhook URL. Empty means the sink is off. Never fails the deploy.'
+    required: false
+    default: ''
+
+  teams-webhook:
+    description: 'Microsoft Teams incoming-webhook URL. Empty means the sink is off. Never fails the deploy.'
+    required: false
+    default: ''
+
+  api-url:
+    description: 'Base URL of a Tremvok API to record this deployment with. Authenticates with a GitHub OIDC token, so the repository stores no credential. Empty means no record is kept.'
+    required: false
+    default: ''
+
+  api-audience:
+    description: 'OIDC audience the Tremvok API expects.'
+    required: false
+    default: 'tremvok'
+
+  auth-token:
+    description: 'Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`.'
+    required: false
+    default: ${{ github.token }}
+
+  # ── Escape hatches ───────────────────────────────────────────────────────
+  allow-fork-preview:
+    description: 'Let a fork pull request attempt a deploy. Off by default and almost always wrong: a fork cannot read secrets, so this only converts an honest skip into an auth error.'
+    required: false
+    default: 'false'
+
+  allow-dispatch-from-any-ref:
+    description: 'Let a manual run deploy from a branch other than the default one. Off by default — publishing a topic branch to production usually is not what "Run workflow" meant.'
+    required: false
+    default: 'false'
+
+  dry-run:
+    description: 'Resolve, plan and report without changing anything.'
+    required: false
+    default: 'false'
+
+outputs:
+  mode:
+    description: 'The resolved mode: deploy, preview or rollback.'
+    value: ${{ steps.resolve.outputs.mode }}
+  environment:
+    description: 'The resolved environment name.'
+    value: ${{ steps.resolve.outputs.environment }}
+  url:
+    description: 'URL of what was deployed, when the target produces one.'
+    value: ${{ steps.deploy-s3.outputs.url }}
+  deployed:
+    description: 'true when something was actually deployed (false for a skip).'
+    value: ${{ steps.outcome.outputs.deployed }}
+  verified:
+    description: 'true when post-deploy verification ran and passed.'
+    value: ${{ steps.verify.outputs.verified }}
+  version-id:
+    description: 'lambda-zip: the published Lambda version.'
+    value: ${{ steps.deploy-lambda.outputs.version-id }}
+  skipped:
+    description: 'true when the run skipped (fork pull request, or no credential).'
+    value: ${{ steps.preflight.outputs.skip }}
+  skip-reason:
+    description: 'Why it skipped, in a sentence.'
+    value: ${{ steps.preflight.outputs.skip-reason }}
+  record-id:
+    description: 'Identifier returned by the Tremvok API, when api-url is set.'
+    value: ${{ steps.record.outputs.record-id }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve the mode from the event
+      id: resolve
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        EVENT_NAME: ${{ github.event_name }}
+        REF: ${{ github.ref }}
+        # `|| 'main'` because the repository object is absent from a few event payloads, and
+        # an empty default branch would make every push look like a topic-branch push.
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        ALLOW_DISPATCH_FROM_ANY_REF: ${{ inputs.allow-dispatch-from-any-ref }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/resolve-mode.sh"
+
+    - name: Preflight — can this run deploy at all?
+      id: preflight
+      shell: bash
+      env:
+        IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        ROLE_TO_ASSUME: ${{ inputs.role-to-assume }}
+        TARGET: ${{ inputs.target }}
+        ALLOW_FORK_PREVIEW: ${{ inputs.allow-fork-preview }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/preflight.sh"
+
+    - name: Assume the deployment role
+      if: steps.preflight.outputs.skip != 'true' && inputs.role-to-assume != ''
+      shell: bash
+      env:
+        ROLE_TO_ASSUME: ${{ inputs.role-to-assume }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        ROLE_DURATION_SECONDS: ${{ inputs.role-duration-seconds }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/assume-role.sh"
+
+    - name: Deploy — S3 + CloudFront
+      id: deploy-s3
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 's3-cloudfront'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BUCKET: ${{ inputs.bucket }}
+        ARTIFACT_PATH: ${{ inputs.artifact-path }}
+        KEY_PREFIX: ${{ inputs.key-prefix }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        PREVIEW_ALIAS: ${{ steps.resolve.outputs.preview-alias }}
+        DISTRIBUTION_ID: ${{ inputs.distribution-id }}
+        SITE_URL: ${{ inputs.site-url }}
+        DELETE_ORPHANS: ${{ inputs.delete-orphans }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-s3-cloudfront.sh"
+
+    - name: Deploy — Lambda package
+      id: deploy-lambda
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'lambda-zip'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FUNCTION_NAME: ${{ inputs.function-name }}
+        ARTIFACT_PATH: ${{ inputs.artifact-path }}
+        ARTIFACT_BUCKET: ${{ inputs.bucket }}
+        KEY_PREFIX: ${{ inputs.key-prefix }}
+        VERSION_LABEL: ${{ inputs.version-label }}
+        ALIAS: ${{ inputs.function-alias }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-lambda-zip.sh"
+
+    - name: Deploy — Terragrunt
+      id: deploy-terragrunt
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'terragrunt'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ROOT_DIR: ${{ inputs.terraform-root }}
+        SCOPE: ${{ inputs.terragrunt-scope }}
+        APPLY: ${{ inputs.terragrunt-apply }}
+        CHECK_NAME: ${{ inputs.check-name }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        AUTH_TOKEN: ${{ inputs.auth-token }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        EVENT_BEFORE: ${{ github.event.before }}
+      run: |
+        # The changed-file list drives `scope: changed`. Computed here rather than in the
+        # script so the script stays testable without a git checkout, and from the API rather
+        # than `git diff` so a shallow clone (the default) does not silently find nothing.
+        set -euo pipefail
+        changed="${RUNNER_TEMP:-/tmp}/tremvok-changed-files.txt"
+        : >"$changed"
+        if [[ -n "${PR_NUMBER:-}" ]]; then
+          page=1
+          while (( page <= 30 )); do
+            body="$(curl -fsSL --retry 2 \
+              -H "authorization: Bearer ${AUTH_TOKEN}" \
+              -H 'accept: application/vnd.github+json' \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100&page=${page}")"
+            count="$(jq 'length' <<<"$body")"
+            jq -r '.[].filename' <<<"$body" >>"$changed"
+            (( count == 100 )) || break
+            page=$(( page + 1 ))
+          done
+        elif [[ "${GITHUB_EVENT_NAME:-}" == push && -n "${EVENT_BEFORE:-}" ]]; then
+          # Needs `fetch-depth: 0` on the checkout; a shallow clone cannot reach the "before"
+          # commit and would report zero changed files, which discovers zero stacks.
+          git diff --name-only "${EVENT_BEFORE}" "${GITHUB_SHA}" >"$changed" 2>/dev/null || true
+        fi
+        echo "$(wc -l <"$changed") changed file(s)"
+        CHANGED_FILES="$changed" bash "${GITHUB_ACTION_PATH}/scripts/deploy-terragrunt.sh"
+
+    - name: Verify it actually went live
+      id: verify
+      if: steps.preflight.outputs.skip != 'true' && inputs.verify-url != ''
+      shell: bash
+      env:
+        VERIFY_URL: ${{ inputs.verify-url }}
+        VERIFY_HEADER: ${{ inputs.verify-header }}
+        VERIFY_HEADER_MATCH: ${{ inputs.verify-header-match }}
+        EXPECT_STATUS: ${{ inputs.verify-status }}
+        ATTEMPTS: ${{ inputs.verify-attempts }}
+        DELAY: ${{ inputs.verify-delay }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/verify-live.sh"
+
+    - name: Collect the outcome
+      id: outcome
+      if: always()
+      shell: bash
+      env:
+        SKIP: ${{ steps.preflight.outputs.skip }}
+        TARGET: ${{ inputs.target }}
+        S3_DEPLOYED: ${{ steps.deploy-s3.outputs.deployed }}
+        LAMBDA_DEPLOYED: ${{ steps.deploy-lambda.outputs.deployed }}
+        TG_DEPLOYED: ${{ steps.deploy-terragrunt.outputs.deployed }}
+        JOB_STATUS: ${{ job.status }}
+      run: |
+        set -euo pipefail
+        deployed=false
+        [[ "${S3_DEPLOYED:-}" == "true" || "${LAMBDA_DEPLOYED:-}" == "true" || "${TG_DEPLOYED:-}" == "true" ]] && deployed=true
+        status=success
+        if [[ "$SKIP" == "true" ]]; then
+          status=skipped
+        elif [[ "$JOB_STATUS" != "success" || "$deployed" != "true" ]]; then
+          status=failure
+        fi
+        {
+          echo "deployed=${deployed}"
+          echo "status=${status}"
+        } >>"$GITHUB_OUTPUT"
+
+    - name: Notify — sticky pull-request comment
+      # `always()` on every notification step. A deploy that failed is exactly when the humans
+      # most need to be told, and a step without it is skipped the moment anything upstream
+      # goes red.
+      if: always() && steps.preflight.outputs.skip != 'true' && github.event.pull_request.number && inputs.target != 'terragrunt' && (inputs.pr-comment == 'true' || (inputs.pr-comment == 'auto' && steps.resolve.outputs.mode == 'preview'))
+      shell: bash
+      env:
+        AUTH_TOKEN: ${{ inputs.auth-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMENT_KEY: ${{ inputs.target }}-${{ steps.resolve.outputs.environment }}
+        STATUS: ${{ steps.outcome.outputs.status }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        VERIFIED: ${{ steps.verify.outputs.verified }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -euo pipefail
+        body="$(
+          printf '### Tremvok — %s to `%s`\n\n' "$MODE" "$ENVIRONMENT"
+          printf '| | |\n|:--|:--|\n'
+          printf '| Status | `%s` |\n' "$STATUS"
+          [[ -n "${URL:-}" ]] && printf '| URL | %s |\n' "$URL"
+          [[ -n "${VERSION:-}" ]] && printf '| Version | `%s` |\n' "$VERSION"
+          printf '| Verified | `%s` |\n' "${VERIFIED:-not checked}"
+          printf '| Commit | `%s` |\n' "${GITHUB_SHA:0:12}"
+          printf '\n[Workflow run](%s)\n' "$RUN_URL"
+        )"
+        BODY="$body" bash "${GITHUB_ACTION_PATH}/scripts/notify-pr.sh"
+
+    - name: Notify — Slack and Teams
+      if: always() && steps.preflight.outputs.skip != 'true'
+      shell: bash
+      env:
+        SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
+        TEAMS_WEBHOOK: ${{ inputs.teams-webhook }}
+        NOTIFY: ${{ inputs.notify }}
+        STATUS: ${{ steps.outcome.outputs.status }}
+        TARGET: ${{ inputs.target }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        VERIFIED: ${{ steps.verify.outputs.verified }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/notify-webhook.sh"
+
+    - name: Record the deployment
+      id: record
+      if: always() && steps.preflight.outputs.skip != 'true' && inputs.api-url != ''
+      shell: bash
+      env:
+        API_URL: ${{ inputs.api-url }}
+        API_AUDIENCE: ${{ inputs.api-audience }}
+        STATUS: ${{ steps.outcome.outputs.status }}
+        TARGET: ${{ inputs.target }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        VERIFIED: ${{ steps.verify.outputs.verified }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/record-deployment.sh"

@@ -1,0 +1,45 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  deploy:
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      # Your own packaging script, so a local build and a released artifact cannot differ.
+      - run: python3 scripts/build_api_zip.py --arch arm64
+
+      # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+      - uses: MagmaMoose/tremvok@v1
+        with:
+          target: lambda-zip
+          artifact-path: dist/service.zip
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          bucket: ${{ vars.ARTIFACT_BUCKET }}
+          function-name: ${{ vars.FUNCTION_NAME }}
+          function-alias: live
+          # Names the immutable S3 key. Defaults to the short commit SHA; pass a release
+          # version when Diatreme has already cut one.
+          version-label: ${{ github.event.release.tag_name }}
+          verify-url: ${{ vars.SERVICE_URL }}/healthz
+          slack-webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK }}
+        # On a pull request this publishes a version and stops: the package is proven to build,
+        # upload and pass Lambda's own validation without changing what production serves.

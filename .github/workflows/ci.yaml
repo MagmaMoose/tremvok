@@ -1,0 +1,180 @@
+# Tremvok's own CI.
+#
+# Two constraints shape this file:
+#
+#   * **The runners are the org's self-hosted pool.** GitHub-hosted minutes are metered on
+#     private repositories and this runs on every pull request, so `ubuntu-latest` is only the
+#     fallback for a fork or an org with no pool.
+#   * **The pool's images are minimal.** No `make`, no `xz`, no PyYAML, no `unzip`. Every tool
+#     CI needs is therefore either fetched at a pinned version or comes from `uv`, and nothing
+#     is assumed to be installed. A step that depends on a host package breaks the build the
+#     day the image changes, for a reason nobody will connect to the image.
+#
+# All actions are SHA-pinned (Chargate's pre-commit hook enforces this org-wide); the trailing
+# `# vX.Y.Z` comment tracks the tag each pinned SHA corresponds to.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - docs/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shell:
+    name: Action (shellcheck + bats)
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Install the dev toolchain
+        # shellcheck comes from `shellcheck-py`, a wheel carrying the real binary, rather than
+        # from the release tarball — which is `.tar.xz`, and the pool image has no `xz`.
+        run: uv sync --all-groups --frozen
+
+      - name: Bootstrap bats
+        env:
+          BATS_VERSION: '1.13.0'
+        run: |
+          set -euo pipefail
+          tmp="${RUNNER_TEMP:-/tmp}"
+          curl -fsSL --retry 3 "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" \
+            | tar -xz -C "$tmp"
+          "${tmp}/bats-core-${BATS_VERSION}/install.sh" "${tmp}/bats"
+          echo "${tmp}/bats/bin" >> "$GITHUB_PATH"
+
+      - name: shellcheck
+        run: uv run shellcheck -S warning deploy/scripts/*.sh deploy/scripts/lib/*.sh terraform/localstack/*.sh
+
+      - name: The action.yml contract
+        # Same checks as a pytest file rather than inline YAML, so a contributor runs them with
+        # `uv run pytest` and CI cannot drift from what they saw: every script the action names
+        # exists, every output points at a real step, every env var a step sets is read by the
+        # script it runs, every input is documented, and every notification step is gated on
+        # `always()`.
+        run: uv run pytest tests/test_action_contract.py -q
+
+      - name: bats
+        run: bats tests/bats
+
+  api:
+    name: API (ruff + mypy + pytest)
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-groups --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      # Includes tests/test_build_api_zip.py, which asserts the package is deterministic and
+      # that `--arch` genuinely fetches the other platform's compiled wheels.
+      - run: uv run pytest -q
+
+      - name: The package is self-contained
+        # Unzipped into an empty directory and imported with that directory as the only source
+        # of `tremvok`. An import the Lambda cannot satisfy otherwise deploys fine and 500s on
+        # the first request.
+        #
+        # Built for the RUNNER's architecture, not the default: the package ships Linux wheels
+        # for whichever architecture the function runs on, so an arm64 package cannot be
+        # imported on an x86_64 runner. That is the cross-build working, not a failure.
+        #
+        # `python -m zipfile` rather than `unzip`, which the pool image does not have.
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64|amd64) arch=x86_64 ;;
+            *) arch=arm64 ;;
+          esac
+          uv run python deploy/scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
+          rm -rf dist/unpacked
+          uv run python -m zipfile -e dist/native.zip dist/unpacked
+          cd dist/unpacked
+          PYTHONPATH=. uv run --no-project python -c "import tremvok.aws.handler as h; assert h.handler; print('the handler imports from the package alone')"
+
+  terraform:
+    name: Infrastructure (fmt + validate)
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_wrapper: false
+
+      - run: tofu fmt -check -recursive terraform/
+
+      - name: Validate the module a leaf would consume
+        # The Makefile has the same target for humans; this is inlined because the pool image
+        # has no `make`.
+        run: |
+          set -euo pipefail
+          cd terraform/modules/tremvok-api
+          printf 'provider "aws" { region = "eu-west-1" }\n' > _validate_provider.tf
+          trap 'rm -f _validate_provider.tf' EXIT
+          tofu init -backend=false -input=false >/dev/null
+          tofu validate
+
+      - name: Validate the LocalStack root
+        run: |
+          set -euo pipefail
+          cd terraform/localstack
+          tofu init -backend=false -input=false >/dev/null
+          tofu validate
+
+  stack:
+    name: LocalStack (end to end)
+    # The broad pool, not `pool-amd64`.
+    #
+    # `pool-amd64` looked right — it is where the org's other container-based job
+    # (Chargate/MegaLinter) runs — but that scale set is `maxRunners: 1` and MegaLinter holds
+    # the slot for ~15 minutes, so this job simply queued behind it indefinitely. Every scale
+    # set in both clusters carries `pool-self-hosted`, the arm64 set has two slots, and both
+    # sets run a dind sidecar, so this lands on whichever is free and still gets a Docker
+    # daemon.
+    #
+    # Floating across architectures is safe because `harness.sh` derives ARCH from `uname -m`
+    # and passes it to both the package builder and the Terraform module — which is the whole
+    # reason that plumbing exists rather than a hardcoded `arm64`.
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    # The only job that proves the wiring: that the package imports on the function's
+    # architecture, that the IAM policy permits what the code does, that the DynamoDB schema
+    # matches the keys the code writes, and that Terraform and settings.py spell the
+    # environment variables the same way.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_wrapper: false
+
+      - run: uv sync --all-groups --frozen
+
+      # The same script `make -C terraform dev` runs, so a laptop and CI cannot drift.
+      - name: Stand the stack up and assert the invariants
+        run: bash terraform/localstack/harness.sh all
+
+      - name: LocalStack logs on failure
+        if: failure()
+        run: docker logs tremvok-localstack 2>&1 | tail -100
+
+      - name: Tear down
+        if: always()
+        run: bash terraform/localstack/harness.sh down || true

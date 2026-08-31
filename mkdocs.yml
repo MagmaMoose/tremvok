@@ -1,17 +1,50 @@
-INHERIT: mkdocs.base.yml
 site_name: Tremvok
-site_description: >-
-  Ship it, prove it went live — build an MkDocs site strictly, publish it to GitHub
-  Pages, and verify the published URL actually answers.
+site_description: Deployment orchestration and notifications for MagmaMoose — the deploy-side counterpart to Diatreme.
 site_url: https://magmamoose.github.io/tremvok/
 repo_url: https://github.com/MagmaMoose/tremvok
 repo_name: MagmaMoose/tremvok
 edit_uri: edit/main/docs/
 
+theme:
+  name: material
+  # Peridot: the one common gem born in the mantle and carried to the surface by an eruption.
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: light green
+      accent: light green
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: light green
+      accent: light green
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+
 nav:
   - Home: index.md
   - Setup: setup.md
   - Reference:
-      - Action: action-reference.md
+      # Two actions, two references: action-reference.md is GENERATED from the root
+      # action.yml (the docs action, the committed v1), action.md documents the deploy
+      # action at deploy/action.yml. Both are in the nav because lint_docs refuses a
+      # README link to a page the site does not publish.
+      - Docs action: action-reference.md
+      - Deploy action: action.md
+      - API: api.md
+  - Architecture: architecture.md
   - Roadmap: roadmap.md
 
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - toc: { permalink: true }

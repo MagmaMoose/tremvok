@@ -71,7 +71,7 @@ def render() -> str:
     action = yaml.safe_load(ACTION.read_text(encoding="utf-8"))
     wf_in = workflow_inputs()
 
-    assert not any(  # nosec: B101 — generator script, not bytecode-optimised; guards a doc invariant
+    assert not any(  # noqa: S101  # nosec: B101 — generator script, not bytecode-optimised; guards a doc invariant
         spec.get("required") for spec in action["inputs"].values()
     ), "action.yml has a required input — update the prose in render() to match"
 

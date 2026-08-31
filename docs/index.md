@@ -1,77 +1,40 @@
 # Tremvok
 
-<!-- sources: action.yml, .github/workflows/docs.yml -->
+Deployment orchestration and notifications for MagmaMoose — the deploy-side counterpart to
+[Diatreme](https://github.com/MagmaMoose/diatreme).
 
-**Ship it, prove it went live.**
+Diatreme answers *"what version, and is it released?"*. Tremvok answers *"get that artifact
+live, prove it, and tell everyone."*
 
-Tremvok is the deploy-side counterpart to
-[Diatreme](https://github.com/MagmaMoose/diatreme). Diatreme decides what version exists
-and whether it is released; Tremvok gets it live and confirms it did.
+```mermaid
+flowchart LR
+  A[push / merge] --> B[release.yml → Diatreme]
+  B -->|version · tag · release · promoted image| C[deploy.yml → Tremvok]
+  C -->|S3 · Lambda · Terragrunt| D[AWS]
+  C -->|curl 200 + header| E[verify it actually went live]
+  C -->|PR comment · Slack · Teams · history| F[humans]
+```
 
-The first target is documentation: build an MkDocs site strictly, publish it to GitHub
-Pages, then request the published URL and fail if it does not answer.
+## Start here
 
-## Why "verify" is a feature
+- **[Action reference](action.md)** — every input and output, per target. This is what you need
+  to add a `deploy.yml` to a repository.
+- **[Architecture](architecture.md)** — how the pieces fit, and the specific production failure
+  each guard exists to prevent.
+- **[API reference](api.md)** — the deployment-record service: endpoints, the OIDC model, the
+  storage schema.
+- **[Infrastructure](https://github.com/MagmaMoose/tremvok/blob/main/terraform/README.md)** —
+  the free-tier accounting, the cost ceiling, and what a LocalStack run does not prove.
 
-`actions/deploy-pages` succeeds when GitHub **accepts** the artifact. That is not the
-same as the site serving. A deploy can report green while the site 404s — a broken
-`site_url`, a Pages source still set to a branch, a build that produced an empty
-directory. Tremvok requests the published URL with backoff and fails on a non-2xx, so
-green means readable rather than merely uploaded.
+## What Tremvok is not
 
-## Why two surfaces
+**It does not build your app.** The build is legitimately per-product — one repository stages a
+static site with a Python script, another bakes an API base URL into a Vite bundle, a third
+vendors a core package — and the [standard](https://github.com/MagmaMoose/standard) repository
+already draws that line. Tremvok picks up *after* `npm run build` and owns everything from
+there.
 
-A composite action cannot declare `permissions:` or `environment:`. `actions/deploy-pages`
-requires `pages: write`, `id-token: write` and the `github-pages` environment, all of
-which must be written by the calling workflow. So the split is not stylistic:
+**It does not cut versions or releases.** That is Diatreme.
 
-| Surface | Owns |
-| --- | --- |
-| **Action** (`MagmaMoose/tremvok@v1`) | Detect toolchain · build strictly · stage the Pages artifact |
-| **Reusable workflow** (`…/.github/workflows/docs.yml@v1`) | The above, plus deploy and verify |
-
-Use the action alone to build and stage but deploy somewhere else.
-
-## Toolchain detection
-
-`toolchain: auto` (the default) reads the repo rather than asking you to describe it:
-
-| Found | Uses |
-| --- | --- |
-| `uv.lock` | `uv run --group docs mkdocs build --strict` |
-| no `uv.lock`, a `requirements` file | `pip install -r …` then `mkdocs build --strict` |
-| neither | fails with an actionable error rather than guessing |
-
-Across MagmaMoose that one rule covers both cases: brimyr, chargate and draventis resolve
-docs through a `docs` dependency-group in `uv.lock`; diatreme is not a uv project at all
-and pins `docs/requirements.txt`.
-
-## What the shape checks cover
-
-Five hard errors, and deliberately no more. A linter with forty rules on a
-one-maintainer org gets bypassed in week two.
-
-| Check | Catches |
-| --- | --- |
-| README shape | budget, required section order, banned headings (`## Contents`, `## Examples`, a full `## Inputs` table) |
-| Licence agreement | a README or `pyproject.toml` claiming a licence the LICENSE file contradicts |
-| Link targets | dangling relative links, and `docs/*.md` links that 404 on a Marketplace listing |
-| Marketplace preflight | missing `branding.icon` / `branding.color`, which Marketplace rejects at publish time |
-| INHERIT clobber | a repo declaring `markdown_extensions` while inheriting a shared base |
-
-Markdown style is checked separately, by markdownlint, and it runs **here** rather than
-under MegaLinter. MegaLinter's `security` flavor carries no markdown linter at all, and
-`MARKDOWN_MARKDOWNLINT` emits no SARIF, so it could never reach Chargate's net-new gate
-even if it were enabled. Config for a linter that never loads is worse than no config.
-
-That last check earns its place because the failure is silent. MkDocs merges `INHERIT`
-dicts recursively but **replaces lists wholesale**: a base declaring
-`[admonition, tables]` and a repo declaring `[toc]` resolves to `[toc]`, and `admonition`
-is gone with nothing reported. The visible symptom is a page rendering as a wall of code
-instead of a diagram.
-
-## Next
-
-- [Setup](setup.md) — the caller workflow, and the Pages prerequisite
-- [Action reference](action-reference.md) — every input and output
-- [Roadmap](roadmap.md) — what is scoped but not built
+**It does not reconcile GitOps.** Where a service is deployed by Flux, Tremvok's job is to
+report and verify, not to apply.
