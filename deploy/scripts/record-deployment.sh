@@ -10,7 +10,7 @@
 # **Failure-isolated**, like the other sinks. A deployment history that missed an entry is a
 # gap in a report; a deploy failed by its own bookkeeping is an outage.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 API_URL="${API_URL:-}"

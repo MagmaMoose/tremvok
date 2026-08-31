@@ -13,7 +13,7 @@
 # planner does this for Cloudflare; this is that generalised, because "honest skip over
 # confusing failure" only works if it covers every reason to skip.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 IS_FORK="${IS_FORK:-false}"

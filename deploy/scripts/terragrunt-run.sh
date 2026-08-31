@@ -12,7 +12,7 @@
 # A caller that only reads the exit code cannot tell "nothing to do" from "something to do",
 # and that difference is what decides whether a pull request needs an apply before it merges.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 action="${1:-plan}"

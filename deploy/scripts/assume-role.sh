@@ -12,7 +12,7 @@
 # `preflight.sh` accepts ambient credentials. What it costs is a third-party dependency inside
 # the step that holds production credentials, for an exchange that is one STS call.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 ROLE_TO_ASSUME="${ROLE_TO_ASSUME:-}"

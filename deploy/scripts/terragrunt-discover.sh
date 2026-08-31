@@ -12,7 +12,7 @@
 # maps to nothing on purpose: a module has no state of its own, and guessing which stacks use
 # it from a path is how a "small module tidy-up" ends up planning the entire estate.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 ROOT_DIR="${ROOT_DIR:-terraform}"

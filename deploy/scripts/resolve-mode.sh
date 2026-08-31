@@ -10,7 +10,7 @@
 # — which looks like a deploy, is recorded as one, and nobody notices until the next real
 # release reverts it.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 MODE="${MODE:-auto}"

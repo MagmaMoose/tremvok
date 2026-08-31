@@ -13,7 +13,7 @@
 #   verify-url     the URL answers with the expected status, with retries for propagation
 #   verify-header  a named response header is present (and optionally matches a pattern)
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 VERIFY_URL="${VERIFY_URL:-}"

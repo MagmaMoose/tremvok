@@ -11,7 +11,7 @@
 # Uses `curl` against `$GITHUB_API_URL` rather than `gh`, so it works unchanged on
 # github.com, ghe.com and GHES, and needs nothing installed on the runner.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"

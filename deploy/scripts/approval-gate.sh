@@ -14,7 +14,7 @@
 # Prints one login per line. Exit 1 means the review list could not be read, which must never
 # be mistaken for "nobody approved": the caller has to fail closed on it.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"

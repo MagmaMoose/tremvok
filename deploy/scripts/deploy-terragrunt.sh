@@ -20,7 +20,7 @@
 # fix it while leaving the stacks unapplied and invisible would.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "${here}/lib/common.sh"
 
 ROOT_DIR="${ROOT_DIR:-terraform}"

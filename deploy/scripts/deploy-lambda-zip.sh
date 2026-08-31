@@ -19,7 +19,7 @@
 #     installed; comparing it against the local zip is what distinguishes "deployed" from
 #     "the API accepted my request".
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 FUNCTION_NAME="${FUNCTION_NAME:-}"

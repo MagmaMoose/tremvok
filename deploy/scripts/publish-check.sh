@@ -9,7 +9,7 @@
 # forever.** So every pull request in scope gets one — including the ones that touch nothing,
 # which report success with "nothing to do" rather than staying silent.
 set -euo pipefail
-# shellcheck source=scripts/lib/common.sh
+# shellcheck source=deploy/scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"
