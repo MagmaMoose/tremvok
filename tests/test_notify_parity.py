@@ -23,7 +23,7 @@ from tremvok import notify
 from tremvok.models import DeploymentRecord
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "notify-webhook.sh"
+SCRIPT = ROOT / "deploy" / "scripts" / "notify-webhook.sh"
 
 RECORD = DeploymentRecord(
     repository="MagmaMoose/website",

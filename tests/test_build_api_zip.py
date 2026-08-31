@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILDER = ROOT / "scripts" / "build_api_zip.py"
+BUILDER = ROOT / "deploy" / "scripts" / "build_api_zip.py"
 
 
 def build(tmp_path: Path, arch: str) -> tuple[Path, str]:

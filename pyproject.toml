@@ -7,7 +7,7 @@ dynamic = ["version"]
 description = "Deployment orchestration + notifications for MagmaMoose: the deploy-side counterpart to Diatreme. Composite action plus a FastAPI deployment-record and notifier service on AWS."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
+license = "Apache-2.0"
 authors = [{ name = "Caleb Sargeant", email = "caleb@magmamoose.com" }]
 keywords = ["github-actions", "deployment", "aws", "lambda", "fastapi", "notifications"]
 

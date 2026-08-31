@@ -9,7 +9,7 @@
 setup_common() {
   export TREMVOK_ROOT
   TREMVOK_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
-  export SCRIPTS="${TREMVOK_ROOT}/scripts"
+  export SCRIPTS="${TREMVOK_ROOT}/deploy/scripts"
 
   export WORK="${BATS_TEST_TMPDIR}"
   export GITHUB_OUTPUT="${WORK}/outputs.txt"

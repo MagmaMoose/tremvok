@@ -26,10 +26,17 @@ theme:
 
 nav:
   - Home: index.md
-  - Action reference: action.md
   - Setup: setup.md
+  - Reference:
+      # Two actions, two references: action-reference.md is GENERATED from the root
+      # action.yml (the docs action, the committed v1), action.md documents the deploy
+      # action at deploy/action.yml. Both are in the nav because lint_docs refuses a
+      # README link to a page the site does not publish.
+      - Docs action: action-reference.md
+      - Deploy action: action.md
+      - API: api.md
   - Architecture: architecture.md
-  - API reference: api.md
+  - Roadmap: roadmap.md
 
 markdown_extensions:
   - admonition

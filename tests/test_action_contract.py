@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-ACTION_TEXT = (ROOT / "action.yml").read_text()
+ACTION_TEXT = (ROOT / "deploy" / "action.yml").read_text()
 ACTION = yaml.safe_load(ACTION_TEXT)
 STEPS = ACTION["runs"]["steps"]
 
@@ -32,7 +32,7 @@ def steps_running_scripts() -> list[tuple[dict, list[pathlib.Path]]]:
     for step in STEPS:
         names = re.findall(r"scripts/([A-Za-z0-9_.-]+\.sh)", step.get("run", ""))
         if names:
-            out.append((step, [ROOT / "scripts" / n for n in names]))
+            out.append((step, [ROOT / "deploy" / "scripts" / n for n in names]))
     return out
 
 
@@ -75,12 +75,20 @@ def test_every_step_that_runs_a_script_declares_bash():
         assert step.get("shell") == "bash", f"{step.get('name')} does not declare shell: bash"
 
 
-def test_every_input_and_output_is_documented_in_the_readme():
-    readme = (ROOT / "README.md").read_text()
-    undocumented = [n for n in ACTION["inputs"] if f"`{n}`" not in readme]
-    assert not undocumented, f"inputs missing from the README table: {undocumented}"
-    missing_outputs = [n for n in ACTION["outputs"] if f"`{n}`" not in readme]
-    assert not missing_outputs, f"outputs missing from the README: {missing_outputs}"
+def test_every_input_and_output_is_documented_in_the_reference():
+    """The deploy action's reference is docs/action.md, NOT the README.
+
+    The README is rendered verbatim on the Marketplace with no nav and no search, so
+    scripts/lint_docs.py holds it to an action profile that bans a full `## Inputs` table
+    and caps it at 120 lines — a full table for a second action would break both. The
+    README carries the most-used inputs and links out; this file is where every input has
+    to appear, and this test is what keeps that true.
+    """
+    reference = (ROOT / "docs" / "action.md").read_text()
+    undocumented = [n for n in ACTION["inputs"] if f"`{n}`" not in reference]
+    assert not undocumented, f"inputs missing from docs/action.md: {undocumented}"
+    missing_outputs = [n for n in ACTION["outputs"] if f"`{n}`" not in reference]
+    assert not missing_outputs, f"outputs missing from docs/action.md: {missing_outputs}"
 
 
 def test_notification_steps_run_even_when_the_deploy_failed():
@@ -92,7 +100,7 @@ def test_notification_steps_run_even_when_the_deploy_failed():
             assert "always()" in step.get("if", ""), f"{name} is not gated on always()"
 
 
-@pytest.mark.parametrize("script", sorted((ROOT / "scripts").glob("*.sh")))
+@pytest.mark.parametrize("script", sorted((ROOT / "deploy" / "scripts").glob("*.sh")))
 def test_every_script_fails_closed_and_is_executable(script):
     assert script.stat().st_mode & 0o111, f"{script.name} is not executable"
     text = script.read_text()

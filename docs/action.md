@@ -1,7 +1,7 @@
 # Action reference
 
 ```yaml
-- uses: MagmaMoose/tremvok@v1
+- uses: MagmaMoose/tremvok/deploy@v1
   with:
     target: s3-cloudfront
 ```
@@ -151,3 +151,60 @@ exactly when the humans most need to hear about it.
   the workflow but has not been wired up.
 
 Both write the reason to the job summary. Neither fails the job.
+
+## Inputs
+
+Every input is optional; `target` decides which of the rest apply.
+
+| Input | Default | What it does |
+| --- | --- | --- |
+| `target` | — | The deployment target. One of:   s3-cloudfront  Sync a built static site to S3 and invalidate CloudFront.   lambda-zip     Publish a Lambda package to S3, update the function, move an alias.   terragrunt     Discover, plan and (on an approval) apply Terragrunt stacks. |
+| `mode` | `auto` | What this run should do. One of:   auto     (default) push to the default branch = deploy, pull_request = preview,            workflow_dispatch = deploy (pinned to the default branch).   deploy   Publish to the environment.   preview  Publish somewhere disposable; production is untouched.   rollback Re-publish a previously published version. |
+| `artifact-path` | — | The built artifact: a directory for s3-cloudfront, a .zip for lambda-zip. Unused by terragrunt. |
+| `environment` | — | Logical environment name, surfaced in notifications and the deployment record. Defaults to "production" (deploy) or "preview". |
+| `working-directory` | `.` | Directory to run in. Paths in the other inputs are relative to it. |
+| `aws-region` | — | AWS region. Falls back to the AWS_REGION environment variable. |
+| `role-to-assume` | — | IAM role ARN to assume with this run's GitHub OIDC token. Strongly preferred over stored keys: the credential expires in an hour and the role's trust policy decides which repository and ref may use it. Requires `permissions: id-token: write`. Leave empty to use credentials an earlier step already configured. |
+| `role-duration-seconds` | `3600` | Lifetime of the assumed-role session. |
+| `bucket` | — | s3-cloudfront: the bucket serving the site. lambda-zip: the bucket holding published artifacts. |
+| `key-prefix` | — | Key prefix within the bucket. Previews are placed under `<key-prefix>/previews/<alias>/`. |
+| `distribution-id` | — | CloudFront distribution to invalidate after the sync. Empty means no invalidation — the CDN keeps serving the old objects until its TTL expires. |
+| `site-url` | — | Base URL the distribution serves, used to build the URL reported in notifications. |
+| `delete-orphans` | `auto` | Pass --delete to `aws s3 sync`, removing bucket objects with no local counterpart. `auto` (default) means yes. |
+| `function-name` | — | lambda-zip: the function to update. |
+| `function-alias` | `live` | lambda-zip: the alias moved to the new version in deploy mode. A preview publishes a version and does not move it. |
+| `version-label` | — | lambda-zip: names the immutable S3 key (`<key-prefix>/<version-label>.zip`). Defaults to the short commit SHA. |
+| `terraform-root` | `terraform` | terragrunt: directory the stacks live under. |
+| `terragrunt-scope` | `auto` | terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`, or `changed`. |
+| `terragrunt-apply` | `auto` | terragrunt: `auto` (apply when the pull request has an independent approval), `never` (plan only), or `force`. |
+| `check-name` | `Terragrunt apply` | terragrunt: name of the check run published against the head commit. Make it a required check to enforce apply-before-merge. |
+| `verify-url` | — | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind — the one failure that otherwise looks green. |
+| `verify-header` | — | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
+| `verify-header-match` | — | Post-deploy: an extended regex the `verify-header` value must match. |
+| `verify-status` | `200` | Expected HTTP status from `verify-url`. |
+| `verify-attempts` | `6` | How many times to try `verify-url` before failing. |
+| `verify-delay` | `10` | Seconds between verification attempts. |
+| `notify` | `always` | `always` (default), `on-success`, or `on-failure`. Applies to the webhook sinks. |
+| `pr-comment` | `auto` | Sticky pull-request comment. `auto` (default) means on for preview mode and for the terragrunt target. |
+| `slack-webhook` | — | Slack incoming-webhook URL. Empty means the sink is off. Never fails the deploy. |
+| `teams-webhook` | — | Microsoft Teams incoming-webhook URL. Empty means the sink is off. Never fails the deploy. |
+| `api-url` | — | Base URL of a Tremvok API to record this deployment with. Authenticates with a GitHub OIDC token, so the repository stores no credential. Empty means no record is kept. |
+| `api-audience` | `tremvok` | OIDC audience the Tremvok API expects. |
+| `auth-token` | `${{ github.token }}` | Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. |
+| `allow-fork-preview` | `false` | Let a fork pull request attempt a deploy. Off by default and almost always wrong: a fork cannot read secrets, so this only converts an honest skip into an auth error. |
+| `allow-dispatch-from-any-ref` | `false` | Let a manual run deploy from a branch other than the default one. Off by default — publishing a topic branch to production usually is not what "Run workflow" meant. |
+| `dry-run` | `false` | Resolve, plan and report without changing anything. |
+
+## Outputs
+
+| Output | What it is |
+| --- | --- |
+| `mode` | The resolved mode: deploy, preview or rollback. |
+| `environment` | The resolved environment name. |
+| `url` | URL of what was deployed, when the target produces one. |
+| `deployed` | true when something was actually deployed (false for a skip). |
+| `verified` | true when post-deploy verification ran and passed. |
+| `version-id` | lambda-zip: the published Lambda version. |
+| `skipped` | true when the run skipped (fork pull request, or no credential). |
+| `skip-reason` | Why it skipped, in a sentence. |
+| `record-id` | Identifier returned by the Tremvok API, when api-url is set. |
