@@ -13,20 +13,21 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 | Target | What it does |
 | --- | --- |
-| `docs` | Build an MkDocs site strictly, publish it to GitHub Pages |
+| `github-pages` | Build an MkDocs site strictly and publish it to GitHub Pages |
 | `s3-cloudfront` | Sync a built static site to S3, invalidate CloudFront |
 | `lambda-zip` | Publish a Lambda package to S3, update the function, move an alias |
 | `terragrunt` | Discover, plan and (on an approval) apply Terragrunt stacks |
 | `ansible` | Run a playbook over SSH, then prove it is idempotent |
+| `cloudflare-workers` | Deploy a Worker and its static assets with Wrangler |
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 75 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 87 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
 | --- | --- | --- | --- |
-| `target` | the selector | not set | The deployment target. One of: docs Build an MkDocs site strictly, publish it to GitHub Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. |
+| `target` | the selector | not set | The deployment target. One of: github-pages Build an MkDocs site strictly and publish it to GitHub Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. cloudflare-workers Deploy a Worker and its static assets with Wrangler. |
 | `mode` | all | `auto` | What this run should do. One of: auto (default) push to the default branch = deploy, pull\_request = preview, workflow\_dispatch = deploy (pinned to the default branch). deploy Publish to the environment. preview Publish somewhere disposable; production is untouched. rollback Re-publish a previously published version. |
 | `environment` | all | not set | Logical environment name, surfaced in notifications and the deployment record. Defaults to "production" (deploy) or "preview". |
 | `working-directory` | all | `.` | Directory to run in. Paths in the other inputs are relative to it. |
@@ -35,18 +36,17 @@ is required.
 | `aws-region` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: AWS region. Falls back to the AWS\_REGION environment variable. |
 | `aws-role-to-assume` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: IAM role ARN to assume with this run's GitHub OIDC token. Strongly preferred over stored keys: the credential expires in an hour and the role's trust policy decides which repository and ref may use it. Requires `permissions: id-token: write`. Leave empty to use credentials an earlier step already configured. |
 | `aws-role-duration-seconds` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | `3600` | s3-cloudfront, lambda-zip, terragrunt: lifetime of the assumed-role session. |
-| `docs-target` | `docs` | `github-pages` | docs: where the built site goes, github-pages (default) \| none. github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING workflow must run: a composite action cannot hold `pages: write` or declare an `environment:`. none builds and stops, which is what a pull-request check wants. |
-| `docs-toolchain` | `docs` | `auto` | docs: how to install MkDocs, auto (default) \| uv \| pip. `auto` picks uv when a uv.lock is present, otherwise pip against `docs-requirements`. Detection exists so a caller does not have to declare per-repo what is already visible in the repo. |
-| `docs-dependency-group` | `docs` | `docs` | docs: uv dependency-group holding the docs tooling (uv toolchain only). |
-| `docs-requirements` | `docs` | `docs/requirements.txt` | docs: requirements file pinning the docs build (pip toolchain only). |
-| `docs-python-version` | `docs` | `3.12` | docs: Python version used to build the site. |
-| `docs-strict` | `docs` | `true` | docs: build with `--strict`, so a broken internal link or a nav entry pointing at a missing file fails rather than publishing a site with holes in it. |
-| `docs-site-dir` | `docs` | `site` | docs: directory the built site is written to. |
-| `docs-lint` | `docs` | `true` | docs: run the repo-shape checks (README budget and section order, licence agreement, link targets, Marketplace preflight, INHERIT clobber) before building. These are the rules nothing else covers; --strict already catches broken internal links. |
-| `docs-profile` | `docs` | `auto` | docs: repo profile for the shape checks, auto \| action \| service \| spec. |
-| `docs-readme-budget` | `docs` | `0` | docs: override the README line budget. 0 uses the profile default. |
-| `docs-markdownlint` | `docs` | `true` | docs: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN\_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. |
-| `artifact-path` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip. |
+| `pages-toolchain` | `github-pages` | `auto` | github-pages: how to install MkDocs, auto (default) \| uv \| pip. `auto` picks uv when a uv.lock is present, otherwise pip against `pages-requirements`. Detection exists so a caller does not have to declare per-repo what is already visible in the repo. |
+| `pages-dependency-group` | `github-pages` | `docs` | github-pages: uv dependency-group holding the docs tooling (uv toolchain only). |
+| `pages-requirements` | `github-pages` | `docs/requirements.txt` | github-pages: requirements file pinning the docs build (pip toolchain only). |
+| `pages-python-version` | `github-pages` | `3.12` | github-pages: Python version used to build the site. |
+| `pages-strict` | `github-pages` | `true` | github-pages: build with `--strict`, so a broken internal link or a nav entry pointing at a missing file fails rather than publishing a site with holes in it. |
+| `pages-site-dir` | `github-pages` | `site` | github-pages: directory the built site is written to. |
+| `pages-lint` | `github-pages` | `true` | github-pages: run the repo-shape checks (README budget and section order, licence agreement, link targets, Marketplace preflight, INHERIT clobber) before building. These are the rules nothing else covers; --strict already catches broken internal links. |
+| `pages-profile` | `github-pages` | `auto` | github-pages: repo profile for the shape checks, auto \| action \| service \| spec. |
+| `pages-readme-budget` | `github-pages` | `0` | github-pages: override the README line budget. 0 uses the profile default. |
+| `pages-markdownlint` | `github-pages` | `true` | github-pages: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN\_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. |
+| `artifact-path` | `s3-cloudfront`, `lambda-zip`, `cloudflare-workers` | not set | s3-cloudfront, lambda-zip, cloudflare-workers: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip. |
 | `s3-bucket` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the bucket. For s3-cloudfront it serves the site; for lambda-zip it holds published artifacts. |
 | `s3-key-prefix` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: key prefix within the bucket. Previews are placed under `<s3-key-prefix>/previews/<alias>/`. |
 | `s3-delete-orphans` | `s3-cloudfront` | `auto` | s3-cloudfront: pass --delete to `aws s3 sync`, removing bucket objects with no local counterpart. `auto` (default) means yes. |
@@ -86,6 +86,19 @@ is required.
 | `ansible-ssh-known-hosts` | `ansible` | not set | ansible: known\_hosts entries for the inventory, one per line. Empty means host-key checking is disabled for the run, which is a real downgrade, supply this for anything reachable from a network you do not control. |
 | `ansible-vault-password` | `ansible` | not set | ansible: vault password. Pass a secret. Masked on receipt, written to a 0600 file under RUNNER\_TEMP, removed when the step exits. |
 | `ansible-verify-idempotence` | `ansible` | `true` | ansible: after a successful real run, run the playbook again in check mode and fail if any task would still change. A zero exit only proves the playbook ran; this is what proves it converged. Skipped automatically when the run itself was check mode. |
+| `cloudflare-api-token` | `cloudflare-workers` | not set | cloudflare-workers: API token Wrangler authenticates with. Pass a secret, never a literal. Mint it from Cloudflare's "Edit Cloudflare Workers" template rather than a hand-picked permission list, or the first deploy of a custom domain fails on a permission nobody thought to grant. |
+| `cloudflare-account-id` | `cloudflare-workers` | not set | cloudflare-workers: Cloudflare account id. Pass a secret. |
+| `cloudflare-config` | `cloudflare-workers` | not set | cloudflare-workers: path to the Wrangler config (wrangler.toml or wrangler.jsonc), passed as `--config`. Empty lets Wrangler find it, which is the normal case. The config owns the asset directory, routes, custom domains and 404 handling; the inputs here are overrides for the few things a workflow legitimately varies. |
+| `cloudflare-worker-name` | `cloudflare-workers` | not set | cloudflare-workers: overrides the `name` in the Wrangler config, passed as `--name`. |
+| `cloudflare-env` | `cloudflare-workers` | not set | cloudflare-workers: Wrangler environment, passed as `--env`. This selects a config block, which is not the same thing as the shared `environment` input: that one is a label for notifications and the deployment record. |
+| `cloudflare-main` | `cloudflare-workers` | not set | cloudflare-workers: entry point for a Worker that runs code, passed as Wrangler's positional path argument. Leave empty for an assets-only Worker, which is the shape that serves static files straight from the edge with no cold start and no code in the request path. |
+| `cloudflare-build-command` | `cloudflare-workers` | not set | cloudflare-workers: command run in working-directory before Wrangler, for a Worker that needs bundling. Empty skips it. |
+| `cloudflare-compatibility-date` | `cloudflare-workers` | not set | cloudflare-workers: overrides the config, passed as `--compatibility-date`. |
+| `cloudflare-minify` | `cloudflare-workers` | `false` | cloudflare-workers: pass `--minify`. Applies to Worker code, not to static assets. |
+| `cloudflare-vars` | `cloudflare-workers` | not set | cloudflare-workers: plain (NOT secret) variables, one `KEY=VALUE` per line, each passed as `--var`. Wrangler deletes vars not present in the config unless `--keep-vars` is set, so anything set in the dashboard belongs in the config instead. |
+| `cloudflare-wrangler-version` | `cloudflare-workers` | `4.114.0` | cloudflare-workers: exact Wrangler version to run. Pinned, because the tool that publishes to production is not a floating dependency. |
+| `cloudflare-node-version` | `cloudflare-workers` | `24` | cloudflare-workers: Node version Wrangler runs on. Wrangler 4 declares `engines.node >= 22`, and on 20 it installs cleanly and then refuses to run, so this does not default to whatever the runner happens to ship. |
+| `cloudflare-extra-args` | `cloudflare-workers` | not set | cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace. |
 | `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green. |
 | `verify-header` | all | not set | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
 | `verify-header-match` | all | not set | Post-deploy: an extended regex the `verify-header` value must match. |
@@ -115,9 +128,9 @@ is required.
 | `skipped` | true when the run skipped (fork pull request, or no credential). |
 | `skip-reason` | Why it skipped, in a sentence. |
 | `record-id` | Identifier returned by the Tremvok API, when api-url is set. |
-| `site-dir` | docs: absolute path to the built site. |
-| `docs-toolchain` | docs: the toolchain actually used, uv or pip. |
-| `version-id` | lambda-zip: the published Lambda version. |
+| `site-dir` | github-pages: absolute path to the built site. |
+| `pages-toolchain` | github-pages: the toolchain actually used, uv or pip. |
+| `version-id` | lambda-zip, cloudflare-workers: the published version. A Lambda version number, or a Worker Version ID. |
 | `stacks` | terragrunt: how many stacks this run discovered. |
 | `plan-changes` | terragrunt: how many of those stacks planned with a diff. |
 | `applied` | terragrunt: true when this run applied, false when it only planned. |
@@ -129,7 +142,7 @@ is required.
 Declared by the **caller**, because a composite action cannot declare
 `permissions:`. Only what the target actually uses:
 
-### `target: docs`
+### `target: github-pages`
 
 ```yaml
 permissions:
@@ -174,8 +187,16 @@ permissions:
   pull-requests: write  # the sticky run comment
 ```
 
-`target: docs` with `docs-target: github-pages` is the one target the action cannot
-finish on its own: `actions/deploy-pages` needs `pages: write` and the `github-pages`
-environment, and a composite action can declare neither. The action builds and stages
-the artifact; the caller's job runs `actions/deploy-pages`. Every other target
-completes inside the action.
+### `target: cloudflare-workers`
+
+```yaml
+permissions:
+  contents: read        # checkout
+  pull-requests: write  # the sticky preview comment
+```
+
+`target: github-pages` is the one target the action cannot finish on its own:
+`actions/deploy-pages` needs `pages: write` and the `github-pages` environment, and a
+composite action can declare neither. The action builds and stages the artifact; the
+caller's job runs `actions/deploy-pages`. Every other target completes inside the
+action.

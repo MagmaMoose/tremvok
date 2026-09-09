@@ -29,7 +29,14 @@ ROOT = Path(__file__).resolve().parent.parent
 ACTION = ROOT / "action.yml"
 OUT = ROOT / "scripts" / "lib" / "input-targets.json"
 
-TARGETS = ["docs", "s3-cloudfront", "lambda-zip", "terragrunt", "ansible"]
+TARGETS = [
+    "github-pages",
+    "s3-cloudfront",
+    "lambda-zip",
+    "terragrunt",
+    "ansible",
+    "cloudflare-workers",
+]
 
 # The opening `<targets>:` marker. Bounded to one line so a description whose *body*
 # happens to contain a colon cannot be read as a target list.

@@ -1,0 +1,81 @@
+# A Worker and its static assets, published with Wrangler.
+#
+# Workers rather than Pages: Cloudflare's current guidance puts new projects on Workers
+# static assets, which is where the ongoing investment goes. An assets-only Worker (no
+# entrypoint) serves files straight from the edge, so there is no cold start, no code in the
+# request path, and asset requests are not billed as invocations.
+#
+#   push to main        -> `wrangler deploy`, live on the routes in wrangler.toml
+#   pull_request        -> `wrangler versions upload --preview-alias pr-<n>`, an aliased
+#                          preview URL that takes NO production traffic, linked from the
+#                          sticky pull-request comment
+#   workflow_dispatch   -> a manual re-publish of production, pinned to the default branch
+#
+# Two secrets and nothing else. Mint CLOUDFLARE_API_TOKEN from Cloudflare's "Edit Cloudflare
+# Workers" template rather than a hand-picked permission list, or the first deploy of a
+# custom domain fails on a permission nobody thought to grant. Both are fine as organisation
+# secrets, so there is nothing to add per repository.
+name: Deploy (Cloudflare Workers)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write     # the sticky preview comment, and nothing else
+  # No id-token: write. Cloudflare authenticates with the API token, and this target talks to
+  # no AWS account. Add it only if you also set api-url to record the deployment.
+
+concurrency:
+  # Never cancel a production deploy mid-upload. Do cancel a superseded preview: only the
+  # newest commit on a pull request is worth publishing.
+  group: cloudflare-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  workers:
+    # A fork pull request cannot read the secrets. Tremvok skips one with a reason rather
+    # than failing on an auth error; this is the belt.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The build stays yours. Tremvok picks up at "the directory exists".
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci && npm run build
+
+      - uses: MagmaMoose/tremvok@v2  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          target: cloudflare-workers
+          # The Worker's asset directory, passed to Wrangler as `--assets`. Tremvok refuses
+          # to publish it when it holds no files: a build that quietly produced nothing must
+          # not replace a site that is currently serving. Drop this line to let the config
+          # name the directory instead.
+          artifact-path: dist
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pinned, not floating. The tool that publishes to production is not a dependency
+          # that should change under you. Tremvok installs Node 24 for it, because Wrangler 4
+          # declares `engines.node >= 22` and on 20 it installs cleanly and then refuses to
+          # run.
+          cloudflare-wrangler-version: '4.114.0'
+          # Verification is the production URL only. A preview lives on a per-run alias URL,
+          # which is reported as the `url` output and linked from the comment.
+          verify-url: ${{ github.event_name == 'pull_request' && '' || vars.SITE_URL }}
+          # A header your site actually sets. A 200 alone does not prove the deploy bound:
+          # the old version answers 200 too.
+          verify-header: content-security-policy
+          slack-webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK }}
+          notify: on-failure
+
+# Everything not listed above is deliberately absent: wrangler.toml (or wrangler.jsonc) owns
+# the Worker name, the routes, the custom domain and the 404 handling, so what ships matches
+# what was reviewed in the repository. `cloudflare-main` stays empty for an assets-only
+# Worker; set it, and `cloudflare-build-command` with it, for a Worker that runs code.

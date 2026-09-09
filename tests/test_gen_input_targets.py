@@ -26,7 +26,14 @@ import gen_input_targets as gen
 import pytest
 import yaml
 
-ALL_TARGETS = ["docs", "s3-cloudfront", "lambda-zip", "terragrunt", "ansible"]
+ALL_TARGETS = [
+    "github-pages",
+    "s3-cloudfront",
+    "lambda-zip",
+    "terragrunt",
+    "ansible",
+    "cloudflare-workers",
+]
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ACTION = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
 
@@ -61,7 +68,7 @@ def test_the_module_agrees_with_the_target_list_the_action_documents():
 
 
 def test_a_marker_naming_one_target_scopes_the_input_to_it():
-    assert gen.targets_for("docs: the site directory.") == ["docs"]
+    assert gen.targets_for("github-pages: the site directory.") == ["github-pages"]
 
 
 def test_a_marker_may_name_several_targets_and_keeps_the_declared_order():
@@ -82,7 +89,7 @@ def test_prose_that_is_not_lowercase_is_not_a_marker():
     "description",
     [
         "post-deploy: the URL that must answer.",
-        "docs, nope: a real target and a typo.",
+        "github-pages, nope: a real target and a typo.",
         "s3-clodfront: one transposed letter.",
     ],
 )
@@ -109,7 +116,10 @@ def test_only_the_first_line_can_carry_the_marker():
 
 
 def test_the_marker_tolerates_spacing_around_its_punctuation():
-    assert gen.targets_for("  docs , s3-cloudfront : padded.  ") == ["docs", "s3-cloudfront"]
+    assert gen.targets_for("  github-pages , s3-cloudfront : padded.  ") == [
+        "github-pages",
+        "s3-cloudfront",
+    ]
 
 
 def test_the_caller_gets_its_own_list_and_cannot_corrupt_the_target_set():
@@ -159,7 +169,7 @@ def test_build_stringifies_defaults_and_treats_a_missing_one_as_empty(monkeypatc
         "  target:\n"
         "    description: 'the selector'\n"
         "  retries:\n"
-        "    description: 'docs: how many times.'\n"
+        "    description: 'github-pages: how many times.'\n"
         "    default: 3\n"
         "  token:\n"
         "    description: 'no default at all.'\n",
@@ -170,7 +180,7 @@ def test_build_stringifies_defaults_and_treats_a_missing_one_as_empty(monkeypatc
     data = gen.build()
 
     assert "target" not in data["inputs"]
-    assert data["inputs"]["retries"] == {"targets": ["docs"], "default": "3"}
+    assert data["inputs"]["retries"] == {"targets": ["github-pages"], "default": "3"}
     assert data["inputs"]["token"] == {"targets": ALL_TARGETS, "default": ""}
 
 

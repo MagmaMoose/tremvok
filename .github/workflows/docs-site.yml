@@ -42,11 +42,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./
         with:
-          target: docs
+          target: github-pages
           checkout: 'false'
-          # On a pull request there is nothing to deploy, so build without staging an
-          # artifact — the build itself is the check.
-          docs-target: ${{ github.event_name != 'pull_request' && 'github-pages' || 'none' }}
+          # On a pull request `mode: auto` resolves to preview, and GitHub Pages has no
+          # preview destination, so nothing is staged and the build itself is the check.
+          # That is why this target needs no destination input of its own.
 
   deploy:
     name: Deploy to Pages

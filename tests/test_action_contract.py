@@ -90,7 +90,16 @@ def test_every_env_var_a_step_sets_is_actually_read():
         for name in step.get("env", {}):
             if name in PASS_THROUGH:
                 continue
-            if not re.search(rf"\$\{{?{re.escape(name)}\b|\$\{{{re.escape(name)}[:#%/-]", body):
+            # `tremvok::require NAME` reads the variable by indirection (`${!name}`), so the
+            # name appears bare rather than after a `$`. Without this the test reports every
+            # required-but-not-otherwise-interpolated variable as dead, and the fix people
+            # reach for is an exemption, which is how the check stops meaning anything.
+            read_patterns = (
+                rf"\$\{{?{re.escape(name)}\b",
+                rf"\$\{{{re.escape(name)}[:#%/-]",
+                rf"tremvok::require\s+{re.escape(name)}\b",
+            )
+            if not any(re.search(pattern, body) for pattern in read_patterns):
                 unread.append(f"{step.get('name')!r} sets {name}, which nothing reads")
     assert not unread, "\n".join(unread)
 

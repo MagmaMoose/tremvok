@@ -11,8 +11,10 @@ repo, it is wrong.
 
 ## Shipped
 
-- **`target: docs`**: detect the toolchain, build strictly, publish to GitHub Pages or
-  Cloudflare Pages, verify the published URL answers.
+- **`target: github-pages`**: detect the toolchain, build the MkDocs site strictly, stage the
+  Pages artifact for your deploy job, and verify the published URL answers. A pull request
+  builds without staging, because one site with no preview destination is what `mode: preview`
+  already means here.
 - **`target: s3-cloudfront`**: sync a built static site with per-class cache headers,
   invalidate CloudFront, previews under their own key prefix. Refuses to sync an empty
   artifact directory.
@@ -24,6 +26,11 @@ repo, it is wrong.
 - **`target: ansible`**: pinned Ansible, galaxy requirements, a playbook run over SSH with
   keys that cannot reach a log, check mode by default on a pull request, and a second
   check-mode run that proves the playbook converged.
+- **`target: cloudflare-workers`**: a Worker and its static assets published with a pinned
+  Wrangler. A push deploys; a pull request runs `versions upload --preview-alias pr-<n>`, so
+  the preview has its own URL and takes no production traffic. The Wrangler config keeps
+  owning the asset directory, the routes and 404 handling. Refuses to publish an empty asset
+  directory.
 - **Post-deploy verification**, **notifications** (sticky pull-request comment, Slack,
   Teams), and the **deployment-record API**.
 
@@ -45,9 +52,9 @@ does nothing for most callers. So the build removes the silence:
 - **Applicability is derived, not maintained.** `scripts/gen_input_targets.py` reads it out
   of the input descriptions in `action.yml` into the map the runtime validator uses, so the
   documentation and the check cannot disagree.
-- **Input names carry their target**: `docs-`, `s3-`, `cloudfront-`, `lambda-`,
-  `terragrunt-`, `ansible-`, with `aws-` for what the AWS targets share and no prefix for
-  what everything shares.
+- **Input names carry their target**: `pages-`, `s3-`, `cloudfront-`, `lambda-`,
+  `terragrunt-`, `ansible-`, `cloudflare-`, with `aws-` for what the AWS targets share and no
+  prefix for what everything shares.
 
 What the split cost was worse than what it bought: three entry points meant three
 Marketplace-facing surfaces, an `examples/` directory pointing at the wrong one, and a
@@ -58,8 +65,10 @@ README, a roadmap and a repository description that each described a different p
 - **Rollback as a first-class mode.** `mode: rollback` resolves today but no target
   implements re-publishing a previous version. Deployment history exists to make it
   possible; wiring it is the remaining work.
-- **A second non-AWS target.** Nothing in the action's shape is AWS-specific: `docs` and
-  `ansible` already are not, and the validated-input design is what makes adding one cheap.
+- **Verifying a preview without pasting its URL in.** `verify-url` is a fixed input, so the
+  per-run URL a Workers preview produces (the `url` output) reaches the comment, the webhooks
+  and the deployment record, but nothing curls it. Feeding that output into the verify step is
+  what's missing.
 
 ## Not planned
 
