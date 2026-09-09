@@ -1,5 +1,5 @@
 name: 'Tremvok'
-description: 'Deploy anything, then prove it went live: docs to GitHub Pages, static sites to S3/CloudFront, Lambda packages, Terragrunt stacks, and fleets over Ansible.'
+description: 'Deploy anything: GitHub Pages, AWS S3/CloudFront & Lambda, Terragrunt, and Ansible.'
 author: 'MagmaMoose'
 
 branding:
