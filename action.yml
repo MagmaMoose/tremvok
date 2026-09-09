@@ -1,5 +1,5 @@
 name: 'Tremvok'
-description: 'Deploy anything: GitHub Pages, AWS S3 & Lambda, Terragrunt, and Ansible.'
+description: 'Deploy anything: GitHub Pages, AWS S3/CloudFront & Lambda, Terragrunt, and Ansible.'
 author: 'MagmaMoose'
 
 branding:
