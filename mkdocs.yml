@@ -1,5 +1,5 @@
 site_name: Tremvok
-site_description: Deployment orchestration and notifications for MagmaMoose — the deploy-side counterpart to Diatreme.
+site_description: One GitHub Action for the whole deploy side — docs, S3/CloudFront, Lambda, Terragrunt and Ansible, verified after the fact.
 site_url: https://magmamoose.github.io/tremvok/
 repo_url: https://github.com/MagmaMoose/tremvok
 repo_name: MagmaMoose/tremvok
@@ -28,14 +28,13 @@ nav:
   - Home: index.md
   - Setup: setup.md
   - Reference:
-      # Two actions, two references: action-reference.md is GENERATED from the root
-      # action.yml (the docs action, the committed v1), action.md documents the deploy
-      # action at deploy/action.yml. Both are in the nav because lint_docs refuses a
-      # README link to a page the site does not publish.
-      - Docs action: action-reference.md
-      - Deploy action: action.md
+      # action-reference.md is GENERATED from action.yml by scripts/gen_action_reference.py,
+      # including which target each input belongs to — read out of the same descriptions the
+      # runtime validator's map is built from, so the page and the check cannot disagree.
+      - Action: action-reference.md
       - API: api.md
   - Architecture: architecture.md
+  - Migrating to v2: migration.md
   - Roadmap: roadmap.md
 
 markdown_extensions:

@@ -7,17 +7,64 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed — BREAKING (v2)
+
+- **One action, five targets.** `target` is now the deployment target
+  (`docs` · `s3-cloudfront` · `lambda-zip` · `terragrunt` · `ansible`) and is the only
+  required input. At v1 `target` meant the docs destination; that is now `docs-target`, and
+  every other docs input gained a `docs-` prefix. Full table in
+  [docs/migration.md](docs/migration.md). **`@v1` is unchanged and keeps working.**
+- **The `deploy/` entry point is gone.** `MagmaMoose/tremvok/deploy@v1` no longer exists; its
+  three targets are targets on the root action, with `aws-`, `s3-`, `cloudfront-` and
+  `lambda-` prefixes on its inputs. Its scripts moved from `deploy/scripts/` to `scripts/`.
+- **The reusable workflows are gone.** `.github/workflows/docs.yml` and
+  `docs-github-pages.yml` are removed: one action is the whole product, and a second callable
+  surface for one target was a place for the two to disagree. The Pages deploy job they
+  carried is ten lines in the caller's own workflow — `examples/docs.yml`.
+- **An inapplicable input now fails the run.** `validate-inputs.sh` checks every input
+  against the selected target before the checkout and reports every mistake at once. At v1
+  an undeclared input was a warning nothing acted on.
+- **A plan-only Terragrunt run reports success**, not failure. It deployed nothing on
+  purpose; the notification used to call that a failed deploy.
+- `mode: auto` now resolves `schedule` and `pull_request_review`, which it used to refuse —
+  breaking the Terragrunt drift run on its own cron.
+
 ### Added
 
-- **Composite action** (`action.yml`) with three AWS target adapters:
-  - `s3-cloudfront` — sync a built static site with per-class cache headers, invalidate
-    CloudFront, previews under their own key prefix. Refuses to sync an empty artifact
-    directory.
-  - `lambda-zip` — immutable S3 keys, published versions, alias moved only on a deploy, and the
-    deployed `CodeSha256` verified against the local artifact.
-  - `terragrunt` — discover, plan, gate on an independent approval, apply; rolling pull-request
-    comment with redacted plan excerpts and a check run that makes apply-before-merge
-    enforceable. Replaces Atlantis and its stored IAM credential.
+- **`target: ansible`** — pinned Ansible and galaxy requirements, a playbook run over SSH,
+  and an idempotence proof: after a real run the playbook runs again in check mode and the
+  run fails if anything would still change. A zero exit only proves it ran. SSH keys and
+  vault passwords are masked on receipt, written to `0600` files under `$RUNNER_TEMP`, never
+  passed on a command line, and removed by a trap however the step exits. Check mode is the
+  default on a pull request.
+- **Terragrunt applies the saved plan.** `plan -out` writes it, `apply` applies that file, so
+  what lands is the diff that was reviewed. A plan that has gone stale is re-planned with a
+  warning rather than refused, and `PLAN SOURCE:` in the log names which one ran.
+- **Pinned, checksum-verified tofu and terragrunt** (`terragrunt-bootstrap.sh`), cached per
+  version pair on the runner, with a shared provider plugin cache. The binary that applies to
+  production is no longer whatever the runner happened to have.
+- Terragrunt gained `terragrunt-exclude`, `terragrunt-apply-operators` (who may force an
+  apply; empty means nobody), `terragrunt-refresh` (skip the provider refresh on a pull
+  request), `terragrunt-timeout` and `terragrunt-log-level`.
+- **`scripts/lib/input-targets.json`**, generated from `action.yml` by
+  `scripts/gen_input_targets.py`, is the single source for which inputs apply to which
+  target — read by the runtime validator and by the generated reference, so the check and
+  the documentation cannot disagree. CI fails on drift.
+- `docs/migration.md`, and per-target permission blocks in the generated action reference.
+
+### Fixed
+
+- The three `examples/` workflows called `MagmaMoose/tremvok@v1` with AWS inputs the root
+  action did not declare, so they built an MkDocs site instead of deploying. They now match
+  the action they call — which is a large part of why the surfaces merged.
+- `preflight.sh` no longer skips `docs` and `ansible` runs for want of an AWS credential
+  neither target uses.
+- `terragrunt-bootstrap.sh`'s checksum lookup runs with `|| true`: with `pipefail` on, a
+  `grep` that matched nothing made the assignment non-zero and `set -e` exited the script
+  silently, exactly where the loudest possible failure is wanted.
+
+### Added (previously unreleased, carried into v2)
+
 - **Post-deploy verification** (`verify-url`, `verify-header`, `verify-header-match`) with
   retries, catching the deploy that uploaded but did not bind.
 - **Notifications**: sticky pull-request comment, Slack and Microsoft Teams incoming webhooks,
@@ -35,7 +82,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spend cap.
 - **LocalStack harness** (`make -C terraform dev`) proving the whole stack without an AWS
   account.
-- Tests: 126 `bats` cases over the shell scripts, 96 `pytest` cases over the API, and an
-  end-to-end smoke suite against LocalStack.
+- Tests: 188 `bats` cases over the shell scripts, 181 `pytest` cases over the API, the
+  action contract and the applicability map, and an end-to-end smoke suite against LocalStack.
 
 [Unreleased]: https://github.com/MagmaMoose/tremvok/commits/main

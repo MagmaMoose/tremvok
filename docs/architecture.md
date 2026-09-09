@@ -5,12 +5,14 @@ Two surfaces, one repository, no shared imports.
 ```text
 GitHub Actions runner
 ┌────────────────────────────────────────────────────────────┐
-│ deploy/action.yml (composite, glue only)                   │
+│ action.yml (composite, glue only)                          │
+│   ├─ validate-inputs.sh   inputs ↔ target, or a hard error  │
 │   ├─ resolve-mode.sh      event → deploy | preview          │
 │   ├─ preflight.sh         fork / no credential → skip       │
 │   ├─ assume-role.sh       OIDC → STS → short-lived creds    │
-│   ├─ deploy-<target>.sh   ← the target adapter boundary     │
+│   ├─ <target adapter>     docs · s3 · lambda · tg · ansible │
 │   ├─ verify-live.sh       curl status + header, retried     │
+│   ├─ collect-outcome.sh   one status every sink shares      │
 │   ├─ notify-{pr,webhook}.sh                                 │
 │   └─ record-deployment.sh ──────────────┐                   │
 └─────────────────────────────────────────┼───────────────────┘
@@ -21,13 +23,41 @@ GitHub Actions runner
                                           └─► Slack / Teams
 ```
 
+## One action, five targets
+
+`target` selects the adapter; everything before and after it is shared. The parts that are
+not target-specific — resolving the mode from the event, the honest skip, verification, the
+outcome, the three notification sinks — are written once and every target gets them, which
+is the argument for one action rather than five.
+
+The cost of a target enum is that a caller can pass an input belonging to a different
+target. Silently ignoring it is what would make the Marketplace listing dishonest, so
+`validate-inputs.sh` runs first, before the checkout, and refuses the run with every
+misplaced input named at once. Applicability comes from `scripts/lib/input-targets.json`,
+generated from the input descriptions in `action.yml` — so the page a caller reads and the
+check the run performs are built from the same source and cannot disagree.
+
 ## Why the action is bash over a thin YAML file
 
-`deploy/action.yml` maps inputs to environment variables and runs a script. That is all it does. The
+`action.yml` maps inputs to environment variables and runs a script. That is all it does. The
 alternative — conditions and string assembly in YAML expressions — cannot be tested, cannot be
-run locally, and produces its failures inside a runner. Everything in `deploy/scripts/` runs under
-`bats` with `aws` and `curl` stubbed, so a test can assert the exact command line a deploy would
-have issued, including the flags that only matter when they are wrong.
+run locally, and produces its failures inside a runner. Everything in `scripts/` runs under
+`bats` with `aws`, `curl`, `terragrunt` and `ansible-playbook` stubbed, so a test can assert
+the exact command line a deploy would have issued, including the flags that only matter when
+they are wrong.
+
+Python is used for the things that never run on a caller's runner in the deploy path: the two
+generators, the repo-shape linter, the Lambda packager, and the pytest contract suite. Adding
+a Python dependency to a target adapter would mean a `setup-python` step on every AWS run, and
+put that code outside the bash contract the other 190 tests enforce.
+
+## The one job the action hands back
+
+`actions/deploy-pages` needs `pages: write` and the `github-pages` environment, and a
+composite action can declare neither. So `target: docs` with `docs-target: github-pages`
+builds and stages the artifact and the caller publishes it. That is the only place an
+`environment:` is load-bearing: the Terragrunt apply gate is the action's own logic
+(`approval-gate.sh` reads the pull request's reviews), and needs none.
 
 ## The guards, and what each one is for
 
@@ -43,6 +73,10 @@ fleet.
 | Compare the deployed `CodeSha256` | "the API accepted my request" is not "the function runs my code" |
 | A preview never moves the alias | a pull request proving a package deploys must not change what production serves |
 | `workflow_dispatch` pinned to the default branch | "Run workflow" from a topic branch publishes it to production, and looks like a normal deploy |
+| An input that belongs to another target is an error | a caller passing `s3-bucket` to `target: ansible` gets a mistake reported, not a run that quietly ignores half its configuration |
+| Terragrunt applies the **saved** plan | re-planning at apply time means what lands is a plan resembling the reviewed one, not the reviewed one |
+| Ansible re-runs in check mode | a zero exit proves the playbook ran; only a second run finding nothing left to change proves it converged |
+| A pinned, checksum-verified tofu/terragrunt | the binary that applies to production is the one input nobody reviews when it floats |
 | Publish the check run even with **zero** stacks | a required check that never reports blocks the pull request forever |
 | An unreadable review list is an error, not "nobody approved" | the difference between "wait for approval" and "apply without one" |
 | Honest skips for forks and unwired repositories | an expected policy outcome presenting as a broken credential |

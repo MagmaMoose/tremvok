@@ -13,7 +13,7 @@
 # planner does this for Cloudflare; this is that generalised, because "honest skip over
 # confusing failure" only works if it covers every reason to skip.
 set -euo pipefail
-# shellcheck source=deploy/scripts/lib/common.sh
+# shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 IS_FORK="${IS_FORK:-false}"
@@ -29,9 +29,13 @@ reason=""
 if tremvok::is_true "$IS_FORK" && ! tremvok::is_true "$ALLOW_FORK_PREVIEW"; then
   skip=true
   reason="this pull request comes from a fork, so the workflow cannot read the deployment credential. Nothing was deployed, and that is the intended behaviour — a fork must not be able to publish."
-elif [[ -z "$ROLE_TO_ASSUME" && -z "$AWS_ACCESS_KEY_ID" && -z "$AWS_WEB_IDENTITY_TOKEN_FILE" ]]; then
+elif [[ "$TARGET" == "s3-cloudfront" || "$TARGET" == "lambda-zip" || "$TARGET" == "terragrunt" ]] \
+  && [[ -z "$ROLE_TO_ASSUME" && -z "$AWS_ACCESS_KEY_ID" && -z "$AWS_WEB_IDENTITY_TOKEN_FILE" ]]; then
+  # Only the AWS targets. The docs target publishes to GitHub Pages or Cloudflare and the
+  # ansible target talks to hosts over SSH, so demanding an AWS credential from either would
+  # skip a run that was never going to need one — an honest skip that is simply wrong.
   skip=true
-  reason="no AWS credential is available: set role-to-assume (OIDC, preferred) or configure credentials in an earlier step. Nothing was deployed."
+  reason="no AWS credential is available for target: ${TARGET}. Set aws-role-to-assume (OIDC, preferred) or configure credentials in an earlier step. Nothing was deployed."
 fi
 
 if [[ "$skip" == true ]]; then

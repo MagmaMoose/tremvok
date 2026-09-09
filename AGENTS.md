@@ -49,12 +49,25 @@ make -C terraform dev      # LocalStack, end to end
 
 1. `scripts/deploy-<target>.sh`, sourcing `lib/common.sh`, reading its inputs from environment
    variables, writing `deployed` and whatever else it produces with `tremvok::set_output`.
-2. A step in `action.yml` gated on `inputs.target == '<target>'`.
-3. `tests/bats/deploy_<target>.bats`, stubbing `aws` with `stub_script` so the exact command
-   line is asserted — especially the flags that only matter when they are wrong.
-4. Rows in the README input table, and the target's own section.
-5. If the target can fail *silently*, a guard plus a test, plus a line in
+2. Inputs in `action.yml` named `<target>-*`, each description **opening with
+   `<target>: `** — that prefix is what `scripts/gen_input_targets.py` reads to build the
+   applicability map, so the reference page and the runtime check come from one source. An
+   input shared by several targets opens with all of them, comma-separated.
+3. A step in `action.yml` gated on `inputs.target == '<target>'`, and the new value added to
+   `TARGETS` in `scripts/gen_input_targets.py`.
+4. Regenerate both build products, which CI checks:
+   `python scripts/gen_input_targets.py && python scripts/gen_action_reference.py`.
+5. `tests/bats/<target>.bats`, stubbing the tool with `stub_script` so the exact command line
+   is asserted — especially the flags that only matter when they are wrong.
+6. A row in the README's most-used inputs table, a section in `docs/setup.md`, and a file in
+   `examples/`.
+7. If the target can fail *silently*, a guard plus a test, plus a line in
    `.claude/COMMON_MISTAKES.md`.
+
+**Verification is the thesis.** Every target has to be able to answer "did it actually take
+effect?" with something stronger than an exit code — a URL that answers, a header that is
+present, a `CodeSha256` that matches, a second check-mode run that finds nothing to change. A
+target that can only report that it ran is not finished.
 
 ## Changing the API's wire contract
 

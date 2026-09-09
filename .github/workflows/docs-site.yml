@@ -7,8 +7,9 @@ name: Docs
 # would test the last release instead, which is the one thing a dogfood workflow must
 # not do.
 #
-# Consumers should not copy this file. They want the reusable workflow, which is twelve
-# lines: see docs/setup.md.
+# Consumers CAN copy this file: it is the shape every GitHub Pages caller needs, because a
+# composite action cannot declare `pages: write` or the `github-pages` environment. That is
+# the only job Tremvok hands back to its caller. See docs/setup.md.
 
 on:
   push:
@@ -41,10 +42,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./
         with:
+          target: docs
           checkout: 'false'
-          # On a pull request there is nothing to deploy, so skip staging the artifact —
-          # the build itself is the check.
-          stage-pages: ${{ github.event_name != 'pull_request' }}
+          # On a pull request there is nothing to deploy, so build without staging an
+          # artifact — the build itself is the check.
+          docs-target: ${{ github.event_name != 'pull_request' && 'github-pages' || 'none' }}
 
   deploy:
     name: Deploy to Pages

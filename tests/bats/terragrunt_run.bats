@@ -16,7 +16,15 @@ printf 'terragrunt %s\n' "$*" >>"${STUB_LOG}"
 case "$1" in
   init) printf 'Initializing...\n'; exit "${INIT_EXIT:-0}" ;;
   plan) printf 'Plan: 1 to add, 0 to change, 0 to destroy.\n'; exit "${PLAN_EXIT:-2}" ;;
-  apply) printf 'Apply complete.\n'; exit "${APPLY_EXIT:-0}" ;;
+  apply)
+    # APPLY_STALE makes the FIRST apply reject the saved plan the way tofu rejects one whose
+    # state moved underneath it, and the second (post-re-plan) apply succeed.
+    if [ -n "${APPLY_STALE:-}" ] && [ ! -f "${STUB_LOG}.stale-seen" ]; then
+      : >"${STUB_LOG}.stale-seen"
+      printf 'Error: Saved plan is stale\n'
+      exit 1
+    fi
+    printf 'Apply complete.\n'; exit "${APPLY_EXIT:-0}" ;;
 esac
 exit 0
 STUBEOF
@@ -59,12 +67,75 @@ STUBEOF
   grep -q 'Plan: 1 to add' out/plan.txt
 }
 
-@test "apply runs init first and records that it applied" {
+@test "apply with no saved plan plans first, and says so" {
   run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
   [ "$status" -eq 0 ]
   [ "$(cat out/status)" = "applied" ]
   grep -q 'terragrunt init' "$STUB_LOG"
-  grep -q -- '-auto-approve' "$STUB_LOG"
+  grep -q 'terragrunt plan' "$STUB_LOG"
+  [[ "$output" == *"no saved plan"* ]]
+}
+
+@test "the plan is written to a file, so an apply can be the plan that was reviewed" {
+  run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  grep -q -- '-out=' "$STUB_LOG"
+}
+
+@test "a clean plan leaves no plan file behind" {
+  # Nothing to apply is not something to apply later. A kept file would make the next apply
+  # re-run an empty plan and report it as a change.
+  PLAN_EXIT=0 run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ ! -f out/plan.tfplan ]
+}
+
+@test "apply uses the saved plan rather than planning again" {
+  printf 'saved-plan\n' >out/plan.tfplan
+  run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/status)" = "applied" ]
+  [[ "$output" == *"PLAN SOURCE: the saved plan"* ]]
+  grep -q 'terragrunt apply .*plan.tfplan' "$STUB_LOG"
+  ! grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "a saved plan from the plan run is found through PLAN_DIR" {
+  # This is what makes the collapse to one job worth anything: plan and apply keep separate
+  # output directories so both logs survive, and the plan file crosses between them.
+  mkdir -p plandir applydir
+  printf 'saved-plan\n' >plandir/plan.tfplan
+  PLAN_DIR="${PWD}/plandir" run bash "${SCRIPTS}/terragrunt-run.sh" apply stack applydir
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PLAN SOURCE: the saved plan"* ]]
+}
+
+@test "a stale saved plan is re-planned rather than refused, and says which ran" {
+  printf 'saved-plan\n' >out/plan.tfplan
+  APPLY_STALE=1 run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/status)" = "applied" ]
+  [[ "$output" == *"gone stale"* ]]
+  grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "an apply that fails for any other reason is not silently re-planned" {
+  printf 'saved-plan\n' >out/plan.tfplan
+  APPLY_EXIT=1 run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  [ "$status" -ne 0 ]
+  [ "$(cat out/status)" = "failed" ]
+  ! grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "a pull request plans without a provider refresh; a scheduled run refreshes" {
+  EVENT_NAME=pull_request run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  grep -q -- '-refresh=false' "$STUB_LOG"
+  : >"$STUB_LOG"
+  EVENT_NAME=schedule run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  ! grep -q -- '-refresh=false' "$STUB_LOG"
+}
+
+@test "refresh can be forced on for a pull request" {
+  TG_REFRESH=true EVENT_NAME=pull_request run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  ! grep -q -- '-refresh=false' "$STUB_LOG"
 }
 
 @test "a failed apply is recorded as failed" {

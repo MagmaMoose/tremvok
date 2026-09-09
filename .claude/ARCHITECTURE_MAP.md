@@ -5,22 +5,34 @@
 `action.yml` is glue: it maps inputs to environment variables and runs a script. Nothing
 decides anything in YAML.
 
+One action, five targets, selected by `target`. Everything except the adapter is shared.
+
 | Step | Script | Job |
 |---|---|---|
+| validate | `validate-inputs.sh` | inputs ↔ target; an inapplicable input is a **hard error**, before the checkout |
 | resolve | `resolve-mode.sh` | event → `deploy`/`preview`/`rollback`, environment, preview alias |
-| preflight | `preflight.sh` | fork or no-credential → an honest **skip** with a reason |
+| preflight | `preflight.sh` | fork or no-credential → an honest **skip** with a reason (AWS targets only) |
 | auth | `assume-role.sh` | OIDC token → STS → masked, short-lived credentials |
-| deploy | `deploy-s3-cloudfront.sh` · `deploy-lambda-zip.sh` · `deploy-terragrunt.sh` | the target adapters |
+| deploy | `docs-detect.sh`+`deploy-cloudflare-pages.sh` · `deploy-s3-cloudfront.sh` · `deploy-lambda-zip.sh` · `terragrunt-changed-files.sh` · `deploy-ansible.sh` | the target adapters |
 | verify | `verify-live.sh` | curl for status + header, with retries |
-| notify | `notify-pr.sh` · `notify-webhook.sh` | sticky PR comment · Slack + Teams |
+| outcome | `collect-outcome.sh` | one status every sink shares; a plan-only run is a success |
+| notify | `notify-pr-body.sh`→`notify-pr.sh` · `notify-webhook.sh` | sticky PR comment · Slack + Teams |
 | record | `record-deployment.sh` | POST to the Tremvok API with an OIDC token |
 
-Terragrunt sub-primitives: `terragrunt-discover.sh` (changed files → stacks),
-`terragrunt-run.sh` (plan/apply/redact one stack), `approval-gate.sh` (independent approvers),
-`publish-check.sh` (the check run that makes apply-before-merge enforceable).
+Terragrunt sub-primitives: `terragrunt-bootstrap.sh` (pinned checksum-verified tofu+terragrunt,
+cached per version pair), `terragrunt-discover.sh` (changed files → stacks),
+`terragrunt-run.sh` (plan/apply/redact one stack; **plan `-out` is saved and apply uses it**),
+`approval-gate.sh` (independent approvers), `publish-check.sh` (the check run that makes
+apply-before-merge enforceable).
 
 `scripts/lib/common.sh` holds logging, `set_output` (heredoc form for multi-line),
 `is_true`, `slug`, `retry`. Everything sources it.
+
+**The applicability map is generated, never hand-edited.** `scripts/gen_input_targets.py`
+parses the `<target>: ` prefix off each input description in `action.yml` into
+`scripts/lib/input-targets.json`; `validate-inputs.sh` reads that JSON with jq, and
+`gen_action_reference.py` reads the same parser. One source, so the check and the page cannot
+disagree. CI fails on drift.
 
 ## The API (`src/tremvok/`)
 

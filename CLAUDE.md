@@ -1,8 +1,9 @@
 # Tremvok
 
 Deployment orchestration + notifications: the deploy-side counterpart to Diatreme. Two surfaces
-in one repo — a GitHub **composite action** (`action.yml` + `scripts/*.sh`, bash, bats-tested)
-targeting AWS, and a **FastAPI deployment-record/notifier service** (`src/tremvok/`, Python 3.12,
+in one repo — one GitHub **composite action** (`action.yml` + `scripts/*.sh`, bash, bats-tested)
+with five targets selected by `target` (`docs`, `s3-cloudfront`, `lambda-zip`, `terragrunt`,
+`ansible`), and a **FastAPI deployment-record/notifier service** (`src/tremvok/`, Python 3.12,
 uv, pytest) that runs as a Lambda. They talk over HTTP; neither imports the other. Most users
 only touch the action. Infrastructure is `terraform/`, provable end to end on LocalStack.
 
@@ -20,6 +21,12 @@ only touch the action. Infrastructure is `terraform/`, provable end to end on Lo
   resources.
 - **Notification sinks are failure-isolated.** A deploy that succeeded never fails because a
   webhook did.
+- **Inapplicable inputs are errors.** `scripts/lib/input-targets.json` is GENERATED from
+  `action.yml` by `scripts/gen_input_targets.py`; `validate-inputs.sh` reads it and refuses a
+  run before the checkout. Never hand-edit the JSON, and regenerate it after touching inputs.
+- **Bash on the runner, Python off it.** Target adapters are bash. Python is for the
+  generators, the linters, the packager and the tests — none of which run on a caller's
+  runner in the deploy path.
 
 ## Finding code
 

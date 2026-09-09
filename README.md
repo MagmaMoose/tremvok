@@ -1,98 +1,99 @@
 # Tremvok
 
-[![CI](https://github.com/MagmaMoose/tremvok/actions/workflows/docs-site.yml/badge.svg)](https://github.com/MagmaMoose/tremvok/actions/workflows/docs-site.yml)
+[![CI](https://github.com/MagmaMoose/tremvok/actions/workflows/ci.yaml/badge.svg)](https://github.com/MagmaMoose/tremvok/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/MagmaMoose/tremvok?sort=semver&logo=github)](https://github.com/MagmaMoose/tremvok/releases)
 [![Docs](https://img.shields.io/badge/docs-tremvok-brightgreen)](https://magmamoose.github.io/tremvok/)
 [![License](https://img.shields.io/github/license/MagmaMoose/tremvok)](LICENSE)
 
 > **Ship it, prove it went live.**
 
-Tremvok is the deploy-side counterpart to
+One GitHub Action for the whole deploy side: documentation sites, static sites on
+S3/CloudFront, Lambda packages, Terragrunt stacks and fleets over Ansible. Pick a target,
+pass that target's inputs, and Tremvok deploys it, verifies it actually serves, and tells
+the humans. It is the counterpart to
 [Diatreme](https://github.com/MagmaMoose/diatreme): Diatreme decides *what version and
-whether it is released*, Tremvok gets it *live and confirms it*. The first target is
-documentation — build an MkDocs site strictly, publish it to GitHub Pages, then request
-the published URL and fail if it does not answer.
+whether it is released*, Tremvok gets it *live and confirms it*.
 
 **[Documentation](https://magmamoose.github.io/tremvok/)** ·
-[Action reference](https://magmamoose.github.io/tremvok/action-reference/)
+[Action reference](https://magmamoose.github.io/tremvok/action-reference/) ·
+[Setup](https://magmamoose.github.io/tremvok/setup/)
 
 ## Quickstart
 
-The whole thing, as a reusable workflow:
-
 ```yaml
-# .github/workflows/docs.yml
-name: Docs
+# .github/workflows/deploy.yml
+name: Deploy
 on:
-  push:
-    branches: [main]
-    paths: ['docs/**', 'mkdocs.yml']
-  workflow_dispatch:
+  push: { branches: [main] }
+  pull_request:
+
+permissions:
+  contents: read
+  id-token: write        # assume the deploy role; no key is stored anywhere
+  pull-requests: write   # the sticky preview comment
 
 jobs:
-  docs:
-    permissions:
-      contents: read
-      pages: write        # deploy-pages
-      id-token: write     # deploy-pages
-    secrets: inherit
-    uses: MagmaMoose/tremvok/.github/workflows/docs.yml@v1
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+      - run: npm ci && npm run build
+
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: s3-cloudfront
+          artifact-path: dist
+          s3-bucket: ${{ vars.SITE_BUCKET }}
+          cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION }}
+          aws-role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+          verify-url: https://example.com
 ```
 
-That is the entire caller. For GitHub Pages instead, call
-`docs-github-pages.yml@v1` with `pages: write` and `id-token: write`, and set
-**Settings → Pages → Source = "GitHub Actions"** once per repository.
+Swap `target:` and its inputs for another target. Ready-to-copy workflows for each live in
+[`examples/`](examples/).
 
 ## What it does
 
-- **Detects your toolchain** — `uv.lock` present means `uv run --group docs`, otherwise
-  pip against `docs/requirements.txt`. What is in the repo is the fact; restating it in
-  config is one more thing that can disagree.
-- **Builds strictly** — `--strict`, so a broken internal link or a nav entry pointing at
-  a missing file fails instead of publishing a site with holes in it.
-- **Deploys to Pages** — and only the workflow half does, because a composite action
-  cannot hold the permissions this needs.
-- **Checks the repo shape** — README budget and section order, licence agreement,
-  link targets, Marketplace preflight. Plus markdownlint, which runs here because
-  MegaLinter's security flavor carries no markdown linter.
-- **Verifies it is serving** — requests the published URL with backoff and fails on a
-  non-2xx. `deploy-pages` reports success when GitHub *accepts* the artifact, which is
-  not the same as the site answering.
-
-## Surfaces, and why
-
-| | What it is | Owns |
-| --- | --- | --- |
-| **Action** — `MagmaMoose/tremvok@v1` | composite `action.yml` | Detect · build · stage the Pages artifact |
-| **Reusable workflow** — `…/docs.yml@v1` | `workflow_call` | The above, plus a Cloudflare Pages deploy and verify |
-| **Reusable workflow** — `…/docs-github-pages.yml@v1` | `workflow_call` | The above, plus a GitHub Pages deploy and verify |
-| **Deploy action** — `MagmaMoose/tremvok/deploy@v1` | composite `deploy/action.yml` | Ship a built artifact to S3/CloudFront, Lambda or Terragrunt · verify · announce |
-| **API** — `src/tremvok/` | FastAPI on Lambda | Record every deployment, fan notifications out, authenticated by GitHub OIDC |
-
-A composite action **cannot declare `permissions:` or `environment:`**, and
-`actions/deploy-pages` requires `pages: write`, `id-token: write` and the `github-pages`
-environment. So a deploy can only ever be owned by a workflow. Use the action alone if
-you want to build and stage but deploy some other way.
-
-The **deploy action sits at a subdirectory entrypoint on purpose**. `action.yml` at the root
-is the docs action's committed v1, and putting the AWS action there would have removed twelve
-inputs every `@v1` consumer passes. A composite action can be referenced from any directory,
-so both ship without either interface changing.
+- **Five targets, one action** — `docs`, `s3-cloudfront`, `lambda-zip`, `terragrunt`,
+  `ansible`. `target` is the only required input.
+- **Every input is checked against the target.** An input belonging to another target is a
+  hard error naming both, before the checkout — never a silent no-op. That is what stops a
+  target enum from becoming a listing that cannot say what it does.
+- **Verifies rather than assumes.** A deploy platform reports success once it *accepts* an
+  artifact, which is not the site answering. Tremvok requests the URL, checks the status and
+  a response header, and retries. Ansible goes further: a second check-mode run has to find
+  nothing left to change, because a zero exit only proves the playbook ran.
+- **Applies the plan that was reviewed.** The Terragrunt target plans, saves the plan, gates
+  on an independent pull-request approval, then applies that saved plan — and publishes a
+  check run you can make required, which turns apply-before-merge into a rule.
+- **No stored cloud credential.** OIDC to a role assumed per run, expiring in an hour. The
+  same argument that deletes Atlantis.
+- **Notifications that never fail a deploy.** Sticky pull-request comment, Slack, Teams,
+  each optional and failure-isolated, plus an optional API recording every deployment.
 
 ## Most-used inputs
 
-Both surfaces take the same names.
-
-| Input | Default | What it does |
+| Input | Applies to | What it does |
 | --- | --- | --- |
-| `toolchain` | `auto` | `auto` · `uv` · `pip`. Override when detection would guess wrong. |
-| `working-directory` | `.` | Where `mkdocs.yml` lives. |
-| `docs-group` | `docs` | uv dependency-group holding the docs tooling. |
-| `requirements` | `docs/requirements.txt` | Pin file for the pip path. |
-| `publish` | `true` | *(workflow only)* Build and verify without deploying — what a PR check wants. |
-| `verify` | `true` | *(workflow only)* Fail if the published URL does not answer 2xx. |
+| `target` | — | `docs` · `s3-cloudfront` · `lambda-zip` · `terragrunt` · `ansible`. Required. |
+| `mode` | all | `auto` (default) reads the event: push = deploy, pull request = preview. |
+| `artifact-path` | s3, lambda | The built artifact. A directory, or a `.zip`. |
+| `aws-role-to-assume` | the AWS targets | Role assumed with this run's OIDC token. |
+| `verify-url` | all | Requested after the deploy; a non-2xx fails the run. |
+| `docs-target` | docs | `github-pages` · `cloudflare-pages` · `none`. |
+| `ansible-playbook` | ansible | Playbook to run. `ansible-inventory` goes with it. |
 
-Every input and output → **[Action reference](https://magmamoose.github.io/tremvok/action-reference/)**
+All 80 inputs, and the permissions each target needs →
+**[Action reference](https://magmamoose.github.io/tremvok/action-reference/)**
+
+## The one job Tremvok hands back
+
+A composite action cannot declare `permissions:` or `environment:`, and
+`actions/deploy-pages` needs both. So `target: docs` with `docs-target: github-pages` builds
+and stages the artifact, and a job of yours runs `actions/deploy-pages` — see
+[Setup](https://magmamoose.github.io/tremvok/setup/). Every other target completes inside
+the action.
 
 ## Where it sits
 
@@ -101,17 +102,12 @@ Every input and output → **[Action reference](https://magmamoose.github.io/tre
 [Chargate](https://github.com/MagmaMoose/chargate) gates security ·
 [Brimyr](https://github.com/MagmaMoose/brimyr) gates tests
 
-## Status
-
-Docs deploy is the first target and is what ships today. Cloudflare Workers deploys and
-the notification half (sticky PR comment, Slack, Teams) are scoped but not built —
-see [Roadmap](https://magmamoose.github.io/tremvok/roadmap/).
-
 Accent gemstone: **peridot**.
 
 ## Versioning
 
-Pin `@v1` for the floating major, or a tag or SHA to freeze.
+Pin `@v2` for the floating major, or a tag or SHA to freeze. `@v1` is the docs-only action
+and keeps working unchanged; see [Migrating to v2](https://magmamoose.github.io/tremvok/migration/).
 
 ## Security · Contributing · License
 

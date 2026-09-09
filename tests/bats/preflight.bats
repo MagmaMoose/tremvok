@@ -12,10 +12,20 @@ setup() { setup_common; unset AWS_ACCESS_KEY_ID AWS_WEB_IDENTITY_TOKEN_FILE; }
 }
 
 @test "an unwired repository skips with a reason" {
-  IS_FORK=false ROLE_TO_ASSUME= run bash "${SCRIPTS}/preflight.sh"
+  IS_FORK=false TARGET=s3-cloudfront ROLE_TO_ASSUME= run bash "${SCRIPTS}/preflight.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value skip)" = "true" ]
   [[ "$(output_value skip-reason)" == *"no AWS credential"* ]]
+}
+
+@test "a target that never touches AWS is not skipped for want of an AWS credential" {
+  # The docs target publishes to Pages or Cloudflare and ansible talks to hosts over SSH.
+  # Skipping either for a missing role would be an honest skip that is simply wrong.
+  for target in docs ansible; do
+    IS_FORK=false TARGET="$target" ROLE_TO_ASSUME= run bash "${SCRIPTS}/preflight.sh"
+    [ "$status" -eq 0 ]
+    [ "$(output_value skip)" = "false" ]
+  done
 }
 
 @test "a role makes it proceed" {

@@ -31,10 +31,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-# The REPOSITORY root, not the action root: this file lives at deploy/scripts/, but the
-# package it zips (src/tremvok) and requirements-lambda.txt are both repo-level. Counted
-# explicitly so a future move breaks loudly here rather than silently zipping nothing.
-ROOT = Path(__file__).resolve().parents[2]
+# The repository root. The package this zips (src/tremvok) and requirements-lambda.txt are
+# both repo-level. Counted explicitly so a future move breaks loudly here rather than
+# silently zipping nothing — which is exactly what caught the scripts/ move at v2.
+ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src" / "tremvok"
 REQUIREMENTS = ROOT / "requirements-lambda.txt"
 

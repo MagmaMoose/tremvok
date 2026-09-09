@@ -1,24 +1,31 @@
 # Tremvok
 
-Deployment orchestration and notifications for MagmaMoose — the deploy-side counterpart to
+One GitHub Action for the whole deploy side — the counterpart to
 [Diatreme](https://github.com/MagmaMoose/diatreme).
 
-Diatreme answers *"what version, and is it released?"*. Tremvok answers *"get that artifact
-live, prove it, and tell everyone."*
+Diatreme answers *"what version, and is it released?"*. Tremvok answers *"get that live,
+prove it, and tell everyone."*
 
 ```mermaid
 flowchart LR
   A[push / merge] --> B[release.yml → Diatreme]
   B -->|version · tag · release · promoted image| C[deploy.yml → Tremvok]
-  C -->|S3 · Lambda · Terragrunt| D[AWS]
-  C -->|curl 200 + header| E[verify it actually went live]
-  C -->|PR comment · Slack · Teams · history| F[humans]
+  C -->|target| D[docs · s3-cloudfront · lambda-zip · terragrunt · ansible]
+  D -->|curl 200 + header · a second check-mode run| E[verify it actually went live]
+  D -->|PR comment · Slack · Teams · history| F[humans]
 ```
+
+Pick a target, pass that target's inputs. An input belonging to a different target is a hard
+error naming both, raised before the checkout — which is what keeps one listing able to
+describe five jobs honestly.
 
 ## Start here
 
-- **[Action reference](action.md)** — every input and output, per target. This is what you need
-  to add a `deploy.yml` to a repository.
+- **[Setup](setup.md)** — the workflow for each target, the IAM role, and the secrets. Start
+  here to add a `deploy.yml` to a repository.
+- **[Action reference](action-reference.md)** — every input and output, which target each one
+  applies to, and the permissions each target needs. Generated from `action.yml`.
+- **[Migrating to v2](migration.md)** — if you are on `@v1` or on the `deploy/` entry point.
 - **[Architecture](architecture.md)** — how the pieces fit, and the specific production failure
   each guard exists to prevent.
 - **[API reference](api.md)** — the deployment-record service: endpoints, the OIDC model, the
@@ -36,5 +43,5 @@ there.
 
 **It does not cut versions or releases.** That is Diatreme.
 
-**It does not reconcile GitOps.** Where a service is deployed by Flux, Tremvok's job is to
-report and verify, not to apply.
+**It does not reconcile GitOps.** Where a service is deployed by a cluster-side reconciler,
+Tremvok's job is to report and verify, not to apply.

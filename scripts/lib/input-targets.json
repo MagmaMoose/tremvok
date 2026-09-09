@@ -1,0 +1,574 @@
+{
+  "targets": [
+    "docs",
+    "s3-cloudfront",
+    "lambda-zip",
+    "terragrunt",
+    "ansible"
+  ],
+  "inputs": {
+    "mode": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "auto"
+    },
+    "environment": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": ""
+    },
+    "working-directory": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "."
+    },
+    "checkout": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "true"
+    },
+    "dry-run": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "false"
+    },
+    "aws-region": {
+      "targets": [
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "aws-role-to-assume": {
+      "targets": [
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "aws-role-duration-seconds": {
+      "targets": [
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt"
+      ],
+      "default": "3600"
+    },
+    "docs-target": {
+      "targets": [
+        "docs"
+      ],
+      "default": "github-pages"
+    },
+    "docs-toolchain": {
+      "targets": [
+        "docs"
+      ],
+      "default": "auto"
+    },
+    "docs-dependency-group": {
+      "targets": [
+        "docs"
+      ],
+      "default": "docs"
+    },
+    "docs-requirements": {
+      "targets": [
+        "docs"
+      ],
+      "default": "docs/requirements.txt"
+    },
+    "docs-python-version": {
+      "targets": [
+        "docs"
+      ],
+      "default": "3.12"
+    },
+    "docs-strict": {
+      "targets": [
+        "docs"
+      ],
+      "default": "true"
+    },
+    "docs-site-dir": {
+      "targets": [
+        "docs"
+      ],
+      "default": "site"
+    },
+    "docs-lint": {
+      "targets": [
+        "docs"
+      ],
+      "default": "true"
+    },
+    "docs-profile": {
+      "targets": [
+        "docs"
+      ],
+      "default": "auto"
+    },
+    "docs-readme-budget": {
+      "targets": [
+        "docs"
+      ],
+      "default": "0"
+    },
+    "docs-markdownlint": {
+      "targets": [
+        "docs"
+      ],
+      "default": "true"
+    },
+    "docs-cloudflare-project": {
+      "targets": [
+        "docs"
+      ],
+      "default": ""
+    },
+    "docs-cloudflare-account-id": {
+      "targets": [
+        "docs"
+      ],
+      "default": ""
+    },
+    "docs-cloudflare-api-token": {
+      "targets": [
+        "docs"
+      ],
+      "default": ""
+    },
+    "docs-cloudflare-branch": {
+      "targets": [
+        "docs"
+      ],
+      "default": ""
+    },
+    "docs-require-access": {
+      "targets": [
+        "docs"
+      ],
+      "default": "false"
+    },
+    "artifact-path": {
+      "targets": [
+        "s3-cloudfront",
+        "lambda-zip"
+      ],
+      "default": ""
+    },
+    "s3-bucket": {
+      "targets": [
+        "s3-cloudfront",
+        "lambda-zip"
+      ],
+      "default": ""
+    },
+    "s3-key-prefix": {
+      "targets": [
+        "s3-cloudfront",
+        "lambda-zip"
+      ],
+      "default": ""
+    },
+    "s3-delete-orphans": {
+      "targets": [
+        "s3-cloudfront"
+      ],
+      "default": "auto"
+    },
+    "cloudfront-distribution-id": {
+      "targets": [
+        "s3-cloudfront"
+      ],
+      "default": ""
+    },
+    "cloudfront-site-url": {
+      "targets": [
+        "s3-cloudfront"
+      ],
+      "default": ""
+    },
+    "lambda-function-name": {
+      "targets": [
+        "lambda-zip"
+      ],
+      "default": ""
+    },
+    "lambda-function-alias": {
+      "targets": [
+        "lambda-zip"
+      ],
+      "default": "live"
+    },
+    "lambda-version-label": {
+      "targets": [
+        "lambda-zip"
+      ],
+      "default": ""
+    },
+    "terragrunt-root": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "terraform"
+    },
+    "terragrunt-exclude": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "modules _modules"
+    },
+    "terragrunt-scope": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "auto"
+    },
+    "terragrunt-apply": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "auto"
+    },
+    "terragrunt-apply-operators": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "terragrunt-check-name": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "Terragrunt apply"
+    },
+    "terragrunt-install": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "auto"
+    },
+    "terragrunt-version": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "1.0.8"
+    },
+    "terragrunt-tofu-version": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "1.12.1"
+    },
+    "terragrunt-plugin-cache": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "~/.terraform-plugin-cache"
+    },
+    "terragrunt-refresh": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "auto"
+    },
+    "terragrunt-timeout": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "900"
+    },
+    "terragrunt-log-level": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "terragrunt-extra-args": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "ansible-playbook": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-inventory": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-version": {
+      "targets": [
+        "ansible"
+      ],
+      "default": "11.1.0"
+    },
+    "ansible-python-version": {
+      "targets": [
+        "ansible"
+      ],
+      "default": "3.12"
+    },
+    "ansible-galaxy-requirements": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-limit": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-tags": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-skip-tags": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-check": {
+      "targets": [
+        "ansible"
+      ],
+      "default": "auto"
+    },
+    "ansible-diff": {
+      "targets": [
+        "ansible"
+      ],
+      "default": "true"
+    },
+    "ansible-extra-vars": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-extra-args": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-ssh-private-key": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-ssh-user": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-ssh-known-hosts": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-vault-password": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-verify-idempotence": {
+      "targets": [
+        "ansible"
+      ],
+      "default": "true"
+    },
+    "verify-url": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": ""
+    },
+    "verify-header": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": ""
+    },
+    "verify-header-match": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": ""
+    },
+    "verify-status": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "200"
+    },
+    "verify-attempts": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "6"
+    },
+    "verify-delay": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "10"
+    },
+    "notify": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "always"
+    },
+    "pr-comment": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "auto"
+    },
+    "slack-webhook": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": ""
+    },
+    "teams-webhook": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": ""
+    },
+    "api-url": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": ""
+    },
+    "api-audience": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "tremvok"
+    },
+    "auth-token": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "${{ github.token }}"
+    },
+    "allow-fork-preview": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "false"
+    },
+    "allow-dispatch-from-any-ref": {
+      "targets": [
+        "docs",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible"
+      ],
+      "default": "false"
+    }
+  }
+}

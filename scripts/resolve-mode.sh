@@ -10,7 +10,7 @@
 # — which looks like a deploy, is recorded as one, and nobody notices until the next real
 # release reverts it.
 set -euo pipefail
-# shellcheck source=deploy/scripts/lib/common.sh
+# shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 MODE="${MODE:-auto}"
@@ -42,6 +42,12 @@ if [[ "$MODE" == "auto" ]]; then
       resolved="deploy"
       ;;
     release)
+      resolved="deploy"
+      ;;
+    schedule|pull_request_review)
+      # Both belong to the terragrunt target, which reads the event itself: a schedule is the
+      # drift run and an approval is the apply authorisation. Failing here instead would have
+      # made the shipped terragrunt example die on its own cron.
       resolved="deploy"
       ;;
     *)
