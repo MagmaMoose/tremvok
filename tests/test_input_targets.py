@@ -96,6 +96,7 @@ def test_the_selector_itself_is_required_and_has_no_default():
 
 # Direct import tests — subprocess calls above do not contribute to coverage measurement.
 
+
 def test_targets_for_returns_all_when_description_has_no_target_prefix():
     all_targets = gen_input_targets.TARGETS
     assert gen_input_targets.targets_for("Post-deploy: the URL.") == all_targets
@@ -129,6 +130,7 @@ def test_build_excludes_the_selector_input():
 
 def test_render_produces_valid_json():
     import json as _json
+
     text = gen_input_targets.render()
     parsed = _json.loads(text)
     assert "inputs" in parsed
