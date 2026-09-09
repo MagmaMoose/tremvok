@@ -13,11 +13,10 @@ import pathlib
 import subprocess  # nosec B404
 import sys
 
+import gen_action_reference
+import gen_input_targets
 import pytest
 import yaml
-
-import gen_input_targets
-import gen_action_reference
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAP = ROOT / "scripts" / "lib" / "input-targets.json"
@@ -152,5 +151,7 @@ def test_action_reference_applies_to_single_target():
 
 
 def test_action_reference_applies_to_all():
-    result = gen_action_reference.applies_to("environment", {"description": "Logical environment name."})
+    result = gen_action_reference.applies_to(
+        "environment", {"description": "Logical environment name."}
+    )
     assert result == "all"

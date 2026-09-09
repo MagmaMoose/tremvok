@@ -19,7 +19,7 @@ RUN_URL="${RUN_URL:-}"
 # `if` blocks rather than `[[ … ]] && printf` inside the substitution: a false test as the
 # LAST command of a command substitution makes the assignment fail, and under `set -e` that
 # ends the script. It only bites when the optional line is absent, which is the common case.
-# shellcheck disable=SC2016 — backticks in the format strings are Markdown, not command subs
+# shellcheck disable=SC2016
 body="$(
   printf '### Tremvok — %s `%s` to `%s`\n\n' "$MODE" "$TARGET" "$ENVIRONMENT"
   printf '| | |\n|:--|:--|\n'
