@@ -3,6 +3,11 @@
 **Status:** accepted · **Date:** 2026-08-19 ·
 **Context:** [agent-personal#9](https://github.com/CalebSargeant/agent-personal/issues/9)
 
+**Superseded in part by:**
+[0003 — Cloudflare Workers is a deployment target](0003-cloudflare-workers-target.md).
+The "every target" half is reversed: Cloudflare Workers is a deployment target. The
+backend-on-Lambda decision and the free-tier cost discipline below remain in force.
+
 ## Context
 
 The proposal scoped `target: cloudflare-workers` as the MVP, because that is where the fleet

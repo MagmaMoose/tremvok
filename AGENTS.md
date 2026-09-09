@@ -15,9 +15,13 @@ other**; a change that couples them is the change to push back on.
 
 ## The rules that are not negotiable
 
-1. **AWS only.** No Cloudflare, in any target or any hosted component. Anything that costs
-   money outside the always-free allowances needs a decision recorded in `terraform/README.md`,
-   not a default.
+1. **Tremvok's hosted components are AWS; a caller's target need not be.** Everything Tremvok
+   itself runs — the API on Lambda, DynamoDB, everything in `terraform/` — is AWS, inside the
+   always-free allowances. Anything that costs money outside them needs a decision recorded in
+   `terraform/README.md`, not a default. A deployment *target* is a different thing: it runs in
+   the caller's account, on the caller's bill, so any supported provider is fine, and
+   `cloudflare-workers` is one of them. The API stays Lambda; a Worker is not an alternative
+   home for it. See `.claude/decisions/0003-cloudflare-workers-target.md`.
 2. **bash 3.2.** GitHub's macOS runners ship it. No `${x,,}`, `${x^}`, `mapfile`, `readarray`,
    `declare -A`. `tests/bats/portability.bats` fails the build if one comes back.
 3. **`action.yml` is glue.** Logic goes in `scripts/`, where it can be tested. If you find

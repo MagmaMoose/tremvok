@@ -1,5 +1,5 @@
 site_name: Tremvok
-site_description: One GitHub Action for the whole deploy side — docs, S3/CloudFront, Lambda, Terragrunt and Ansible, verified after the fact.
+site_description: "One GitHub Action for the whole deploy side: GitHub Pages, Cloudflare Workers, S3/CloudFront, Lambda, Terragrunt and Ansible, verified after the fact."
 site_url: https://magmamoose.github.io/tremvok/
 repo_url: https://github.com/MagmaMoose/tremvok
 repo_name: MagmaMoose/tremvok

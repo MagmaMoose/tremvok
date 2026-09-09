@@ -21,9 +21,9 @@ holding its default changes nothing, so the blind spot is harmless.
 
 ### `unknown target '<value>'`
 
-`target` accepts `docs`, `s3-cloudfront`, `lambda-zip`, `terragrunt` or `ansible`. The message
-lists them. There's no default, on purpose: guessing `docs` would silently build a site for
-someone who meant to deploy a Lambda.
+`target` accepts `github-pages`, `s3-cloudfront`, `lambda-zip`, `terragrunt`, `ansible` or
+`cloudflare-workers`. The message lists them. There's no default, on purpose: guessing
+`github-pages` would silently build a site for someone who meant to deploy a Lambda.
 
 ### `Tremvok skipped: this pull request comes from a fork`
 
@@ -37,7 +37,8 @@ auth error.
 ### `Tremvok skipped: no AWS credential is available for target: <target>`
 
 Only the three AWS targets raise this. Set `aws-role-to-assume`, or configure credentials in an
-earlier step. `docs` and `ansible` never see it.
+earlier step. `github-pages`, `cloudflare-workers` and `ansible` never see it: they publish
+somewhere else, so demanding an AWS credential would skip a run that never needed one.
 
 ### `role-to-assume is set but this job cannot mint an OIDC token`
 
@@ -51,31 +52,32 @@ cause is a `sub` condition scoped to a branch the run isn't on. See
 [Setup](setup.md#an-iam-role-the-workflow-can-assume) for the policy shape, and note the
 `StringLike` on `sub` should carry a `ref:` prefix rather than `repo:owner/name:*`.
 
-## `target: docs`
+## `target: github-pages`
 
-### `no uv.lock and no docs/requirements.txt, cannot tell how to install MkDocs`
+### `no uv.lock and no docs/requirements.txt — cannot tell how to install MkDocs`
 
-Detection looks for `uv.lock` first, then the file named by `docs-requirements`. If your repo has
-neither, set `docs-toolchain` to `uv` or `pip` explicitly.
+Detection looks for `uv.lock` first, then the file named by `pages-requirements`. If your repo
+has neither, set `pages-toolchain` to `uv` or `pip` explicitly.
 
-### `no mkdocs.yml in <dir>, nothing to build`
+### `pages-toolchain must be auto, uv or pip (got '<value>')`
+
+The only three values. `auto` is the default and is right almost always: `uv.lock` in the tree
+is the fact, and a caller restating it in config is one more thing that can disagree with the
+repo.
+
+### `no mkdocs.yml in <dir> — nothing to build`
 
 `working-directory` doesn't point at the directory holding `mkdocs.yml`.
 
-### `docs-target: cloudflare-pages needs docs-cloudflare-account-id`
+### The build passed but nothing was staged for the Pages deploy
 
-Raised before the build rather than at the deploy step, so a missing credential costs a second
-instead of the two minutes it takes to build a site nobody can publish.
+Expected on a pull request, and there's no input to change it. GitHub Pages has one site and
+no preview destination, so a run in `mode: preview` (which is what a pull request resolves to)
+builds and checks without staging an artifact, and `dry-run: true` does the same. The log says
+`staging a Pages artifact: false` in the run summary, and `stage-pages=false` in the log. On a push to the default branch both say true.
 
-### `docs-require-access is set, but no Cloudflare Access application covers <host>`
-
-A Cloudflare Pages project is served on the open internet at `<project>.pages.dev` by default, so
-"the repository is private" gates nothing. Create an Access application covering that hostname
-(or a parent domain) and re-run. The check runs before the upload, because checking afterwards
-would be checking after the leak.
-
-If the message instead says the API token was refused or the response was unreadable, the run
-also refuses to publish. An unverifiable answer is not a pass.
+If a push also staged nothing, check the job summary for a skip: a fork pull request and an
+unwired repository both report one with a reason.
 
 ## `target: s3-cloudfront` and `target: lambda-zip`
 
@@ -103,6 +105,63 @@ arrives. `build_api_zip.py --arch` and the module's `architecture` must agree. S
 
 Unzipping the package on a macOS laptop and importing it fails the same way, and that one is
 correct: the builder fetches Linux wheels for the function's architecture.
+
+## `target: cloudflare-workers`
+
+### `CLOUDFLARE_API_TOKEN is required` / `CLOUDFLARE_ACCOUNT_ID is required`
+
+The log names the input that supplies each one, `cloudflare-api-token` and
+`cloudflare-account-id`. Both are checked before anything is installed or built, so a missing
+secret costs a second rather than a build. The usual cause is a fork pull request, which can't
+read secrets, and which the preflight skip normally catches first.
+
+Mint the token from Cloudflare's "Edit Cloudflare Workers" template rather than a hand-picked
+permission list, or the first deploy of a custom domain fails on a permission nobody thought
+to grant. `WRANGLER_VERSION is required` is the same guard: you blanked
+`cloudflare-wrangler-version`, and the tool that publishes to production is not a floating
+dependency.
+
+### `artifact-path '<path>' is not a directory`
+
+`artifact-path` is the Worker's asset directory for this target, passed to Wrangler as
+`--assets`. Either the build step didn't run, or it wrote somewhere else. Leave the input empty
+if the asset directory in your Wrangler config is the one you want.
+
+### `artifact-path '<path>' has no files in it. Refusing to publish an empty asset directory over a site that is currently serving.`
+
+The build produced nothing and the deploy would have replaced a working site with it. Same
+refusal as the S3 target, for the same reason.
+
+!!! warning "There is no flag to override this"
+    A build that quietly produced nothing is indistinguishable from a successful one right up
+    until the site is empty. The refusal is the only thing standing between the two.
+
+### `preview mode needs a preview-alias`
+
+`mode: preview` uploads a version under an alias, and the alias is what makes that version
+reachable without touching production. It's `pr-<number>`, resolved from the event, so this
+means preview mode with no pull request behind it: usually `mode: preview` forced on a push.
+Let `mode: auto` resolve it, or run `mode: deploy`.
+
+You normally hit the earlier form of the same problem first, `preview mode needs a
+pull-request number or an explicit preview-alias`. The deploy step checks again anyway,
+because a preview uploaded under no alias is a version nobody can reach.
+
+### `unsupported mode '<mode>' for target cloudflare-workers (expected deploy or preview)`
+
+`mode: rollback` is accepted by `s3-cloudfront` and `lambda-zip`, where it behaves exactly
+like a deploy: it publishes whatever artifact you hand it. Point `artifact-path` (or
+`lambda-version-label`) at the older build and it re-publishes that. What no target does
+is look up deployment history and pick the previous version for you. `terragrunt`,
+`ansible` and `cloudflare-workers` refuse the mode outright rather than pretend.
+
+### `wrangler exited <n>`
+
+Wrangler's own failure, and its output is above the message in the log. The code is
+Wrangler's own, not `tee`'s: `pipefail` is set for exactly this, so a failed publish can't
+report success. The two that aren't obvious from the output are a token that authenticates but
+lacks a permission (mint it from the "Edit Cloudflare Workers" template), and a route or custom
+domain already claimed by another Worker, which fails at the bind after a successful upload.
 
 ## `target: terragrunt`
 

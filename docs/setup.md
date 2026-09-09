@@ -8,27 +8,8 @@ target; this page is the task-shaped version.
 
 ## The workflow, per target
 
-### `docs`
+### `github-pages`
 
-```yaml
-permissions: { contents: read }
-
-jobs:
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: MagmaMoose/tremvok@v2
-        with:
-          target: docs
-          docs-target: cloudflare-pages
-          docs-cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          docs-cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          verify-url: https://my-project-docs.pages.dev
-```
-
-Cloudflare Pages needs no GitHub permission, so the action owns that deploy outright.
-
-**GitHub Pages is the exception**, and the only one in the whole action:
 `actions/deploy-pages` requires `pages: write` and the `github-pages` environment, and a
 composite action can declare neither. So the action builds and stages the artifact, and a job
 of yours publishes it. The environment name is fixed. GitHub creates `github-pages` when you
@@ -44,10 +25,8 @@ jobs:
     steps:
       - uses: MagmaMoose/tremvok@v2
         with:
-          target: docs
-          # A pull request has nothing to deploy, so build without staging an artifact:
-          # the build is the check, and it can never publish by accident.
-          docs-target: ${{ github.event_name != 'pull_request' && 'github-pages' || 'none' }}
+          target: github-pages
+          pages-strict: true
 
   deploy:
     needs: build
@@ -62,7 +41,66 @@ jobs:
         uses: actions/deploy-pages@v5
 ```
 
+There's nothing to set for a pull request. GitHub Pages has one site and no preview
+destination, so publishing to it is publishing, and a pull request (which resolves to
+`mode: preview`) builds and checks without staging an artifact. A dry run does the same. The
+build is the check, and it can't publish by accident.
+
 Set **Settings → Pages → Source = "GitHub Actions"** once per repository.
+
+### `cloudflare-workers`
+
+```yaml
+permissions: { contents: read, pull-requests: write }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: npm run build                       # your build, not Tremvok's
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: cloudflare-workers
+          artifact-path: dist                    # the Worker's asset directory
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+```
+
+Two secrets, and no GitHub permission for the deploy itself: Cloudflare doesn't need one, so
+`pull-requests: write` is there only for the sticky preview comment. Mint the API token from
+Cloudflare's **"Edit Cloudflare Workers"** template rather than a hand-picked permission list,
+or the first deploy of a custom domain fails on a permission nobody thought to grant. Pass the
+account id as a secret too.
+
+**Your `wrangler.toml` (or `wrangler.jsonc`) stays authoritative.** It owns the asset
+directory, the routes, custom domains and 404 handling, so what ships matches what's reviewed
+in the repository. The inputs are overrides for the few things a workflow legitimately varies
+between runs: `artifact-path` is passed as `--assets`, `cloudflare-worker-name` as `--name`,
+`cloudflare-env` as `--env`, and `cloudflare-config` points at the file when it isn't where
+Wrangler would look.
+
+The mode decides which Wrangler command runs:
+
+| Event | Mode | Wrangler |
+|---|---|---|
+| push to the default branch, or `workflow_dispatch` | `deploy` | `wrangler deploy`, live on the routes in your config |
+| pull request | `preview` | `wrangler versions upload --preview-alias pr-<number>` |
+
+**A preview takes no production traffic.** `versions upload` uploads the version and gives it
+its own URL; it never moves the live routes, which a plain `deploy` would. The alias is the
+pull request number, so the link in the comment is stable across pushes. A branch name isn't:
+it changes, and it isn't always URL-safe.
+
+Leave `cloudflare-main` empty for an assets-only Worker, which is the shape that serves files
+straight from the edge with no cold start, no code in the request path, and asset requests
+that aren't billed as invocations. Set it to your entry point for a Worker that runs code, and
+add `cloudflare-build-command` if that code needs bundling first.
+
+Wrangler is pinned (`cloudflare-wrangler-version`, 4.114.0 by default), because the tool that
+publishes to production isn't a floating dependency. The action installs Node 24 for it:
+Wrangler 4 declares `engines.node >= 22`, and on 20 it installs cleanly and then refuses to
+run.
 
 ### `s3-cloudfront` and `lambda-zip`
 

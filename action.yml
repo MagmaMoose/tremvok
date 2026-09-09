@@ -15,7 +15,7 @@ branding:
 # to it is a HARD ERROR naming the target, never a silent no-op. `target: ansible`
 # with `s3-bucket` set is a mistake, and it is reported as one.
 #
-# Input names carry their target as a prefix (`docs-`, `s3-`, `cloudfront-`,
+# Input names carry their target as a prefix (`pages-`, `s3-`, `cloudfront-`,
 # `lambda-`, `terragrunt-`, `ansible-`), with `aws-` for what every AWS target shares
 # and no prefix for what every target shares. The mapping is generated from the
 # descriptions below into scripts/lib/input-targets.json, which is what the validator
@@ -29,11 +29,12 @@ inputs:
   target:
     description: |
       The deployment target. One of:
-        docs           Build an MkDocs site strictly, publish it to GitHub Pages.
+        github-pages   Build an MkDocs site strictly and publish it to GitHub Pages.
         s3-cloudfront  Sync a built static site to S3 and invalidate CloudFront.
         lambda-zip     Publish a Lambda package to S3, update the function, move an alias.
         terragrunt     Discover, plan and (on an approval) apply Terragrunt stacks.
         ansible        Run an Ansible playbook over SSH, then prove it is idempotent.
+        cloudflare-workers  Deploy a Worker and its static assets with Wrangler.
     required: true
 
   mode:
@@ -88,72 +89,63 @@ inputs:
     required: false
     default: '3600'
 
-  # ── target: docs ─────────────────────────────────────────────────────────
-  docs-target:
+  # ── target: github-pages ─────────────────────────────────────────────────────────
+  pages-toolchain:
     description: |
-      docs: where the built site goes, github-pages (default) | none.
-      github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING
-      workflow must run: a composite action cannot hold `pages: write` or declare an
-      `environment:`. none builds and stops, which is what a pull-request check wants.
-    required: false
-    default: 'github-pages'
-
-  docs-toolchain:
-    description: |
-      docs: how to install MkDocs, auto (default) | uv | pip. `auto` picks uv when a uv.lock
-      is present, otherwise pip against `docs-requirements`. Detection exists so a caller does
+      github-pages: how to install MkDocs, auto (default) | uv | pip. `auto` picks uv when a uv.lock
+      is present, otherwise pip against `pages-requirements`. Detection exists so a caller does
       not have to declare per-repo what is already visible in the repo.
     required: false
     default: 'auto'
 
-  docs-dependency-group:
-    description: 'docs: uv dependency-group holding the docs tooling (uv toolchain only).'
+  pages-dependency-group:
+    description: 'github-pages: uv dependency-group holding the docs tooling (uv toolchain only).'
     required: false
     default: 'docs'
 
-  docs-requirements:
-    description: 'docs: requirements file pinning the docs build (pip toolchain only).'
+  pages-requirements:
+    description: 'github-pages: requirements file pinning the docs build (pip toolchain only).'
     required: false
     default: 'docs/requirements.txt'
 
-  docs-python-version:
-    description: 'docs: Python version used to build the site.'
+  pages-python-version:
+    description: 'github-pages: Python version used to build the site.'
     required: false
     default: '3.12'
 
-  docs-strict:
+  pages-strict:
     description: |
-      docs: build with `--strict`, so a broken internal link or a nav entry pointing at a
+      github-pages: build with `--strict`, so a broken internal link or a nav entry pointing at a
       missing file fails rather than publishing a site with holes in it.
     required: false
     default: 'true'
 
-  docs-site-dir:
-    description: 'docs: directory the built site is written to.'
+  pages-site-dir:
+    description: 'github-pages: directory the built site is written to.'
     required: false
     default: 'site'
 
-  docs-lint:
+  pages-lint:
     description: |
-      docs: run the repo-shape checks (README budget and section order, licence agreement,
+      github-pages: run the repo-shape checks (README budget and section order, licence agreement,
       link targets, Marketplace preflight, INHERIT clobber) before building. These are the
       rules nothing else covers; --strict already catches broken internal links.
     required: false
     default: 'true'
 
-  docs-profile:
-    description: 'docs: repo profile for the shape checks, auto | action | service | spec.'
+  pages-profile:
+    description: 'github-pages: repo profile for the shape checks, auto | action | service | spec.'
     required: false
     default: 'auto'
 
-  docs-readme-budget:
-    description: 'docs: override the README line budget. 0 uses the profile default.'
+  pages-readme-budget:
+    description: 'github-pages: override the README line budget. 0 uses the profile default.'
     required: false
     default: '0'
 
-  docs-markdownlint:
+  pages-markdownlint:
     description: |
-      docs: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is
+      github-pages: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is
       present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor
       carries no markdown linter, and MARKDOWN_MARKDOWNLINT emits no SARIF, so it could never
       gate on net-new findings anyway.
@@ -162,7 +154,7 @@ inputs:
 
   # ── targets: s3-cloudfront, lambda-zip ───────────────────────────────────
   artifact-path:
-    description: 's3-cloudfront, lambda-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip.'
+    description: 's3-cloudfront, lambda-zip, cloudflare-workers: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip.'
     required: false
     default: ''
 
@@ -399,6 +391,93 @@ inputs:
     required: false
     default: 'true'
 
+  # ── target: cloudflare-workers ───────────────────────────────────────────
+  cloudflare-api-token:
+    description: |
+      cloudflare-workers: API token Wrangler authenticates with. Pass a secret, never a
+      literal. Mint it from Cloudflare's "Edit Cloudflare Workers" template rather than a
+      hand-picked permission list, or the first deploy of a custom domain fails on a
+      permission nobody thought to grant.
+    required: false
+    default: ''
+
+  cloudflare-account-id:
+    description: 'cloudflare-workers: Cloudflare account id. Pass a secret.'
+    required: false
+    default: ''
+
+  cloudflare-config:
+    description: |
+      cloudflare-workers: path to the Wrangler config (wrangler.toml or wrangler.jsonc),
+      passed as `--config`. Empty lets Wrangler find it, which is the normal case. The
+      config owns the asset directory, routes, custom domains and 404 handling; the inputs
+      here are overrides for the few things a workflow legitimately varies.
+    required: false
+    default: ''
+
+  cloudflare-worker-name:
+    description: 'cloudflare-workers: overrides the `name` in the Wrangler config, passed as `--name`.'
+    required: false
+    default: ''
+
+  cloudflare-env:
+    description: |
+      cloudflare-workers: Wrangler environment, passed as `--env`. This selects a config
+      block, which is not the same thing as the shared `environment` input: that one is a
+      label for notifications and the deployment record.
+    required: false
+    default: ''
+
+  cloudflare-main:
+    description: |
+      cloudflare-workers: entry point for a Worker that runs code, passed as Wrangler's
+      positional path argument. Leave empty for an assets-only Worker, which is the shape
+      that serves static files straight from the edge with no cold start and no code in the
+      request path.
+    required: false
+    default: ''
+
+  cloudflare-build-command:
+    description: 'cloudflare-workers: command run in working-directory before Wrangler, for a Worker that needs bundling. Empty skips it.'
+    required: false
+    default: ''
+
+  cloudflare-compatibility-date:
+    description: 'cloudflare-workers: overrides the config, passed as `--compatibility-date`.'
+    required: false
+    default: ''
+
+  cloudflare-minify:
+    description: 'cloudflare-workers: pass `--minify`. Applies to Worker code, not to static assets.'
+    required: false
+    default: 'false'
+
+  cloudflare-vars:
+    description: |
+      cloudflare-workers: plain (NOT secret) variables, one `KEY=VALUE` per line, each passed
+      as `--var`. Wrangler deletes vars not present in the config unless `--keep-vars` is set,
+      so anything set in the dashboard belongs in the config instead.
+    required: false
+    default: ''
+
+  cloudflare-wrangler-version:
+    description: 'cloudflare-workers: exact Wrangler version to run. Pinned, because the tool that publishes to production is not a floating dependency.'
+    required: false
+    default: '4.114.0'
+
+  cloudflare-node-version:
+    description: |
+      cloudflare-workers: Node version Wrangler runs on. Wrangler 4 declares
+      `engines.node >= 22`, and on 20 it installs cleanly and then refuses to run, so this
+      does not default to whatever the runner happens to ship.
+    required: false
+    default: '24'
+
+  cloudflare-extra-args:
+    description: 'cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace.'
+    required: false
+    default: ''
+
   # ── Verification ─────────────────────────────────────────────────────────
   verify-url:
     description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green.'
@@ -489,7 +568,7 @@ outputs:
     value: ${{ steps.resolve.outputs.environment }}
   url:
     description: 'URL of what was deployed, when the target produces one.'
-    value: ${{ steps.deploy-s3.outputs.url }}
+    value: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
   deployed:
     description: 'true when something was actually deployed (false for a skip).'
     value: ${{ steps.outcome.outputs.deployed }}
@@ -506,14 +585,14 @@ outputs:
     description: 'Identifier returned by the Tremvok API, when api-url is set.'
     value: ${{ steps.record.outputs.record-id }}
   site-dir:
-    description: 'docs: absolute path to the built site.'
-    value: ${{ steps.docs-build.outputs.site-dir }}
-  docs-toolchain:
-    description: 'docs: the toolchain actually used, uv or pip.'
-    value: ${{ steps.docs-detect.outputs.toolchain }}
+    description: 'github-pages: absolute path to the built site.'
+    value: ${{ steps.pages-build.outputs.site-dir }}
+  pages-toolchain:
+    description: 'github-pages: the toolchain actually used, uv or pip.'
+    value: ${{ steps.pages-detect.outputs.toolchain }}
   version-id:
-    description: 'lambda-zip: the published Lambda version.'
-    value: ${{ steps.deploy-lambda.outputs.version-id }}
+    description: 'lambda-zip, cloudflare-workers: the published version. A Lambda version number, or a Worker Version ID.'
+    value: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id }}
   stacks:
     description: 'terragrunt: how many stacks this run discovered.'
     value: ${{ steps.deploy-terragrunt.outputs.stacks }}
@@ -577,45 +656,46 @@ runs:
         ALLOW_FORK_PREVIEW: ${{ inputs.allow-fork-preview }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/preflight.sh"
 
-    # ── target: docs ─────────────────────────────────────────────────────────
+    # ── target: github-pages ─────────────────────────────────────────────────────────
     # Detection rather than declaration: uv.lock in the tree is the fact, and a caller
     # restating it in config is one more thing that can disagree with the repo.
     - name: Detect the docs toolchain
-      id: docs-detect
-      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'docs'
+      id: pages-detect
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'github-pages'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        REQUESTED: ${{ inputs.docs-toolchain }}
-        REQUIREMENTS: ${{ inputs.docs-requirements }}
-        TARGET: ${{ inputs.docs-target }}
-      run: bash "${GITHUB_ACTION_PATH}/scripts/docs-detect.sh"
+        REQUESTED: ${{ inputs.pages-toolchain }}
+        REQUIREMENTS: ${{ inputs.pages-requirements }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/pages-detect.sh"
 
     - name: Set up uv
-      if: steps.docs-detect.outputs.toolchain == 'uv'
+      if: steps.pages-detect.outputs.toolchain == 'uv'
       uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       with:
-        python-version: ${{ inputs.docs-python-version }}
+        python-version: ${{ inputs.pages-python-version }}
 
     - name: Set up Python
-      if: steps.docs-detect.outputs.toolchain == 'pip'
+      if: steps.pages-detect.outputs.toolchain == 'pip'
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
-        python-version: ${{ inputs.docs-python-version }}
+        python-version: ${{ inputs.pages-python-version }}
         cache: pip
-        cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.docs-requirements }}
+        cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.pages-requirements }}
 
     # Installed as its own step so the lint below can import PyYAML, which arrives
     # transitively with MkDocs. Hand-rolling a YAML parser to avoid this would be a
     # worse trade than one extra step.
     - name: Install the docs toolchain
-      if: inputs.target == 'docs' && steps.docs-detect.outputs.toolchain != ''
+      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        TOOLCHAIN: ${{ steps.docs-detect.outputs.toolchain }}
-        DOCS_GROUP: ${{ inputs.docs-dependency-group }}
-        REQUIREMENTS: ${{ inputs.docs-requirements }}
+        TOOLCHAIN: ${{ steps.pages-detect.outputs.toolchain }}
+        DOCS_GROUP: ${{ inputs.pages-dependency-group }}
+        REQUIREMENTS: ${{ inputs.pages-requirements }}
       run: |
         set -euo pipefail
         if [ "$TOOLCHAIN" = "uv" ]; then
@@ -625,14 +705,14 @@ runs:
         fi
 
     - name: Lint repo shape
-      if: inputs.target == 'docs' && inputs.docs-lint == 'true' && steps.docs-detect.outputs.toolchain != ''
+      if: inputs.target == 'github-pages' && inputs.pages-lint == 'true' && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        TOOLCHAIN: ${{ steps.docs-detect.outputs.toolchain }}
+        TOOLCHAIN: ${{ steps.pages-detect.outputs.toolchain }}
         SCRIPT: ${{ github.action_path }}/scripts/lint_docs.py
-        PROFILE: ${{ inputs.docs-profile }}
-        BUDGET: ${{ inputs.docs-readme-budget }}
+        PROFILE: ${{ inputs.pages-profile }}
+        BUDGET: ${{ inputs.pages-readme-budget }}
       run: |
         set -euo pipefail
         args=(--root . --profile "$PROFILE" --readme-budget "$BUDGET" --github-annotations)
@@ -645,13 +725,13 @@ runs:
     # Only when the runner has no Node. A GitHub-hosted runner already does, so this
     # step is skipped there and costs nothing.
     - name: Set up Node for markdownlint
-      if: inputs.target == 'docs' && inputs.docs-markdownlint == 'true' && steps.docs-detect.outputs.has-node == 'false'
+      if: inputs.target == 'github-pages' && inputs.pages-markdownlint == 'true' && steps.pages-detect.outputs.has-node == 'false'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: '22'
 
     - name: Lint markdown
-      if: inputs.target == 'docs' && inputs.docs-markdownlint == 'true' && steps.docs-detect.outputs.toolchain != ''
+      if: inputs.target == 'github-pages' && inputs.pages-markdownlint == 'true' && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -669,14 +749,14 @@ runs:
         npx --yes markdownlint-cli2 --config "$cfg" "$DOCS_DIR/**/*.md" "README.md"
 
     - name: Build the site
-      id: docs-build
-      if: inputs.target == 'docs' && steps.docs-detect.outputs.toolchain != ''
+      id: pages-build
+      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        TOOLCHAIN: ${{ steps.docs-detect.outputs.toolchain }}
-        SITE_DIR: ${{ inputs.docs-site-dir }}
-        STRICT: ${{ inputs.docs-strict }}
+        TOOLCHAIN: ${{ steps.pages-detect.outputs.toolchain }}
+        SITE_DIR: ${{ inputs.pages-site-dir }}
+        STRICT: ${{ inputs.pages-strict }}
       run: |
         set -euo pipefail
         strict_flag=""
@@ -689,14 +769,14 @@ runs:
         echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
 
     - name: Configure Pages
-      if: steps.docs-detect.outputs.stage-pages == 'true'
+      if: steps.pages-detect.outputs.stage-pages == 'true'
       uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
     - name: Stage the Pages artifact
-      if: steps.docs-detect.outputs.stage-pages == 'true'
+      if: steps.pages-detect.outputs.stage-pages == 'true'
       uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
       with:
-        path: ${{ inputs.working-directory }}/${{ inputs.docs-site-dir }}
+        path: ${{ inputs.working-directory }}/${{ inputs.pages-site-dir }}
 
     # ── targets: s3-cloudfront, lambda-zip, terragrunt ───────────────────────
     - name: Assume the deployment role
@@ -816,6 +896,39 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-ansible.sh"
 
+    # ── target: cloudflare-workers ───────────────────────────────────────────
+    # Wrangler 4 declares `engines.node >= 22`. On Node 20 it installs cleanly and then
+    # refuses to run, and a self-hosted runner may ship no Node at all.
+    - name: Set up Node for Wrangler
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-workers'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: ${{ inputs.cloudflare-node-version }}
+
+    - name: Deploy — Cloudflare Workers
+      id: deploy-cloudflare
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-workers'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        PREVIEW_ALIAS: ${{ steps.resolve.outputs.preview-alias }}
+        CONFIG: ${{ inputs.cloudflare-config }}
+        WORKER_NAME: ${{ inputs.cloudflare-worker-name }}
+        CF_ENV: ${{ inputs.cloudflare-env }}
+        MAIN: ${{ inputs.cloudflare-main }}
+        ASSETS: ${{ inputs.artifact-path }}
+        BUILD_COMMAND: ${{ inputs.cloudflare-build-command }}
+        COMPATIBILITY_DATE: ${{ inputs.cloudflare-compatibility-date }}
+        MINIFY: ${{ inputs.cloudflare-minify }}
+        VARS: ${{ inputs.cloudflare-vars }}
+        EXTRA_ARGS: ${{ inputs.cloudflare-extra-args }}
+        WRANGLER_VERSION: ${{ inputs.cloudflare-wrangler-version }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-cloudflare-workers.sh"
+
     # ── Verify, then tell the humans ─────────────────────────────────────────
     - name: Verify it actually went live
       id: verify
@@ -836,10 +949,11 @@ runs:
       shell: bash
       env:
         SKIP: ${{ steps.preflight.outputs.skip }}
-        DOCS_SITE_DIR: ${{ steps.docs-build.outputs.site-dir }}
+        DOCS_SITE_DIR: ${{ steps.pages-build.outputs.site-dir }}
         S3_DEPLOYED: ${{ steps.deploy-s3.outputs.deployed }}
         LAMBDA_DEPLOYED: ${{ steps.deploy-lambda.outputs.deployed }}
         TG_DEPLOYED: ${{ steps.deploy-terragrunt.outputs.deployed }}
+        CF_DEPLOYED: ${{ steps.deploy-cloudflare.outputs.deployed }}
         ANSIBLE_DEPLOYED: ${{ steps.deploy-ansible.outputs.deployed }}
         JOB_STATUS: ${{ job.status }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/collect-outcome.sh"
@@ -856,7 +970,7 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         COMMENT_KEY: ${{ inputs.target }}-${{ steps.resolve.outputs.environment }}
         STATUS: ${{ steps.outcome.outputs.status }}
-        URL: ${{ steps.deploy-s3.outputs.url }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         MODE: ${{ steps.resolve.outputs.mode }}
@@ -876,7 +990,7 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -893,7 +1007,7 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

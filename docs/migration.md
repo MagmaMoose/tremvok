@@ -2,7 +2,7 @@
 
 <!-- sources: action.yml -->
 
-v1 is the docs-only action. v2 is one action covering five targets, so the input surface had
+v1 is the docs-only action. v2 is one action covering six targets, so the input surface had
 to grow a selector and the docs inputs had to move out of the way of it.
 
 **`@v1` keeps working exactly as it does today.** It is not deprecated by this and nothing
@@ -18,40 +18,53 @@ the collision that forced a major:
 # v1
 - uses: MagmaMoose/tremvok@v1
   with:
-    target: cloudflare-pages
+    target: github-pages
+    toolchain: uv
+    strict: true
 
 # v2
 - uses: MagmaMoose/tremvok@v2
   with:
-    target: docs
-    docs-target: cloudflare-pages
+    target: github-pages
+    pages-toolchain: uv
+    pages-strict: true
 ```
 
-Every other docs input gained a `docs-` prefix for the same reason: with five targets in one
-action, a bare `toolchain` or `strict` cannot say whose it is. The prefix is also what the
-validator keys on, so a misplaced input is caught rather than ignored.
+The docs target is now named for the one place it publishes, so `target` says both things at
+once and there is no second destination input under it. Every other docs input gained a
+`pages-` prefix: with six targets in one action, a bare `toolchain` or `strict` cannot say
+whose it is. The prefix is also what the validator keys on, so a misplaced input is caught
+rather than ignored.
 
 ## Renames
 
 | v1 | v2 |
 | --- | --- |
-| `target` | `docs-target` |
-| `toolchain` | `docs-toolchain` |
-| `docs-group` | `docs-dependency-group` |
-| `requirements` | `docs-requirements` |
-| `python-version` | `docs-python-version` |
-| `strict` | `docs-strict` |
-| `site-dir` | `docs-site-dir` |
-| `lint` | `docs-lint` |
-| `profile` | `docs-profile` |
-| `readme-budget` | `docs-readme-budget` |
-| `markdownlint` | `docs-markdownlint` |
-| `cloudflare-project` | `docs-cloudflare-project` |
-| `cloudflare-account-id` | `docs-cloudflare-account-id` |
-| `cloudflare-api-token` | `docs-cloudflare-api-token` |
-| `cloudflare-branch` | `docs-cloudflare-branch` |
-| `require-access` | `docs-require-access` |
-| `stage-pages` | **removed**: it was already a deprecated alias; use `docs-target: none` |
+| `target: github-pages` | `target: github-pages`, and it now selects the deploy target itself |
+| `toolchain` | `pages-toolchain` |
+| `docs-group` | `pages-dependency-group` |
+| `requirements` | `pages-requirements` |
+| `python-version` | `pages-python-version` |
+| `strict` | `pages-strict` |
+| `site-dir` | `pages-site-dir` |
+| `lint` | `pages-lint` |
+| `profile` | `pages-profile` |
+| `readme-budget` | `pages-readme-budget` |
+| `markdownlint` | `pages-markdownlint` |
+| `target: cloudflare-pages` | **removed**: publish a built site with `target: cloudflare-workers` |
+| `cloudflare-project`, `cloudflare-account-id`, `cloudflare-api-token`, `cloudflare-branch` | **removed** with it. The Workers target takes `cloudflare-api-token` and `cloudflare-account-id` of its own, and reads the rest from your Wrangler config |
+| `require-access` | **removed** with it |
+| `stage-pages` | **removed**: it was already a deprecated alias, and staging is no longer a choice |
+
+There is no `docs-target` at v2, and nothing replaces it. GitHub Pages is one site with no
+preview destination, so a pull request (`mode: preview`) and a dry run build without staging
+an artifact, and a push to the default branch stages one. The mode decides, which is what the
+mode means for every other target too.
+
+If you tracked a `docs-*` prefixed pre-release of v2 rather than `@v1`, the rename is
+mechanical: `docs-` becomes `pages-`, `target: docs` becomes `target: github-pages`, and
+`docs-target` comes out. An input that no longer exists is a hard error naming the target, so
+a missed one fails the run before the checkout rather than being ignored.
 
 `working-directory` and `checkout` are unchanged: they genuinely apply to every target.
 
@@ -59,9 +72,10 @@ validator keys on, so a misplaced input is caught rather than ignored.
 
 | v1 | v2 |
 | --- | --- |
-| `toolchain` | `docs-toolchain` |
+| `toolchain` | `pages-toolchain` |
 | `target` | `target`, now the selector you passed in, not the docs destination |
-| `site-dir`, `page-url`, `deployment-url` | unchanged |
+| `site-dir` | unchanged |
+| `page-url`, `deployment-url` | **removed**: the Pages URL comes from your own `deploy-pages` step, and any other target's published URL is `url` |
 
 ## The reusable workflows are gone
 
@@ -75,8 +89,9 @@ neither. That becomes a job in your own workflow, the shape is in [Setup](setup.
 is about ten lines. It is the only place in the action where an `environment:` is
 load-bearing; the Terragrunt apply gate is the action's own logic and needs none.
 
-Callers who used `docs.yml` (Cloudflare Pages) need no second job at all: the action owns
-that deploy outright.
+Callers who used `docs.yml` for Cloudflare Pages need a different target: `cloudflare-workers`
+publishes a built directory with Wrangler, needs no GitHub permission, and completes inside the
+action. [Setup](setup.md#cloudflare-workers) has the job.
 
 ## The subdirectory entrypoint is gone
 

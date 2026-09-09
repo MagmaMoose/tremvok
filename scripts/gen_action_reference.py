@@ -27,11 +27,28 @@ ROOT = Path(__file__).resolve().parent.parent
 ACTION = ROOT / "action.yml"
 OUT = ROOT / "docs" / "action-reference.md"
 
+# One line per target, keyed by the SAME list the validator uses. Derived rather than
+# written out, because a hardcoded table drifts: the `docs` row outlived that target's rename
+# by a whole branch, and `--check` reported the page as up to date the entire time.
+TARGET_SUMMARY = {
+    "github-pages": "Build an MkDocs site strictly and publish it to GitHub Pages",
+    "s3-cloudfront": "Sync a built static site to S3, invalidate CloudFront",
+    "lambda-zip": "Publish a Lambda package to S3, update the function, move an alias",
+    "terragrunt": "Discover, plan and (on an approval) apply Terragrunt stacks",
+    "ansible": "Run a playbook over SSH, then prove it is idempotent",
+    "cloudflare-workers": "Deploy a Worker and its static assets with Wrangler",
+}
+
+_missing = set(TARGETS) - set(TARGET_SUMMARY)
+if _missing:  # pragma: no cover - a new target must not reach the page undescribed
+    raise SystemExit(f"gen_action_reference: no summary for target(s): {sorted(_missing)}")
+
+
 # What a caller's job has to grant, per target. A composite action cannot declare
 # `permissions:`, so this is the caller's half of the contract and belongs in the reference
 # rather than in prose somebody has to find.
 PERMISSIONS = {
-    "docs": [
+    "github-pages": [
         ("contents: read", "checkout"),
         ("pages: write", "actions/deploy-pages, in the caller's own job"),
         ("id-token: write", "actions/deploy-pages"),
@@ -55,6 +72,10 @@ PERMISSIONS = {
     "ansible": [
         ("contents: read", "checkout"),
         ("pull-requests: write", "the sticky run comment"),
+    ],
+    "cloudflare-workers": [
+        ("contents: read", "checkout"),
+        ("pull-requests: write", "the sticky preview comment"),
     ],
 }
 
@@ -126,11 +147,7 @@ def render() -> str:
         "",
         "| Target | What it does |",
         "| --- | --- |",
-        "| `docs` | Build an MkDocs site strictly, publish it to GitHub Pages |",
-        "| `s3-cloudfront` | Sync a built static site to S3, invalidate CloudFront |",
-        "| `lambda-zip` | Publish a Lambda package to S3, update the function, move an alias |",
-        "| `terragrunt` | Discover, plan and (on an approval) apply Terragrunt stacks |",
-        "| `ansible` | Run a playbook over SSH, then prove it is idempotent |",
+        *(f"| `{name}` | {TARGET_SUMMARY[name]} |" for name in TARGETS),
         "",
         "## Inputs",
         "",
@@ -169,11 +186,11 @@ def render() -> str:
         lines += ["```", ""]
 
     lines += [
-        "`target: docs` with `docs-target: github-pages` is the one target the action cannot",
-        "finish on its own: `actions/deploy-pages` needs `pages: write` and the `github-pages`",
-        "environment, and a composite action can declare neither. The action builds and stages",
-        "the artifact; the caller's job runs `actions/deploy-pages`. Every other target",
-        "completes inside the action.",
+        "`target: github-pages` is the one target the action cannot finish on its own:",
+        "`actions/deploy-pages` needs `pages: write` and the `github-pages` environment, and a",
+        "composite action can declare neither. The action builds and stages the artifact; the",
+        "caller's job runs `actions/deploy-pages`. Every other target completes inside the",
+        "action.",
         "",
     ]
     return "\n".join(lines)
