@@ -28,10 +28,12 @@ jobs:
     steps:
       - uses: MagmaMoose/tremvok@v2  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
-          target: docs
-          # A pull request has nothing to deploy, so build without staging an artifact: the
-          # build is the check, and it can never publish by accident.
-          docs-target: ${{ github.event_name != 'pull_request' && 'github-pages' || 'none' }}
+          target: github-pages
+          # There is nothing here for the pull-request case, and no input for it either.
+          # GitHub Pages has one site and no preview destination, so a pull request resolves
+          # to `mode: preview` and builds WITHOUT staging an artifact: the build is the
+          # check, and it can never publish by accident. A push stages one.
+          pages-strict: true
 
   deploy:
     needs: build

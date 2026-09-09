@@ -6,18 +6,18 @@ Two surfaces, one repository, no shared imports.
 
 ```text
 GitHub Actions runner
-┌────────────────────────────────────────────────────────────┐
-│ action.yml (composite, glue only)                          │
-│   ├─ validate-inputs.sh   inputs ↔ target, or a hard error  │
-│   ├─ resolve-mode.sh      event → deploy | preview          │
-│   ├─ preflight.sh         fork / no credential → skip       │
-│   ├─ assume-role.sh       OIDC → STS → short-lived creds    │
-│   ├─ <target adapter>     docs · s3 · lambda · tg · ansible │
-│   ├─ verify-live.sh       curl status + header, retried     │
-│   ├─ collect-outcome.sh   one status every sink shares      │
-│   ├─ notify-{pr,webhook}.sh                                 │
-│   └─ record-deployment.sh ──────────────┐                   │
-└─────────────────────────────────────────┼───────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ action.yml (composite, glue only)                                │
+│   ├─ validate-inputs.sh   inputs ↔ target, or a hard error        │
+│   ├─ resolve-mode.sh      event → deploy | preview                │
+│   ├─ preflight.sh         fork / no credential → skip             │
+│   ├─ assume-role.sh       OIDC → STS → short-lived creds          │
+│   ├─ <target adapter>     pages · s3 · lambda · tg · ansible · cf │
+│   ├─ verify-live.sh       curl status + header, retried           │
+│   ├─ collect-outcome.sh   one status every sink shares            │
+│   ├─ notify-{pr,webhook}.sh                                       │
+│   └─ record-deployment.sh ──────────────┐                         │
+└─────────────────────────────────────────┼─────────────────────────┘
                                           │ OIDC-authenticated HTTPS
                                           ▼
                      API Gateway → Lambda (FastAPI + Mangum)
@@ -25,12 +25,12 @@ GitHub Actions runner
                                           └─► Slack / Teams
 ```
 
-## One action, five targets
+## One action, six targets
 
 `target` selects the adapter; everything before and after it is shared. The parts that are
 not target-specific, resolving the mode from the event, the honest skip, verification, the
 outcome, the three notification sinks, are written once and every target gets them, which
-is the argument for one action rather than five.
+is the argument for one action rather than six.
 
 The cost of a target enum is that a caller can pass an input belonging to a different
 target. Silently ignoring it is what would make the Marketplace listing dishonest, so
@@ -56,10 +56,14 @@ put that code outside the bash contract the other 190 tests enforce.
 ## The one job the action hands back
 
 `actions/deploy-pages` needs `pages: write` and the `github-pages` environment, and a
-composite action can declare neither. So `target: docs` with `docs-target: github-pages`
-builds and stages the artifact and the caller publishes it. That is the only place an
-`environment:` is load-bearing: the Terragrunt apply gate is the action's own logic
-(`approval-gate.sh` reads the pull request's reviews), and needs none.
+composite action can declare neither. So `target: github-pages` builds and stages the
+artifact and the caller publishes it. That is the only place an `environment:` is
+load-bearing: the Terragrunt apply gate is the action's own logic (`approval-gate.sh` reads
+the pull request's reviews), and needs none.
+
+It is also why that target takes no destination input. There is one Pages site and no preview
+destination for it, so a pull request (`mode: preview`) and a dry run build without staging an
+artifact, and nothing but the mode decides that.
 
 ## The guards, and what each one is for
 
@@ -73,12 +77,12 @@ fleet.
 | Verify a **header**, not just a `200` | a deploy that uploads but does not bind: the old version keeps serving and everything looks green |
 | Immutable artifact keys | overwriting a published key changes the code behind a version somebody already reviewed |
 | Compare the deployed `CodeSha256` | "the API accepted my request" is not "the function runs my code" |
-| A preview never moves the alias | a pull request proving a package deploys must not change what production serves |
+| A preview never moves an alias, and never deploys a Worker version | a pull request proving the artifact publishes must not change what production serves |
 | `workflow_dispatch` pinned to the default branch | "Run workflow" from a topic branch publishes it to production, and looks like a normal deploy |
 | An input that belongs to another target is an error | a caller passing `s3-bucket` to `target: ansible` gets a mistake reported, not a run that quietly ignores half its configuration |
 | Terragrunt applies the **saved** plan | re-planning at apply time means what lands is a plan resembling the reviewed one, not the reviewed one |
 | Ansible re-runs in check mode | a zero exit proves the playbook ran; only a second run finding nothing left to change proves it converged |
-| A pinned, checksum-verified tofu/terragrunt | the binary that applies to production is the one input nobody reviews when it floats |
+| A pinned, checksum-verified tofu/terragrunt, and a pinned Wrangler | the binary that publishes to production is the one input nobody reviews when it floats |
 | Publish the check run even with **zero** stacks | a required check that never reports blocks the pull request forever |
 | An unreadable review list is an error, not "nobody approved" | the difference between "wait for approval" and "apply without one" |
 | Honest skips for forks and unwired repositories | an expected policy outcome presenting as a broken credential |
@@ -87,9 +91,14 @@ fleet.
 ## The target adapter boundary
 
 `target` selects a script. The resolve → deploy → verify → notify → record skeleton is
-target-agnostic, so a new target is one script, one gated step, and one bats file. The three
-that exist are S3/CloudFront, Lambda packages and Terragrunt; Kubernetes deploy *status* and
-the GitHub Deployments API slot in behind the same interface without touching the skeleton.
+target-agnostic, so a new target is one script, one gated step, and one bats file.
+
+`cloudflare-workers` is that claim being tested: an adapter for a provider the skeleton was
+not designed around, added without touching the skeleton. It maps the two modes onto two
+Wrangler commands (`deploy`, and `versions upload --preview-alias` for a version that takes no
+production traffic) and inherits the resolved mode, the honest skip, verification, the outcome
+and the three sinks unchanged. Kubernetes deploy *status* and the GitHub Deployments API slot
+in behind the same interface.
 
 ## The API, and why it is not just webhooks
 

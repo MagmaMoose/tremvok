@@ -1,59 +1,65 @@
 {
   "targets": [
-    "docs",
+    "github-pages",
     "s3-cloudfront",
     "lambda-zip",
     "terragrunt",
-    "ansible"
+    "ansible",
+    "cloudflare-workers"
   ],
   "inputs": {
     "mode": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "auto"
     },
     "environment": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": ""
     },
     "working-directory": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "."
     },
     "checkout": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "true"
     },
     "dry-run": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "false"
     },
@@ -81,76 +87,71 @@
       ],
       "default": "3600"
     },
-    "docs-target": {
+    "pages-toolchain": {
       "targets": [
-        "docs"
-      ],
-      "default": "github-pages"
-    },
-    "docs-toolchain": {
-      "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "auto"
     },
-    "docs-dependency-group": {
+    "pages-dependency-group": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "docs"
     },
-    "docs-requirements": {
+    "pages-requirements": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "docs/requirements.txt"
     },
-    "docs-python-version": {
+    "pages-python-version": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "3.12"
     },
-    "docs-strict": {
+    "pages-strict": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "true"
     },
-    "docs-site-dir": {
+    "pages-site-dir": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "site"
     },
-    "docs-lint": {
+    "pages-lint": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "true"
     },
-    "docs-profile": {
+    "pages-profile": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "auto"
     },
-    "docs-readme-budget": {
+    "pages-readme-budget": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "0"
     },
-    "docs-markdownlint": {
+    "pages-markdownlint": {
       "targets": [
-        "docs"
+        "github-pages"
       ],
       "default": "true"
     },
     "artifact-path": {
       "targets": [
         "s3-cloudfront",
-        "lambda-zip"
+        "lambda-zip",
+        "cloudflare-workers"
       ],
       "default": ""
     },
@@ -390,153 +391,246 @@
       ],
       "default": "true"
     },
+    "cloudflare-api-token": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-account-id": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-config": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-worker-name": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-env": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-main": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-build-command": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-compatibility-date": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-minify": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": "false"
+    },
+    "cloudflare-vars": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
+    "cloudflare-wrangler-version": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": "4.114.0"
+    },
+    "cloudflare-node-version": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": "24"
+    },
+    "cloudflare-extra-args": {
+      "targets": [
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
     "verify-url": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": ""
     },
     "verify-header": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": ""
     },
     "verify-header-match": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": ""
     },
     "verify-status": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "200"
     },
     "verify-attempts": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "6"
     },
     "verify-delay": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "10"
     },
     "notify": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "always"
     },
     "pr-comment": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "auto"
     },
     "slack-webhook": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": ""
     },
     "teams-webhook": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": ""
     },
     "api-url": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": ""
     },
     "api-audience": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "tremvok"
     },
     "auth-token": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "${{ github.token }}"
     },
     "allow-fork-preview": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "false"
     },
     "allow-dispatch-from-any-ref": {
       "targets": [
-        "docs",
+        "github-pages",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
-        "ansible"
+        "ansible",
+        "cloudflare-workers"
       ],
       "default": "false"
     }

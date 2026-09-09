@@ -11,6 +11,7 @@ never sees the module. These tests call the generator in-process and pin what it
 from __future__ import annotations
 
 import pathlib
+import re
 
 import gen_action_reference as gen
 import pytest
@@ -18,6 +19,7 @@ import yaml
 from gen_action_reference import PERMISSIONS, applies_to, cell, default, render
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+ACTION_PATH = ROOT / "action.yml"
 ACTION = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
 
 
@@ -232,7 +234,7 @@ def test_the_grants_each_target_actually_needs_are_the_ones_documented() -> None
     """
     doc = render()
     required = {
-        "docs": ["contents: read", "pages: write", "id-token: write"],
+        "github-pages": ["contents: read", "pages: write", "id-token: write"],
         "s3-cloudfront": ["id-token: write", "pull-requests: write"],
         "lambda-zip": ["id-token: write", "pull-requests: write"],
         # checks: write is what lets the check run be a required one, which is the whole
@@ -247,16 +249,43 @@ def test_the_grants_each_target_actually_needs_are_the_ones_documented() -> None
 
 
 def test_the_github_pages_caveat_survives_into_the_page() -> None:
-    """`target: docs` with `docs-target: github-pages` is the one target the action cannot
-    finish alone — the caller has to run actions/deploy-pages — and the reference is where
-    somebody finds that out before their deploy stops half-done."""
+    """`target: github-pages` is the one target the action cannot finish alone, because the
+    caller has to run actions/deploy-pages, and the reference is where somebody finds that
+    out before their deploy stops half-done."""
     doc = render()
-    # The two facts a reader needs, not a phrase that any rewording would break: which
-    # combination is affected, and what they have to run themselves.
-    assert "`docs-target: github-pages`" in doc
+    # The facts a reader needs, not a phrase any rewording would break.
+    assert "`target: github-pages`" in doc
     assert "actions/deploy-pages" in doc
     assert "`pages: write`" in doc
-    assert "`github-pages`" in doc
+
+
+def test_the_caveat_names_only_inputs_that_exist() -> None:
+    """This test previously asserted `docs-target: github-pages` appeared on the page. It did,
+    because the generator hardcoded it, and the input had been deleted from action.yml a
+    branch earlier. Rendering a constant and then looking for that constant certifies whatever
+    the constant says, so the oracle is action.yml instead."""
+    doc = render()
+    declared = set(yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))["inputs"])
+    # The identifier at the HEAD of a code span, so `docs-target: github-pages` is caught as
+    # well as a bare `docs-target`. Matching only whole spans is what let the phantom input
+    # through the first version of this check.
+    # Command names that share the prefix shape but are tools, not inputs.
+    not_inputs = {"ansible-galaxy", "ansible-playbook-command"}
+    for token in re.findall(r"`([a-z][a-z0-9-]*-[a-z0-9-]+)(?=[`:\s])", doc):
+        if token in gen.TARGETS or token in not_inputs:
+            continue  # a target or a tool, not an input name
+        if token.startswith(("docs-", "pages-", "cloudflare-", "terragrunt-", "ansible-")):
+            assert token in declared, f"the page names {token!r}, which action.yml does not declare"
+
+
+def test_every_target_gets_a_row_in_the_targets_table() -> None:
+    """The table used to be written out by hand, so the `docs` row outlived that target's
+    rename and `--check` still called the page current. It is generated from TARGETS now, and
+    this is what notices if that ever stops being true."""
+    table = section(render(), "Targets")
+    for name in gen.TARGETS:
+        assert f"| `{name}` |" in table, name
+    assert table.count("\n| `") == len(gen.TARGETS)
 
 
 def test_check_passes_against_the_committed_reference(capsys: pytest.CaptureFixture) -> None:

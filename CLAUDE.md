@@ -1,9 +1,10 @@
 # Tremvok
 
-A published Marketplace action: one composite action, five targets (`docs`, `s3-cloudfront`,
-`lambda-zip`, `terragrunt`, `ansible`), plus an optional FastAPI deployment-record service on
-Lambda. Consumers pin `@v2` and a broken release breaks their deploys, so the action's input
-contract is the thing to be careful with. Infrastructure is `terraform/`, provable on LocalStack.
+A published Marketplace action: one composite action, six targets (`github-pages`,
+`s3-cloudfront`, `lambda-zip`, `terragrunt`, `ansible`, `cloudflare-workers`), plus an optional
+FastAPI deployment-record service on Lambda. Consumers pin `@v2` and a broken release breaks
+their deploys, so the action's input contract is the thing to be careful with. Infrastructure is
+`terraform/`, provable on LocalStack.
 
 @.claude/QUICK_START.md
 @.claude/ARCHITECTURE_MAP.md
@@ -30,8 +31,11 @@ Fifteen incidents, each with symptom, cause and fix. The clusters:
 
 ## Hard constraints
 
-- **No Cloudflare.** Every target and every hosted component is AWS, inside the always-free
-  allowances. New spend needs an explicit decision, not a default.
+- **Tremvok's own hosted components are AWS** — the API is Lambda, not a Worker — inside the
+  always-free allowances; new spend needs a recorded decision, not a default. A caller's deploy
+  *target* is a different thing: it runs on their account at their cost, so any supported
+  provider is fine, `cloudflare-workers` included. See
+  `.claude/decisions/0003-cloudflare-workers-target.md`.
 - **Bash 3.2.** GitHub's macOS runners ship it. No `${x,,}`, `${x^}`, `mapfile`, `declare -A`.
   `tests/bats/portability.bats` enforces this.
 - **Secrets are SSM `SecureString`.** Never Lambda environment variables, never Terraform

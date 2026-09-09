@@ -21,7 +21,7 @@ setup() {
 }
 
 @test "every mistake is reported at once, not one per attempt" {
-  TARGET=docs INPUTS_JSON='{"s3-bucket":"b","terragrunt-root":"infra","ansible-playbook":"site.yml"}' \
+  TARGET=github-pages INPUTS_JSON='{"s3-bucket":"b","terragrunt-root":"infra","ansible-playbook":"site.yml"}' \
     run bash "${SCRIPTS}/validate-inputs.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"s3-bucket"* ]]
@@ -36,7 +36,7 @@ setup() {
 }
 
 @test "shared inputs are accepted for every target" {
-  for target in docs s3-cloudfront lambda-zip terragrunt ansible; do
+  for target in github-pages s3-cloudfront lambda-zip terragrunt ansible cloudflare-workers; do
     TARGET="$target" INPUTS_JSON='{"working-directory":"sub","verify-url":"https://example.com","notify":"on-failure"}' \
       run bash "${SCRIPTS}/validate-inputs.sh"
     [ "$status" -eq 0 ]
@@ -51,8 +51,8 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "an aws-shared input is refused for the two targets that never touch AWS" {
-  for target in docs ansible; do
+@test "an aws-shared input is refused for every target that never touches AWS" {
+  for target in github-pages ansible cloudflare-workers; do
     TARGET="$target" INPUTS_JSON='{"aws-region":"eu-west-1"}' \
       run bash "${SCRIPTS}/validate-inputs.sh"
     [ "$status" -ne 0 ]
@@ -67,7 +67,7 @@ setup() {
 }
 
 @test "no target at all is refused rather than defaulted" {
-  # There is no sensible default. Guessing `docs` would silently build a site for somebody
+  # There is no sensible default. Guessing `github-pages` would silently build a site for somebody
   # who meant to deploy a Lambda.
   TARGET= INPUTS_JSON='{}' run bash "${SCRIPTS}/validate-inputs.sh"
   [ "$status" -ne 0 ]
@@ -75,7 +75,7 @@ setup() {
 }
 
 @test "the run summary names the inputs and where they belong" {
-  TARGET=docs INPUTS_JSON='{"lambda-function-name":"fn"}' \
+  TARGET=github-pages INPUTS_JSON='{"lambda-function-name":"fn"}' \
     run bash "${SCRIPTS}/validate-inputs.sh"
   grep -q 'inputs do not match the target' "$GITHUB_STEP_SUMMARY"
   grep -q 'lambda-function-name' "$GITHUB_STEP_SUMMARY"
@@ -96,7 +96,7 @@ setup() {
 }
 
 @test "a missing applicability map fails rather than waving everything through" {
-  INPUT_TARGETS_MAP="${WORK}/nope.json" TARGET=docs INPUTS_JSON='{"s3-bucket":"b"}' \
+  INPUT_TARGETS_MAP="${WORK}/nope.json" TARGET=github-pages INPUTS_JSON='{"s3-bucket":"b"}' \
     run bash "${SCRIPTS}/validate-inputs.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"map is missing"* ]]

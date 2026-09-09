@@ -59,7 +59,10 @@ def test_defaults_in_the_map_match_the_action():
         assert data[name]["default"] == str(spec.get("default", "")), name
 
 
-@pytest.mark.parametrize("target", ["docs", "s3-cloudfront", "lambda-zip", "terragrunt", "ansible"])
+@pytest.mark.parametrize(
+    "target",
+    ["github-pages", "s3-cloudfront", "lambda-zip", "terragrunt", "ansible", "cloudflare-workers"],
+)
 def test_every_target_owns_at_least_one_input(target):
     data = json.loads(MAP.read_text())["inputs"]
     owned = [n for n, s in data.items() if s["targets"] == [target]]
@@ -69,12 +72,16 @@ def test_every_target_owns_at_least_one_input(target):
 def test_target_specific_inputs_are_named_for_their_target():
     """The prefix is not decoration. It is how a caller reading a workflow file can tell
     which target an input belongs to without opening the reference."""
+    # The prefix is shorter than the target value where that reads better, exactly as
+    # `s3-`/`lambda-` already are. What matters is that it maps to ONE target, so a reader
+    # of a workflow file can tell which target an input belongs to without the reference.
     prefixes = {
-        "docs": ("docs-",),
+        "github-pages": ("pages-",),
         "s3-cloudfront": ("s3-", "cloudfront-", "artifact-"),
         "lambda-zip": ("lambda-", "s3-", "artifact-"),
         "terragrunt": ("terragrunt-",),
         "ansible": ("ansible-",),
+        "cloudflare-workers": ("cloudflare-", "artifact-"),
     }
     data = json.loads(MAP.read_text())["inputs"]
     wrong = []
@@ -105,7 +112,7 @@ def test_targets_for_returns_all_when_description_has_no_target_prefix():
 
 
 def test_targets_for_parses_single_target_prefix():
-    assert gen_input_targets.targets_for("docs: Cloudflare project name.") == ["docs"]
+    assert gen_input_targets.targets_for("github-pages: the site directory.") == ["github-pages"]
     assert gen_input_targets.targets_for("ansible: SSH key.") == ["ansible"]
 
 
@@ -148,8 +155,10 @@ def test_action_reference_applies_to_selector():
 
 
 def test_action_reference_applies_to_single_target():
-    result = gen_action_reference.applies_to("docs-site-dir", {"description": "docs: the dir."})
-    assert result == "`docs`"
+    result = gen_action_reference.applies_to(
+        "pages-site-dir", {"description": "github-pages: the dir."}
+    )
+    assert result == "`github-pages`"
 
 
 def test_action_reference_applies_to_all():

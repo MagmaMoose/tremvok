@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed — BREAKING (v2)
 
+- **The `docs` target is now `github-pages`,** and its inputs are prefixed `pages-` rather
+  than `docs-` (`docs-toolchain` → `pages-toolchain`, and so on). The target is named for
+  where it publishes, like every other target.
+- **`docs-target` is removed.** Once the target *is* `github-pages` its only other value was
+  `none`, and GitHub Pages has no preview destination: there is one site, and publishing to
+  it is publishing. A pull request (`mode: preview`) or a `dry-run` now builds and checks
+  without staging an artifact, which is what those already mean everywhere else.
+
 - **One action, five targets.** `target` is now the deployment target
   (`docs` · `s3-cloudfront` · `lambda-zip` · `terragrunt` · `ansible`) and is the only
   required input. At v1 `target` meant the docs destination; that is now `docs-target`, and
@@ -30,6 +38,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   breaking the Terragrunt drift run on its own cron.
 
 ### Added
+
+- **`target: cloudflare-workers`** — deploy a Worker and its static assets with Wrangler.
+  `mode: deploy` runs `wrangler deploy`; `mode: preview` runs
+  `wrangler versions upload --preview-alias pr-<N>`, which uploads a version reachable on its
+  own URL that takes **no production traffic**, so a pull request cannot land on the live
+  routes. Supports assets-only Workers (no entry point, files served straight from the edge)
+  and Workers that run code, via `cloudflare-main` and `cloudflare-build-command`. The
+  Wrangler config stays authoritative for asset directory, routes, custom domains and 404
+  handling; the inputs are overrides for what a workflow legitimately varies. Wrangler and
+  Node versions are pinned, because the tool that publishes to production is not a floating
+  dependency. Reverses the Cloudflare half of ADR 0001, see
+  `.claude/decisions/0003-cloudflare-workers-target.md`.
 
 - **`target: ansible`** — pinned Ansible and galaxy requirements, a playbook run over SSH,
   and an idempotence proof: after a real run the playbook runs again in check mode and the

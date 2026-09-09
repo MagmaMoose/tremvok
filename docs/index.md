@@ -12,14 +12,14 @@ prove it, and tell everyone."*
 flowchart LR
   A[push / merge] --> B[release.yml → Diatreme]
   B -->|version · tag · release · promoted image| C[deploy.yml → Tremvok]
-  C -->|target| D[docs · s3-cloudfront · lambda-zip · terragrunt · ansible]
+  C -->|target| D[github-pages · s3-cloudfront · lambda-zip · terragrunt · ansible · cloudflare-workers]
   D -->|curl 200 + header · a second check-mode run| E[verify it actually went live]
   D -->|PR comment · Slack · Teams · history| F[humans]
 ```
 
 Pick a target, pass that target's inputs. An input belonging to a different target is a hard
 error naming both, raised before the checkout. That's what keeps one listing able to
-describe five jobs honestly.
+describe six jobs honestly.
 
 ## Start here
 
