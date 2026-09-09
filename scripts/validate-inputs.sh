@@ -20,7 +20,13 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${here}/lib/common.sh"
 
 TARGET="${TARGET:-}"
-INPUTS_JSON="${INPUTS_JSON:-\{\}}"
+INPUTS_JSON="${INPUTS_JSON:-}"
+# Two lines rather than an inline default, because every brace form of it is wrong in a way
+# that only shows up half the time. `${X:-{}}` closes the expansion at the FIRST `}`, so a
+# SET value silently gains a trailing `}` and jq rejects it, while an unset one still yields
+# `{}` and looks correct. `${X:-\{\}}` is worse: backslash is literal inside double quotes,
+# so the default becomes the 3-character string `\{}`.
+[[ -n "$INPUTS_JSON" ]] || INPUTS_JSON='{}'
 MAP="${INPUT_TARGETS_MAP:-${here}/lib/input-targets.json}"
 
 [[ -f "$MAP" ]] || tremvok::fail "input applicability map is missing at ${MAP}"

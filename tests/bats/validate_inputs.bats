@@ -81,6 +81,20 @@ setup() {
   grep -q 'lambda-function-name' "$GITHUB_STEP_SUMMARY"
 }
 
+@test "an unset INPUTS_JSON defaults to an empty object, and a set one is passed through" {
+  # Regression. `INPUTS_JSON="${INPUTS_JSON:-{}}"` closes the expansion at the first `}`, so a
+  # SET value silently gained a trailing `}` and jq rejected every run, while the unset case
+  # still produced `{}` and looked fine. Both halves get asserted, or the next rewrite of this
+  # one line reintroduces it.
+  TARGET=ansible run bash "${SCRIPTS}/validate-inputs.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"inputs validated for target=ansible"* ]]
+
+  TARGET=ansible INPUTS_JSON='{"ansible-limit":"host-a"}' run bash "${SCRIPTS}/validate-inputs.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"invalid JSON"* ]]
+}
+
 @test "a missing applicability map fails rather than waving everything through" {
   INPUT_TARGETS_MAP="${WORK}/nope.json" TARGET=docs INPUTS_JSON='{"s3-bucket":"b"}' \
     run bash "${SCRIPTS}/validate-inputs.sh"

@@ -589,7 +589,6 @@ runs:
         REQUESTED: ${{ inputs.docs-toolchain }}
         REQUIREMENTS: ${{ inputs.docs-requirements }}
         TARGET: ${{ inputs.docs-target }}
-        REPO_NAME: ${{ github.event.repository.name }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/docs-detect.sh"
 
     - name: Set up uv

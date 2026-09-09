@@ -10,7 +10,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 REQUESTED="${REQUESTED:-auto}"
 REQUIREMENTS="${REQUIREMENTS:-docs/requirements.txt}"
 TARGET="${TARGET:-github-pages}"
-REPO_NAME="${REPO_NAME:-docs}"
 
 case "$REQUESTED" in
   uv|pip) resolved="$REQUESTED" ;;
