@@ -205,7 +205,21 @@ def check_licence_agreement(root: Path, rep: Report) -> None:
         return
 
     head = licence_file.read_text(encoding="utf-8", errors="replace")[:400]
-    actual = next((name for name, pat in SPDX_PATTERNS if pat.search(head)), None)
+    # BY POSITION IN THE FILE, NOT BY POSITION IN SPDX_PATTERNS.
+    #
+    # `next(...)` returned the first pattern in the LIST that matched anywhere in
+    # the head, so a licence naming a second one in an exception was classified as
+    # the exception. A file whose first line is "Proprietary License" and whose
+    # third paragraph excepts one directory under Apache-2.0 came back Apache-2.0,
+    # and every repo shaped like that failed with a message accusing its own
+    # README of the mismatch. A licence states its own terms first and its
+    # carve-outs after, so the earliest match is the operative one.
+    hits = sorted(
+        (match.start(), name)
+        for name, pat in SPDX_PATTERNS
+        if (match := pat.search(head)) is not None
+    )
+    actual = hits[0][1] if hits else None
     if actual is None:
         rep.note("LICENSE: could not identify the licence; skipping the agreement check")
         return

@@ -230,6 +230,61 @@ def test_agreeing_licences_pass(tmp_path: Path) -> None:
     assert run(tmp_path) == 0  # nosec: B101
 
 
+PROPRIETARY_WITH_EXCEPTION = (
+    "Proprietary License\n"
+    "\n"
+    "Copyright (c) 2026 Magma Moose (PTY) LTD. All rights reserved.\n"
+    "\n"
+    "ONE EXCEPTION: agent/ is licensed under the Apache License, Version 2.0.\n"
+)
+
+
+def test_a_proprietary_licence_that_names_an_exception_is_still_proprietary(
+    tmp_path: Path,
+) -> None:
+    """THE LIVE DEFECT, and it accused the wrong file.
+
+    dunmir's LICENSE opens "Proprietary License" and excepts one directory under
+    Apache-2.0. Matching by pattern-list order rather than by position in the file
+    classified it Apache-2.0, so a correct README saying "Proprietary" was
+    reported as claiming the wrong licence, and that repo's docs site stopped
+    deploying for three days over a licence claim that was right.
+    """
+    build(
+        tmp_path,
+        readme=GOOD_ACTION_README.replace("Apache-2.0, see", "Proprietary, see"),
+        licence=PROPRIETARY_WITH_EXCEPTION,
+    )
+    assert run(tmp_path) == 0  # nosec: B101
+
+
+def test_that_licence_still_catches_a_readme_claiming_the_exception(
+    tmp_path: Path,
+) -> None:
+    """The check must not be weakened into never firing on such a file: a README
+    claiming the whole repo is Apache-2.0 over a proprietary LICENSE is exactly
+    the mismatch this exists for, exception or no exception."""
+    build(
+        tmp_path,
+        readme=GOOD_ACTION_README,  # says Apache-2.0
+        licence=PROPRIETARY_WITH_EXCEPTION,
+    )
+    assert run(tmp_path) == 1  # nosec: B101
+
+
+def test_an_apache_licence_mentioning_proprietary_use_is_still_apache(
+    tmp_path: Path,
+) -> None:
+    """The same rule in the other direction, so this is document order and not a
+    new preference for "Proprietary"."""
+    build(
+        tmp_path,
+        readme=GOOD_ACTION_README,
+        licence=APACHE + "\nNothing here grants Proprietary rights.\n",
+    )
+    assert run(tmp_path) == 0  # nosec: B101
+
+
 def test_an_incidental_mit_in_prose_is_not_a_licence_claim(tmp_path: Path) -> None:
     """Only a licence *section* counts; 'commit', 'limit' and a link to an MIT dep do not."""
     readme = GOOD_ACTION_README.replace(

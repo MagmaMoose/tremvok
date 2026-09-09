@@ -85,4 +85,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tests: 188 `bats` cases over the shell scripts, 181 `pytest` cases over the API, the
   action contract and the applicability map, and an end-to-end smoke suite against LocalStack.
 
+### Fixed
+
+- **`lint-docs` classified a licence by pattern order, not by where it appears in the
+  file.** A `LICENSE` opening "Proprietary License" that excepts one directory under
+  Apache-2.0 was reported as Apache-2.0, so a correct README saying "Proprietary" failed
+  with `claims Proprietary but LICENSE is Apache-2.0`. It took a consuming repository's
+  docs site offline for three days over a licence claim that was right. The operative
+  licence is now the one that appears FIRST in the file, since a licence states its own
+  terms before its carve-outs.
+
 [Unreleased]: https://github.com/MagmaMoose/tremvok/commits/main
