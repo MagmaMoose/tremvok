@@ -3,15 +3,17 @@
 **Action surface (repo root):**
 ```bash
 shellcheck -S warning scripts/*.sh scripts/lib/*.sh   # lint
-bats tests/bats                                        # 126 shell tests
-python3 -c 'import yaml; yaml.safe_load(open("action.yml"))'   # action metadata parses
+bats tests/bats                                        # 188 shell tests
+python3 scripts/gen_input_targets.py                   # REGENERATE after any input change
+python3 scripts/gen_action_reference.py                # REGENERATE after any input change
+uv run pytest tests/test_action_contract.py tests/test_input_targets.py -q
 git update-index --chmod=+x scripts/<file>.sh          # mark a new script executable
 ```
 
 **API surface:**
 ```bash
 uv sync --all-groups
-uv run pytest -q            # 96 tests, no network, no AWS
+uv run pytest -q            # 181 tests, no network, no AWS
 uv run ruff check .         # E,F,I,UP,B,SIM,RUF,S,BLE
 uv run ruff format .
 uv run mypy src

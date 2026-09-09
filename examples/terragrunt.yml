@@ -44,21 +44,19 @@ jobs:
           # reports zero changed files and discovers zero stacks.
           fetch-depth: 0
 
-      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
-        with:
-          tofu_wrapper: false
-
-      - uses: gruntwork-io/terragrunt-action@9559e51d05873b0ea467c42bbabcb5c067642ccc # v2.1.5
-        with:
-          tg_version: '1.0.8'
-          tg_command: '--version'
-
-      - uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+      - uses: MagmaMoose/tremvok@v2  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           target: terragrunt
-          terraform-root: terraform
+          terragrunt-root: terraform
           aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.TERRAFORM_ROLE_ARN }}
-          check-name: Terragrunt apply
+          aws-role-to-assume: ${{ vars.TERRAFORM_ROLE_ARN }}
+          # Pinned and checksum-verified by the action itself, cached per version pair. This
+          # step decides which binary applies to production, so it is not left floating.
+          terragrunt-version: '1.0.8'
+          terragrunt-tofu-version: '1.12.1'
+          terragrunt-check-name: Terragrunt apply
+          # Who may force an apply without an approval. Empty means nobody, which is the
+          # default: the normal path is an independent pull-request approval.
+          terragrunt-apply-operators: ${{ vars.TERRAGRUNT_APPLY_OPERATORS }}
           teams-webhook: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}
           notify: on-failure

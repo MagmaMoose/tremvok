@@ -1,0 +1,59 @@
+# Configuration management over SSH, triggered from a workflow.
+#
+# The case this exists for: a fleet reachable only from inside a private network, whose CI
+# runner account has no passwordless sudo — so OS-level configuration cannot happen inside a
+# workflow job at all. Point `runs-on` at a self-hosted runner that sits in that network.
+# Tremvok itself is runner-agnostic; the same playbook against reachable hosts is fine.
+name: Ansible
+
+on:
+  push:
+    branches: [main]
+    paths: ['ansible/**']
+  pull_request:
+    paths: ['ansible/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write     # the sticky run comment
+
+concurrency:
+  # Never two runs against one fleet at once, and never cancel one midway: a half-applied
+  # playbook leaves hosts in a state nobody chose. A pull request runs in check mode and
+  # changes nothing, so that one stays cancellable.
+  group: ansible-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ansible:
+    # A fork pull request cannot read the SSH key and must never reach the fleet with one.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: ${{ vars.SELFHOSTED_GITHUB_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: MagmaMoose/tremvok@v2  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          target: ansible
+          ansible-playbook: ansible/site.yml
+          ansible-inventory: ansible/inventory/production
+          ansible-galaxy-requirements: ansible/requirements.yml
+          # Pinned, not floating. A collection that changes behaviour between releases is
+          # indistinguishable from a change you made.
+          ansible-version: '11.1.0'
+          # `auto` is check mode on a pull request and a real run on merge. A pull request
+          # that silently reconfigured the fleet would be a surprising way to review a diff.
+          ansible-check: auto
+          # Masked on receipt, written to 0600 files under RUNNER_TEMP, removed when the step
+          # ends however it ends. Nothing reaches a command line, where `ps` would show it.
+          ansible-ssh-private-key: ${{ secrets.ANSIBLE_SSH_KEY }}
+          ansible-vault-password: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          # Omitting this disables host-key checking, which the run says out loud. Supply it
+          # for anything reachable from a network you do not control.
+          ansible-ssh-known-hosts: ${{ secrets.ANSIBLE_KNOWN_HOSTS }}
+          # After a real run, run again in check mode and fail if anything would still
+          # change. A zero exit only proves the playbook ran; this proves it converged.
+          ansible-verify-idempotence: true
+          teams-webhook: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}
+          notify: on-failure

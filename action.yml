@@ -1,238 +1,621 @@
-name: 'Tremvok Docs'
-description: 'Build an MkDocs site strictly and stage it for a GitHub Pages deploy — toolchain auto-detected.'
-author: 'Magma Moose'
+name: 'Tremvok'
+description: 'Deploy anything, then prove it went live: docs to GitHub Pages, static sites to S3/CloudFront, Lambda packages, Terragrunt stacks, and fleets over Ansible.'
+author: 'MagmaMoose'
 
 branding:
   icon: 'upload-cloud'
   color: 'green'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# One action, several deployment targets, selected by `target`.
+#
+# The objection to a target enum is that a listing full of values which error is a
+# listing that cannot say what it does. The answer is the first step of this action:
+# every input is checked against the selected target, and an input that does not apply
+# to it is a HARD ERROR naming the target, never a silent no-op. `target: ansible`
+# with `s3-bucket` set is a mistake, and it is reported as one.
+#
+# Input names carry their target as a prefix (`docs-`, `s3-`, `cloudfront-`,
+# `lambda-`, `terragrunt-`, `ansible-`), with `aws-` for what every AWS target shares
+# and no prefix for what every target shares. The mapping is generated from the
+# descriptions below into scripts/lib/input-targets.json, which is what the validator
+# reads and what `tests/test_input_targets.py` keeps honest.
+#
+# The logic lives in `scripts/*.sh`, which are bats-tested; this file is glue.
+# ─────────────────────────────────────────────────────────────────────────────
 inputs:
-  working-directory:
-    description: 'Directory containing mkdocs.yml.'
-    required: false
-    default: '.'
-  toolchain:
-    description: >-
-      How to install MkDocs: auto (default) | uv | pip. `auto` picks uv when a uv.lock is
-      present, otherwise pip against `requirements`. Detection exists so a caller does not
-      have to declare per-repo what is already visible in the repo.
+
+  # ── What to deploy ───────────────────────────────────────────────────────
+  target:
+    description: |
+      The deployment target. One of:
+        docs           Build an MkDocs site strictly, publish it to GitHub Pages.
+        s3-cloudfront  Sync a built static site to S3 and invalidate CloudFront.
+        lambda-zip     Publish a Lambda package to S3, update the function, move an alias.
+        terragrunt     Discover, plan and (on an approval) apply Terragrunt stacks.
+        ansible        Run an Ansible playbook over SSH, then prove it is idempotent.
+    required: true
+
+  mode:
+    description: |
+      What this run should do. One of:
+        auto     (default) push to the default branch = deploy, pull_request = preview,
+                 workflow_dispatch = deploy (pinned to the default branch).
+        deploy   Publish to the environment.
+        preview  Publish somewhere disposable; production is untouched.
+        rollback Re-publish a previously published version.
     required: false
     default: 'auto'
-  docs-group:
-    description: 'uv dependency-group holding the docs tooling (uv toolchain only).'
-    required: false
-    default: 'docs'
-  requirements:
-    description: 'Requirements file pinning the docs build (pip toolchain only).'
-    required: false
-    default: 'docs/requirements.txt'
-  python-version:
-    description: 'Python version used to build the site.'
-    required: false
-    default: '3.12'
-  strict:
-    description: >-
-      Build with `--strict`, so a broken internal link or a nav entry pointing at a missing
-      file fails rather than publishing a site with holes in it.
-    required: false
-    default: 'true'
-  site-dir:
-    description: 'Directory the built site is written to.'
-    required: false
-    default: 'site'
-  target:
-    description: >-
-      Where the built site goes: github-pages (default) | cloudflare-pages | none.
 
-      github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING
-      workflow must run: a composite action cannot hold `pages: write` or declare an
-      `environment:`. cloudflare-pages needs neither, so this action deploys it outright.
-      none builds and stops, which is what a pull-request check wants.
-    required: false
-    default: 'github-pages'
-  stage-pages:
-    description: >-
-      Deprecated alias for `target`. 'false' means target: none. Kept so existing callers
-      keep working; prefer `target`.
+  environment:
+    description: 'Logical environment name, surfaced in notifications and the deployment record. Defaults to "production" (deploy) or "preview".'
     required: false
     default: ''
-  cloudflare-project:
-    description: >-
-      Cloudflare Pages project name. Defaults to `<repo>-docs`. Created on first deploy
-      if it does not already exist.
+
+  working-directory:
+    description: 'Directory to run in. Paths in the other inputs are relative to it.'
     required: false
-    default: ''
-  cloudflare-account-id:
-    description: 'Cloudflare account id. Required for target: cloudflare-pages.'
-    required: false
-    default: ''
-  cloudflare-api-token:
-    description: >-
-      Cloudflare API token with Pages:Edit. Required for target: cloudflare-pages.
-      Pass a secret, never a literal.
-    required: false
-    default: ''
-  require-access:
-    description: >-
-      Refuse to deploy unless a Cloudflare Access application already covers the site's
-      hostname. Set true for anything whose docs must not be world-readable: a Pages
-      project is served on the open internet at <project>.pages.dev by default, so "the
-      repo is private" gates nothing on its own. This makes the gate an enforced
-      precondition rather than a flag someone remembered to set.
-    required: false
-    default: 'false'
-  cloudflare-branch:
-    description: >-
-      Branch Cloudflare records the deployment against. The project's production branch
-      yields a production deploy; anything else is a preview. Defaults to the ref.
-    required: false
-    default: ''
+    default: '.'
+
   checkout:
     description: 'Run actions/checkout first. Set false if the caller already checked out.'
     required: false
     default: 'true'
-  lint:
-    description: >-
-      Run the repo-shape checks (README budget and section order, licence agreement,
-      link targets, Marketplace preflight, INHERIT clobber) before building. These are
-      the rules nothing else covers; --strict already catches broken internal links.
+
+  dry-run:
+    description: 'Resolve, plan and report without changing anything.'
     required: false
-    default: 'true'
-  profile:
-    description: 'Repo profile for the shape checks: auto | action | service | spec.'
+    default: 'false'
+
+  # ── AWS (every target that talks to AWS) ─────────────────────────────────
+  aws-region:
+    description: 's3-cloudfront, lambda-zip, terragrunt: AWS region. Falls back to the AWS_REGION environment variable.'
+    required: false
+    default: ''
+
+  aws-role-to-assume:
+    description: |
+      s3-cloudfront, lambda-zip, terragrunt: IAM role ARN to assume with this run's GitHub
+      OIDC token. Strongly preferred over stored keys: the credential expires in an hour and
+      the role's trust policy decides which repository and ref may use it. Requires
+      `permissions: id-token: write`. Leave empty to use credentials an earlier step
+      already configured.
+    required: false
+    default: ''
+
+  aws-role-duration-seconds:
+    description: 's3-cloudfront, lambda-zip, terragrunt: lifetime of the assumed-role session.'
+    required: false
+    default: '3600'
+
+  # ── target: docs ─────────────────────────────────────────────────────────
+  docs-target:
+    description: |
+      docs: where the built site goes, github-pages (default) | none.
+      github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING
+      workflow must run: a composite action cannot hold `pages: write` or declare an
+      `environment:`. none builds and stops, which is what a pull-request check wants.
+    required: false
+    default: 'github-pages'
+
+  docs-toolchain:
+    description: |
+      docs: how to install MkDocs, auto (default) | uv | pip. `auto` picks uv when a uv.lock
+      is present, otherwise pip against `docs-requirements`. Detection exists so a caller does
+      not have to declare per-repo what is already visible in the repo.
     required: false
     default: 'auto'
-  readme-budget:
-    description: 'Override the README line budget. 0 uses the profile default.'
+
+  docs-dependency-group:
+    description: 'docs: uv dependency-group holding the docs tooling (uv toolchain only).'
     required: false
-    default: '0'
-  markdownlint:
-    description: >-
-      Run markdownlint-cli2 over docs/ and README.md when a markdownlint config is
-      present. Runs here rather than under MegaLinter because MegaLinter's `security`
-      flavor carries no markdown linter, and MARKDOWN_MARKDOWNLINT emits no SARIF, so it
-      could never gate on net-new findings anyway. Node is preinstalled on GitHub
-      runners, so this costs an npx download and nothing else.
+    default: 'docs'
+
+  docs-requirements:
+    description: 'docs: requirements file pinning the docs build (pip toolchain only).'
+    required: false
+    default: 'docs/requirements.txt'
+
+  docs-python-version:
+    description: 'docs: Python version used to build the site.'
+    required: false
+    default: '3.12'
+
+  docs-strict:
+    description: |
+      docs: build with `--strict`, so a broken internal link or a nav entry pointing at a
+      missing file fails rather than publishing a site with holes in it.
     required: false
     default: 'true'
 
+  docs-site-dir:
+    description: 'docs: directory the built site is written to.'
+    required: false
+    default: 'site'
+
+  docs-lint:
+    description: |
+      docs: run the repo-shape checks (README budget and section order, licence agreement,
+      link targets, Marketplace preflight, INHERIT clobber) before building. These are the
+      rules nothing else covers; --strict already catches broken internal links.
+    required: false
+    default: 'true'
+
+  docs-profile:
+    description: 'docs: repo profile for the shape checks, auto | action | service | spec.'
+    required: false
+    default: 'auto'
+
+  docs-readme-budget:
+    description: 'docs: override the README line budget. 0 uses the profile default.'
+    required: false
+    default: '0'
+
+  docs-markdownlint:
+    description: |
+      docs: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is
+      present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor
+      carries no markdown linter, and MARKDOWN_MARKDOWNLINT emits no SARIF, so it could never
+      gate on net-new findings anyway.
+    required: false
+    default: 'true'
+
+  # ── targets: s3-cloudfront, lambda-zip ───────────────────────────────────
+  artifact-path:
+    description: 's3-cloudfront, lambda-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip.'
+    required: false
+    default: ''
+
+  s3-bucket:
+    description: 's3-cloudfront, lambda-zip: the bucket. For s3-cloudfront it serves the site; for lambda-zip it holds published artifacts.'
+    required: false
+    default: ''
+
+  s3-key-prefix:
+    description: 's3-cloudfront, lambda-zip: key prefix within the bucket. Previews are placed under `<s3-key-prefix>/previews/<alias>/`.'
+    required: false
+    default: ''
+
+  # ── target: s3-cloudfront ────────────────────────────────────────────────
+  s3-delete-orphans:
+    description: 's3-cloudfront: pass --delete to `aws s3 sync`, removing bucket objects with no local counterpart. `auto` (default) means yes.'
+    required: false
+    default: 'auto'
+
+  cloudfront-distribution-id:
+    description: 's3-cloudfront: CloudFront distribution to invalidate after the sync. Empty means no invalidation, the CDN keeps serving the old objects until its TTL expires.'
+    required: false
+    default: ''
+
+  cloudfront-site-url:
+    description: 's3-cloudfront: base URL the distribution serves, used to build the URL reported in notifications.'
+    required: false
+    default: ''
+
+  # ── target: lambda-zip ───────────────────────────────────────────────────
+  lambda-function-name:
+    description: 'lambda-zip: the function to update.'
+    required: false
+    default: ''
+
+  lambda-function-alias:
+    description: 'lambda-zip: the alias moved to the new version in deploy mode. A preview publishes a version and does not move it.'
+    required: false
+    default: 'live'
+
+  lambda-version-label:
+    description: 'lambda-zip: names the immutable S3 key (`<s3-key-prefix>/<lambda-version-label>.zip`). Defaults to the short commit SHA.'
+    required: false
+    default: ''
+
+  # ── target: terragrunt ───────────────────────────────────────────────────
+  terragrunt-root:
+    description: 'terragrunt: directory the stacks live under.'
+    required: false
+    default: 'terraform'
+
+  terragrunt-exclude:
+    description: |
+      terragrunt: space-separated path segments that never hold a stack. `modules _modules`
+      by default: a module has no state of its own, and guessing which stacks use it from a
+      path is how a small module tidy-up ends up planning the whole estate. Add a stack that
+      must only ever be applied by hand, one that rewrites a firewall wholesale, say, and
+      the pipeline will not touch it.
+    required: false
+    default: 'modules _modules'
+
+  terragrunt-scope:
+    description: 'terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`, or `changed`.'
+    required: false
+    default: 'auto'
+
+  terragrunt-apply:
+    description: 'terragrunt: `auto` (apply when the pull request has an independent approval), `never` (plan only), or `force`.'
+    required: false
+    default: 'auto'
+
+  terragrunt-apply-operators:
+    description: |
+      terragrunt: comma-separated GitHub logins allowed to force an apply by hand
+      (`terragrunt-apply: force` on a manual run). Empty means nobody can, so the manual path
+      fails closed. The normal path is an independent pull-request approval and needs nothing
+      here.
+    required: false
+    default: ''
+
+  terragrunt-check-name:
+    description: 'terragrunt: name of the check run published against the head commit. Make it a required check to enforce apply-before-merge.'
+    required: false
+    default: 'Terragrunt apply'
+
+  terragrunt-install:
+    description: |
+      terragrunt: install pinned, checksum-verified tofu and terragrunt binaries before
+      running, `auto` (default) installs only what is not already on PATH, `always`
+      reinstalls, `never` uses whatever the runner provides. The download is cached per
+      version pair, so a bump lands in a new directory and can never pick up a stale binary.
+    required: false
+    default: 'auto'
+
+  terragrunt-version:
+    description: 'terragrunt: the Terragrunt version to install and run.'
+    required: false
+    default: '1.0.8'
+
+  terragrunt-tofu-version:
+    description: 'terragrunt: the OpenTofu version to install and run under Terragrunt.'
+    required: false
+    default: '1.12.1'
+
+  terragrunt-plugin-cache:
+    description: |
+      terragrunt: directory to persist provider plugins in across stacks and runs, exported as
+      TF_PLUGIN_CACHE_DIR. The workspace is wiped on each checkout, so without it every stack
+      re-downloads every provider, the single biggest cost in a multi-stack run. Empty
+      disables the cache.
+    required: false
+    default: '~/.terraform-plugin-cache'
+
+  terragrunt-refresh:
+    description: |
+      terragrunt: refresh state from the provider before planning, `auto` (default) skips the
+      refresh on a pull request and keeps it everywhere else, `true` always refreshes, `false`
+      never does. Config-versus-state is enough for a pull-request check; the scheduled drift
+      run is the one that has to ask the provider.
+    required: false
+    default: 'auto'
+
+  terragrunt-timeout:
+    description: 'terragrunt: seconds any one init, plan or apply may take before it is killed. 0 disables the timeout. A stalled provider call otherwise looks like a silent hang until the job limit.'
+    required: false
+    default: '900'
+
+  terragrunt-log-level:
+    description: 'terragrunt: value for TF_LOG when diagnosing a stuck provider call (debug, trace). Empty (default) leaves provider logging off; the log is written next to the plan and redacted before it is shown.'
+    required: false
+    default: ''
+
+  terragrunt-extra-args:
+    description: 'terragrunt: extra flags appended to every plan and apply, split on whitespace.'
+    required: false
+    default: ''
+
+  # ── target: ansible ──────────────────────────────────────────────────────
+  ansible-playbook:
+    description: 'ansible: path to the playbook to run, relative to working-directory. Required for this target.'
+    required: false
+    default: ''
+
+  ansible-inventory:
+    description: 'ansible: inventory path or comma-separated host list passed to `-i`. Required for this target.'
+    required: false
+    default: ''
+
+  ansible-version:
+    description: 'ansible: exact version of the `ansible` PyPI distribution to install. Pinned rather than floating, because a collection that changes behaviour between releases is indistinguishable from a change you made.'
+    required: false
+    default: '11.1.0'
+
+  ansible-python-version:
+    description: 'ansible: Python version the control node runs on.'
+    required: false
+    default: '3.12'
+
+  ansible-galaxy-requirements:
+    description: 'ansible: path to a galaxy requirements file installed with `ansible-galaxy install -r` before the run. Empty skips it.'
+    required: false
+    default: ''
+
+  ansible-limit:
+    description: 'ansible: value for `--limit`, restricting the run to a subset of the inventory.'
+    required: false
+    default: ''
+
+  ansible-tags:
+    description: 'ansible: value for `--tags`.'
+    required: false
+    default: ''
+
+  ansible-skip-tags:
+    description: 'ansible: value for `--skip-tags`.'
+    required: false
+    default: ''
+
+  ansible-check:
+    description: |
+      ansible: run in check mode, `auto` (default) means check mode on a pull request and a
+      real run everywhere else, `true` forces check mode, `false` forces a real run. A pull
+      request that silently reconfigured a fleet would be a surprising way to find out what a
+      diff does.
+    required: false
+    default: 'auto'
+
+  ansible-diff:
+    description: 'ansible: pass `--diff`, so the log shows what each changed task changed.'
+    required: false
+    default: 'true'
+
+  ansible-extra-vars:
+    description: 'ansible: value for `--extra-vars`. Accepts `key=value` pairs or JSON.'
+    required: false
+    default: ''
+
+  ansible-extra-args:
+    description: 'ansible: extra flags appended to the playbook run, split on whitespace.'
+    required: false
+    default: ''
+
+  ansible-ssh-private-key:
+    description: |
+      ansible: SSH private key used to reach the inventory. Pass a secret, never a literal. It
+      is masked on receipt, written to a 0600 file under RUNNER_TEMP, and removed when the step
+      exits however it exits.
+    required: false
+    default: ''
+
+  ansible-ssh-user:
+    description: 'ansible: value for `--user`. Leave empty to let the inventory or ansible.cfg decide.'
+    required: false
+    default: ''
+
+  ansible-ssh-known-hosts:
+    description: |
+      ansible: known_hosts entries for the inventory, one per line. Empty means host-key
+      checking is disabled for the run, which is a real downgrade, supply this for anything
+      reachable from a network you do not control.
+    required: false
+    default: ''
+
+  ansible-vault-password:
+    description: 'ansible: vault password. Pass a secret. Masked on receipt, written to a 0600 file under RUNNER_TEMP, removed when the step exits.'
+    required: false
+    default: ''
+
+  ansible-verify-idempotence:
+    description: |
+      ansible: after a successful real run, run the playbook again in check mode and fail if
+      any task would still change. A zero exit only proves the playbook ran; this is what
+      proves it converged. Skipped automatically when the run itself was check mode.
+    required: false
+    default: 'true'
+
+  # ── Verification ─────────────────────────────────────────────────────────
+  verify-url:
+    description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green.'
+    required: false
+    default: ''
+
+  verify-header:
+    description: 'Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy).'
+    required: false
+    default: ''
+
+  verify-header-match:
+    description: 'Post-deploy: an extended regex the `verify-header` value must match.'
+    required: false
+    default: ''
+
+  verify-status:
+    description: 'Post-deploy: expected HTTP status from `verify-url`.'
+    required: false
+    default: '200'
+
+  verify-attempts:
+    description: 'Post-deploy: how many times to try `verify-url` before failing.'
+    required: false
+    default: '6'
+
+  verify-delay:
+    description: 'Post-deploy: seconds between verification attempts.'
+    required: false
+    default: '10'
+
+  # ── Notifications ────────────────────────────────────────────────────────
+  notify:
+    description: '`always` (default), `on-success`, or `on-failure`. Applies to the webhook sinks.'
+    required: false
+    default: 'always'
+
+  pr-comment:
+    description: 'Sticky pull-request comment. `auto` (default) means on for preview mode and for the terragrunt target.'
+    required: false
+    default: 'auto'
+
+  slack-webhook:
+    description: 'Slack incoming-webhook URL. Empty means the sink is off. Never fails the deploy.'
+    required: false
+    default: ''
+
+  teams-webhook:
+    description: 'Microsoft Teams incoming-webhook URL. Empty means the sink is off. Never fails the deploy.'
+    required: false
+    default: ''
+
+  api-url:
+    description: 'Base URL of a Tremvok API to record this deployment with. Authenticates with a GitHub OIDC token, so the repository stores no credential. Empty means no record is kept.'
+    required: false
+    default: ''
+
+  api-audience:
+    description: 'OIDC audience the Tremvok API expects.'
+    required: false
+    default: 'tremvok'
+
+  auth-token:
+    description: 'Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`.'
+    required: false
+    default: ${{ github.token }}
+
+  # ── Escape hatches ───────────────────────────────────────────────────────
+  allow-fork-preview:
+    description: 'Let a fork pull request attempt a deploy. Off by default and almost always wrong: a fork cannot read secrets, so this only converts an honest skip into an auth error.'
+    required: false
+    default: 'false'
+
+  allow-dispatch-from-any-ref:
+    description: 'Let a manual run deploy from a branch other than the default one. Off by default, publishing a topic branch to production usually is not what "Run workflow" meant.'
+    required: false
+    default: 'false'
+
 outputs:
-  site-dir:
-    description: 'Absolute path to the built site.'
-    value: ${{ steps.build.outputs.site-dir }}
-  toolchain:
-    description: 'The toolchain actually used: uv or pip.'
-    value: ${{ steps.detect.outputs.toolchain }}
   target:
-    description: 'The deploy target actually used.'
-    value: ${{ steps.detect.outputs.target }}
-  page-url:
-    description: >-
-      The site's canonical URL. Set for cloudflare-pages; empty for github-pages, whose
-      deploy the calling workflow owns.
-    value: ${{ steps.cloudflare.outputs.page-url }}
-  deployment-url:
-    description: >-
-      The URL of THIS deployment (<hash>.<project>.pages.dev). Per-deployment, so useful
-      for a preview link but not what anyone should link to.
-    value: ${{ steps.cloudflare.outputs.deployment-url }}
+    description: 'The deployment target this run used.'
+    value: ${{ inputs.target }}
+  mode:
+    description: 'The resolved mode: deploy, preview or rollback.'
+    value: ${{ steps.resolve.outputs.mode }}
+  environment:
+    description: 'The resolved environment name.'
+    value: ${{ steps.resolve.outputs.environment }}
+  url:
+    description: 'URL of what was deployed, when the target produces one.'
+    value: ${{ steps.deploy-s3.outputs.url }}
+  deployed:
+    description: 'true when something was actually deployed (false for a skip).'
+    value: ${{ steps.outcome.outputs.deployed }}
+  verified:
+    description: 'true when post-deploy verification ran and passed.'
+    value: ${{ steps.verify.outputs.verified }}
+  skipped:
+    description: 'true when the run skipped (fork pull request, or no credential).'
+    value: ${{ steps.preflight.outputs.skip }}
+  skip-reason:
+    description: 'Why it skipped, in a sentence.'
+    value: ${{ steps.preflight.outputs.skip-reason }}
+  record-id:
+    description: 'Identifier returned by the Tremvok API, when api-url is set.'
+    value: ${{ steps.record.outputs.record-id }}
+  site-dir:
+    description: 'docs: absolute path to the built site.'
+    value: ${{ steps.docs-build.outputs.site-dir }}
+  docs-toolchain:
+    description: 'docs: the toolchain actually used, uv or pip.'
+    value: ${{ steps.docs-detect.outputs.toolchain }}
+  version-id:
+    description: 'lambda-zip: the published Lambda version.'
+    value: ${{ steps.deploy-lambda.outputs.version-id }}
+  stacks:
+    description: 'terragrunt: how many stacks this run discovered.'
+    value: ${{ steps.deploy-terragrunt.outputs.stacks }}
+  plan-changes:
+    description: 'terragrunt: how many of those stacks planned with a diff.'
+    value: ${{ steps.deploy-terragrunt.outputs.plan-changes }}
+  applied:
+    description: 'terragrunt: true when this run applied, false when it only planned.'
+    value: ${{ steps.deploy-terragrunt.outputs.applied }}
+  changed-tasks:
+    description: 'ansible: how many tasks reported changed on the real run.'
+    value: ${{ steps.deploy-ansible.outputs.changed-tasks }}
+  idempotent:
+    description: 'ansible: true when the second check-mode run found nothing left to change.'
+    value: ${{ steps.deploy-ansible.outputs.idempotent }}
 
 runs:
-  using: composite
+  using: 'composite'
   steps:
+    # First, before a checkout and before anything is installed. An input that does not
+    # apply to the selected target is a mistake, and the cheapest place to say so is
+    # before the run has spent two minutes proving it.
+    - name: Validate the inputs against the target
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        INPUTS_JSON: ${{ toJSON(inputs) }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/validate-inputs.sh"
+
     - name: Checkout
       if: inputs.checkout == 'true'
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # Terragrunt maps changed files to stacks, and a push event's "before" commit is
+        # unreachable in a shallow clone, which reports zero changed files and discovers
+        # zero stacks, silently.
+        fetch-depth: ${{ inputs.target == 'terragrunt' && 0 || 1 }}
 
+    - name: Resolve the mode from the event
+      id: resolve
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        EVENT_NAME: ${{ github.event_name }}
+        REF: ${{ github.ref }}
+        # `|| 'main'` because the repository object is absent from a few event payloads, and
+        # an empty default branch would make every push look like a topic-branch push.
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        ALLOW_DISPATCH_FROM_ANY_REF: ${{ inputs.allow-dispatch-from-any-ref }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/resolve-mode.sh"
+
+    - name: Preflight, can this run deploy at all?
+      id: preflight
+      shell: bash
+      env:
+        IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        ROLE_TO_ASSUME: ${{ inputs.aws-role-to-assume }}
+        TARGET: ${{ inputs.target }}
+        ALLOW_FORK_PREVIEW: ${{ inputs.allow-fork-preview }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/preflight.sh"
+
+    # ── target: docs ─────────────────────────────────────────────────────────
     # Detection rather than declaration: uv.lock in the tree is the fact, and a caller
     # restating it in config is one more thing that can disagree with the repo.
-    - name: Detect toolchain
-      id: detect
+    - name: Detect the docs toolchain
+      id: docs-detect
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'docs'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        REQUESTED: ${{ inputs.toolchain }}
-        REQUIREMENTS: ${{ inputs.requirements }}
-        STAGE_PAGES: ${{ inputs.stage-pages }}
-        TARGET: ${{ inputs.target }}
-        CF_PROJECT: ${{ inputs.cloudflare-project }}
-        CF_ACCOUNT: ${{ inputs.cloudflare-account-id }}
-        CF_TOKEN: ${{ inputs.cloudflare-api-token }}
-        REPO_NAME: ${{ github.event.repository.name }}
-      run: |
-        set -euo pipefail
-        case "$REQUESTED" in
-          uv|pip) resolved="$REQUESTED" ;;
-          auto)
-            if [ -f uv.lock ]; then resolved=uv
-            elif [ -f "$REQUIREMENTS" ]; then resolved=pip
-            else
-              echo "::error::No uv.lock and no $REQUIREMENTS — cannot tell how to install MkDocs. Set toolchain: explicitly." >&2
-              exit 1
-            fi ;;
-          *) echo "::error::toolchain must be auto, uv or pip (got '$REQUESTED')" >&2; exit 1 ;;
-        esac
-        if [ ! -f mkdocs.yml ]; then
-          echo "::error::No mkdocs.yml in ${PWD} — nothing to build." >&2
-          exit 1
-        fi
-        # `stage-pages: false` was the old way of saying "build only". Honour it so
-        # existing callers keep working, but let an explicit `target` win.
-        target="$TARGET"
-        if [ "$STAGE_PAGES" = "false" ] && [ "$TARGET" = "github-pages" ]; then
-          target=none
-        fi
-        case "$target" in
-          github-pages|cloudflare-pages|none) : ;;
-          *) echo "::error::target must be github-pages, cloudflare-pages or none (got '$target')" >&2; exit 1 ;;
-        esac
-        if [ "$target" = "cloudflare-pages" ]; then
-          # Fail now, before a build burns two minutes, rather than at the deploy step.
-          [ -n "$CF_ACCOUNT" ] || { echo "::error::target: cloudflare-pages needs cloudflare-account-id." >&2; exit 1; }
-          [ -n "$CF_TOKEN" ] || { echo "::error::target: cloudflare-pages needs cloudflare-api-token." >&2; exit 1; }
-          echo "cf-project=${CF_PROJECT:-${REPO_NAME}-docs}" >> "$GITHUB_OUTPUT"
-        fi
-        echo "toolchain=$resolved" >> "$GITHUB_OUTPUT"
-        echo "target=$target" >> "$GITHUB_OUTPUT"
-        if [ "$target" = "github-pages" ]; then
-          echo "stage-pages=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "stage-pages=false" >> "$GITHUB_OUTPUT"
-        fi
-        # Node is preinstalled on GitHub-hosted runners but NOT on a self-hosted one.
-        # The org's private repos route to self-hosted, where `npx` is absent and the
-        # markdown lint died with exit 127 rather than skipping or installing.
-        if command -v npx >/dev/null 2>&1; then
-          echo "has-node=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "has-node=false" >> "$GITHUB_OUTPUT"
-        fi
-        echo "Toolchain: $resolved | target: $target" >> "$GITHUB_STEP_SUMMARY"
+        REQUESTED: ${{ inputs.docs-toolchain }}
+        REQUIREMENTS: ${{ inputs.docs-requirements }}
+        TARGET: ${{ inputs.docs-target }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/docs-detect.sh"
 
     - name: Set up uv
-      if: steps.detect.outputs.toolchain == 'uv'
+      if: steps.docs-detect.outputs.toolchain == 'uv'
       uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       with:
-        python-version: ${{ inputs.python-version }}
+        python-version: ${{ inputs.docs-python-version }}
 
     - name: Set up Python
-      if: steps.detect.outputs.toolchain == 'pip'
+      if: steps.docs-detect.outputs.toolchain == 'pip'
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
-        python-version: ${{ inputs.python-version }}
+        python-version: ${{ inputs.docs-python-version }}
         cache: pip
-        cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.requirements }}
+        cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.docs-requirements }}
 
     # Installed as its own step so the lint below can import PyYAML, which arrives
     # transitively with MkDocs. Hand-rolling a YAML parser to avoid this would be a
     # worse trade than one extra step.
-    - name: Install docs toolchain
+    - name: Install the docs toolchain
+      if: inputs.target == 'docs' && steps.docs-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        TOOLCHAIN: ${{ steps.detect.outputs.toolchain }}
-        DOCS_GROUP: ${{ inputs.docs-group }}
-        REQUIREMENTS: ${{ inputs.requirements }}
+        TOOLCHAIN: ${{ steps.docs-detect.outputs.toolchain }}
+        DOCS_GROUP: ${{ inputs.docs-dependency-group }}
+        REQUIREMENTS: ${{ inputs.docs-requirements }}
       run: |
         set -euo pipefail
         if [ "$TOOLCHAIN" = "uv" ]; then
@@ -242,14 +625,14 @@ runs:
         fi
 
     - name: Lint repo shape
-      if: inputs.lint == 'true'
+      if: inputs.target == 'docs' && inputs.docs-lint == 'true' && steps.docs-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        TOOLCHAIN: ${{ steps.detect.outputs.toolchain }}
+        TOOLCHAIN: ${{ steps.docs-detect.outputs.toolchain }}
         SCRIPT: ${{ github.action_path }}/scripts/lint_docs.py
-        PROFILE: ${{ inputs.profile }}
-        BUDGET: ${{ inputs.readme-budget }}
+        PROFILE: ${{ inputs.docs-profile }}
+        BUDGET: ${{ inputs.docs-readme-budget }}
       run: |
         set -euo pipefail
         args=(--root . --profile "$PROFILE" --readme-budget "$BUDGET" --github-annotations)
@@ -262,13 +645,13 @@ runs:
     # Only when the runner has no Node. A GitHub-hosted runner already does, so this
     # step is skipped there and costs nothing.
     - name: Set up Node for markdownlint
-      if: inputs.markdownlint == 'true' && steps.detect.outputs.has-node != 'true'
+      if: inputs.target == 'docs' && inputs.docs-markdownlint == 'true' && steps.docs-detect.outputs.has-node == 'false'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: '22'
 
     - name: Lint markdown
-      if: inputs.markdownlint == 'true'
+      if: inputs.target == 'docs' && inputs.docs-markdownlint == 'true' && steps.docs-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -285,14 +668,15 @@ runs:
         fi
         npx --yes markdownlint-cli2 --config "$cfg" "$DOCS_DIR/**/*.md" "README.md"
 
-    - name: Build site
-      id: build
+    - name: Build the site
+      id: docs-build
+      if: inputs.target == 'docs' && steps.docs-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        TOOLCHAIN: ${{ steps.detect.outputs.toolchain }}
-        SITE_DIR: ${{ inputs.site-dir }}
-        STRICT: ${{ inputs.strict }}
+        TOOLCHAIN: ${{ steps.docs-detect.outputs.toolchain }}
+        SITE_DIR: ${{ inputs.docs-site-dir }}
+        STRICT: ${{ inputs.docs-strict }}
       run: |
         set -euo pipefail
         strict_flag=""
@@ -304,107 +688,213 @@ runs:
         fi
         echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
 
-    # Cloudflare Pages needs no GitHub permissions and no `environment:`, so unlike the
-    # GitHub Pages path the action owns the whole deploy rather than handing an artifact
-    # back to the caller. That asymmetry is the reason `target` exists at all.
-    # Runs BEFORE the deploy, deliberately. A Cloudflare Pages project is served on the
-    # open internet at <project>.pages.dev by default, so "the repo is private" gates
-    # nothing: the moment content is uploaded it is public. Checking afterwards would be
-    # checking after the leak.
-    #
-    # This VERIFIES rather than creates. The org's Cloudflare token has Access read but
-    # not Access write (probed: GET /access/apps returns 200, POST returns 403 code 1010),
-    # so the application itself is created once by a human. What this guarantees is that
-    # nothing publishes until that has happened.
-    - name: Require Cloudflare Access
-      id: access
-      if: steps.detect.outputs.target == 'cloudflare-pages' && inputs.require-access == 'true'
-      shell: bash
-      env:
-        CF_TOKEN: ${{ inputs.cloudflare-api-token }}
-        CF_ACCOUNT: ${{ inputs.cloudflare-account-id }}
-        HOST_TO_CHECK: ${{ steps.detect.outputs.cf-project }}.pages.dev
-        CHECK: ${{ github.action_path }}/scripts/access_covers.py
-      run: |
-        set -uo pipefail
-        resp=$(curl -sS -H "Authorization: Bearer $CF_TOKEN" \
-                 "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/access/apps?per_page=1000" 2>/dev/null || printf '')
-        covered=$(printf '%s' "$resp" | python3 "$CHECK" "$HOST_TO_CHECK" 2>/dev/null || printf 'ERROR:unreadable')
-        case "$covered" in
-          YES)
-            echo "Cloudflare Access covers $HOST_TO_CHECK; publishing." ;;
-          NO)
-            echo "::error::require-access is set, but no Cloudflare Access application covers $HOST_TO_CHECK. A Pages project is public on the open internet by default, so publishing now would expose these docs. Create an Access application for that hostname (or a parent domain) and re-run." >&2
-            exit 1 ;;
-          ERROR:denied)
-            echo "::error::Cannot verify Cloudflare Access: the API token was refused. Refusing to publish rather than assuming the site is gated." >&2
-            exit 1 ;;
-          *)
-            echo "::error::Cannot verify Cloudflare Access (unreadable API response). Refusing to publish rather than assuming the site is gated." >&2
-            exit 1 ;;
-        esac
-
-    - name: Deploy to Cloudflare Pages
-      id: cloudflare
-      if: steps.detect.outputs.target == 'cloudflare-pages'
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      env:
-        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
-        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
-        PROJECT: ${{ steps.detect.outputs.cf-project }}
-        SITE_DIR: ${{ inputs.site-dir }}
-        BRANCH: ${{ inputs.cloudflare-branch }}
-      run: |
-        set -euo pipefail
-        branch="${BRANCH:-${GITHUB_REF_NAME:-main}}"
-        # Idempotent by design: creating a project that already exists is not a failure
-        # worth stopping for, and this is what lets a brand-new repo publish with no
-        # manual Cloudflare setup at all.
-        # Create the project if it is not there yet, and treat "already exists" as the
-        # success it is. Detecting first by parsing `project list` was the previous
-        # approach and it broke twice: the output is a table, so a whole-line grep never
-        # matched, and every run then tried to create a project that existed and failed
-        # the deploy. Attempting the create and reading the error is the honest version —
-        # anything OTHER than already-exists still fails loudly.
-        create_log=$(mktemp)
-        create_args=(pages project create "$PROJECT" --production-branch main)
-        if ! npx --yes wrangler@4.20.0 "${create_args[@]}" >"$create_log" 2>&1; then
-          if grep -qiE 'already exists|8000002' "$create_log"; then
-            echo "Cloudflare Pages project $PROJECT already exists; deploying to it."
-          else
-            echo "::error::Could not create Cloudflare Pages project $PROJECT" >&2
-            cat "$create_log" >&2
-            rm -f "$create_log"
-            exit 1
-          fi
-        fi
-        rm -f "$create_log"
-
-        npx --yes wrangler@4.20.0 pages deploy "$SITE_DIR" \
-          --project-name "$PROJECT" --branch "$branch" --commit-dirty=true \
-          2>&1 | tee cf-deploy.log
-        # wrangler reports the DEPLOYMENT url (<hash>.<project>.pages.dev). Verify the
-        # CANONICAL one instead: the hashed host is per-deployment and is not what anyone
-        # links to, and on a brand-new project it resolves later than the project host.
-        deployed=$(grep -oE 'https://[a-z0-9.-]+[.]pages[.]dev' cf-deploy.log | tail -1 || true)
-        rm -f cf-deploy.log
-        canonical="https://${PROJECT}.pages.dev"
-        echo "page-url=$canonical" >> "$GITHUB_OUTPUT"
-        echo "deployment-url=$deployed" >> "$GITHUB_OUTPUT"
-        {
-          echo "Deployed **$PROJECT**"
-          echo ""
-          echo "- site: $canonical"
-          [ -n "$deployed" ] && echo "- this deployment: $deployed"
-        } >> "$GITHUB_STEP_SUMMARY"
-
     - name: Configure Pages
-      if: steps.detect.outputs.stage-pages == 'true'
+      if: steps.docs-detect.outputs.stage-pages == 'true'
       uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
     - name: Stage the Pages artifact
-      if: steps.detect.outputs.stage-pages == 'true'
+      if: steps.docs-detect.outputs.stage-pages == 'true'
       uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
       with:
-        path: ${{ inputs.working-directory }}/${{ inputs.site-dir }}
+        path: ${{ inputs.working-directory }}/${{ inputs.docs-site-dir }}
+
+    # ── targets: s3-cloudfront, lambda-zip, terragrunt ───────────────────────
+    - name: Assume the deployment role
+      if: steps.preflight.outputs.skip != 'true' && inputs.aws-role-to-assume != ''
+      shell: bash
+      env:
+        ROLE_TO_ASSUME: ${{ inputs.aws-role-to-assume }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        ROLE_DURATION_SECONDS: ${{ inputs.aws-role-duration-seconds }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/assume-role.sh"
+
+    - name: Deploy, S3 + CloudFront
+      id: deploy-s3
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 's3-cloudfront'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BUCKET: ${{ inputs.s3-bucket }}
+        ARTIFACT_PATH: ${{ inputs.artifact-path }}
+        KEY_PREFIX: ${{ inputs.s3-key-prefix }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        PREVIEW_ALIAS: ${{ steps.resolve.outputs.preview-alias }}
+        DISTRIBUTION_ID: ${{ inputs.cloudfront-distribution-id }}
+        SITE_URL: ${{ inputs.cloudfront-site-url }}
+        DELETE_ORPHANS: ${{ inputs.s3-delete-orphans }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-s3-cloudfront.sh"
+
+    - name: Deploy, Lambda package
+      id: deploy-lambda
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'lambda-zip'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FUNCTION_NAME: ${{ inputs.lambda-function-name }}
+        ARTIFACT_PATH: ${{ inputs.artifact-path }}
+        ARTIFACT_BUCKET: ${{ inputs.s3-bucket }}
+        KEY_PREFIX: ${{ inputs.s3-key-prefix }}
+        VERSION_LABEL: ${{ inputs.lambda-version-label }}
+        ALIAS: ${{ inputs.lambda-function-alias }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-lambda-zip.sh"
+
+    # ── target: terragrunt ───────────────────────────────────────────────────
+    # The tools rather than a third-party setup action, for the same reason the plan is
+    # checksum-verified: this step decides what binary applies to production, and a
+    # floating version is the one input nobody reviews.
+    - name: Install pinned tofu and terragrunt
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'terragrunt' && inputs.terragrunt-install != 'never'
+      shell: bash
+      env:
+        INSTALL: ${{ inputs.terragrunt-install }}
+        TOFU_VERSION: ${{ inputs.terragrunt-tofu-version }}
+        TG_VERSION: ${{ inputs.terragrunt-version }}
+        PLUGIN_CACHE: ${{ inputs.terragrunt-plugin-cache }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/terragrunt-bootstrap.sh"
+
+    - name: Deploy, Terragrunt
+      id: deploy-terragrunt
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'terragrunt'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ROOT_DIR: ${{ inputs.terragrunt-root }}
+        EXCLUDE_SEGMENTS: ${{ inputs.terragrunt-exclude }}
+        SCOPE: ${{ inputs.terragrunt-scope }}
+        APPLY: ${{ inputs.terragrunt-apply }}
+        APPLY_OPERATORS: ${{ inputs.terragrunt-apply-operators }}
+        CHECK_NAME: ${{ inputs.terragrunt-check-name }}
+        TG_REFRESH: ${{ inputs.terragrunt-refresh }}
+        TG_TIMEOUT: ${{ inputs.terragrunt-timeout }}
+        TG_LOG_LEVEL: ${{ inputs.terragrunt-log-level }}
+        EXTRA_ARGS: ${{ inputs.terragrunt-extra-args }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        AUTH_TOKEN: ${{ inputs.auth-token }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        EVENT_BEFORE: ${{ github.event.before }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/terragrunt-changed-files.sh"
+
+    # ── target: ansible ──────────────────────────────────────────────────────
+    - name: Set up Python for Ansible
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'ansible'
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ inputs.ansible-python-version }}
+
+    - name: Deploy, Ansible
+      id: deploy-ansible
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'ansible'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ANSIBLE_VERSION: ${{ inputs.ansible-version }}
+        PLAYBOOK: ${{ inputs.ansible-playbook }}
+        INVENTORY: ${{ inputs.ansible-inventory }}
+        GALAXY_REQUIREMENTS: ${{ inputs.ansible-galaxy-requirements }}
+        LIMIT: ${{ inputs.ansible-limit }}
+        TAGS: ${{ inputs.ansible-tags }}
+        SKIP_TAGS: ${{ inputs.ansible-skip-tags }}
+        CHECK: ${{ inputs.ansible-check }}
+        DIFF: ${{ inputs.ansible-diff }}
+        EXTRA_VARS: ${{ inputs.ansible-extra-vars }}
+        EXTRA_ARGS: ${{ inputs.ansible-extra-args }}
+        SSH_PRIVATE_KEY: ${{ inputs.ansible-ssh-private-key }}
+        SSH_USER: ${{ inputs.ansible-ssh-user }}
+        SSH_KNOWN_HOSTS: ${{ inputs.ansible-ssh-known-hosts }}
+        VAULT_PASSWORD: ${{ inputs.ansible-vault-password }}
+        VERIFY_IDEMPOTENCE: ${{ inputs.ansible-verify-idempotence }}
+        EVENT_NAME: ${{ github.event_name }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-ansible.sh"
+
+    # ── Verify, then tell the humans ─────────────────────────────────────────
+    - name: Verify it actually went live
+      id: verify
+      if: steps.preflight.outputs.skip != 'true' && inputs.verify-url != ''
+      shell: bash
+      env:
+        VERIFY_URL: ${{ inputs.verify-url }}
+        VERIFY_HEADER: ${{ inputs.verify-header }}
+        VERIFY_HEADER_MATCH: ${{ inputs.verify-header-match }}
+        EXPECT_STATUS: ${{ inputs.verify-status }}
+        ATTEMPTS: ${{ inputs.verify-attempts }}
+        DELAY: ${{ inputs.verify-delay }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/verify-live.sh"
+
+    - name: Collect the outcome
+      id: outcome
+      if: always()
+      shell: bash
+      env:
+        SKIP: ${{ steps.preflight.outputs.skip }}
+        DOCS_SITE_DIR: ${{ steps.docs-build.outputs.site-dir }}
+        S3_DEPLOYED: ${{ steps.deploy-s3.outputs.deployed }}
+        LAMBDA_DEPLOYED: ${{ steps.deploy-lambda.outputs.deployed }}
+        TG_DEPLOYED: ${{ steps.deploy-terragrunt.outputs.deployed }}
+        ANSIBLE_DEPLOYED: ${{ steps.deploy-ansible.outputs.deployed }}
+        JOB_STATUS: ${{ job.status }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/collect-outcome.sh"
+
+    - name: Notify, sticky pull-request comment
+      # `always()` on every notification step. A deploy that failed is exactly when the humans
+      # most need to be told, and a step without it is skipped the moment anything upstream
+      # goes red. The terragrunt target keeps its own rolling comment, so it is excluded here
+      # rather than commented on twice.
+      if: always() && steps.preflight.outputs.skip != 'true' && github.event.pull_request.number && inputs.target != 'terragrunt' && (inputs.pr-comment == 'true' || (inputs.pr-comment == 'auto' && steps.resolve.outputs.mode == 'preview'))
+      shell: bash
+      env:
+        AUTH_TOKEN: ${{ inputs.auth-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMENT_KEY: ${{ inputs.target }}-${{ steps.resolve.outputs.environment }}
+        STATUS: ${{ steps.outcome.outputs.status }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        VERIFIED: ${{ steps.verify.outputs.verified }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        TARGET: ${{ inputs.target }}
+        ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/notify-pr-body.sh"
+
+    - name: Notify, Slack and Teams
+      if: always() && steps.preflight.outputs.skip != 'true'
+      shell: bash
+      env:
+        SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
+        TEAMS_WEBHOOK: ${{ inputs.teams-webhook }}
+        NOTIFY: ${{ inputs.notify }}
+        STATUS: ${{ steps.outcome.outputs.status }}
+        TARGET: ${{ inputs.target }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        VERIFIED: ${{ steps.verify.outputs.verified }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/notify-webhook.sh"
+
+    - name: Record the deployment
+      id: record
+      if: always() && steps.preflight.outputs.skip != 'true' && inputs.api-url != ''
+      shell: bash
+      env:
+        API_URL: ${{ inputs.api-url }}
+        API_AUDIENCE: ${{ inputs.api-audience }}
+        STATUS: ${{ steps.outcome.outputs.status }}
+        TARGET: ${{ inputs.target }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        VERIFIED: ${{ steps.verify.outputs.verified }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/record-deployment.sh"

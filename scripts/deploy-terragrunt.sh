@@ -20,7 +20,7 @@
 # fix it while leaving the stacks unapplied and invisible would.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=deploy/scripts/lib/common.sh
+# shellcheck source=scripts/lib/common.sh
 source "${here}/lib/common.sh"
 
 ROOT_DIR="${ROOT_DIR:-terraform}"
@@ -30,6 +30,9 @@ EVENT_NAME="${EVENT_NAME:-}"
 PR_NUMBER="${PR_NUMBER:-}"
 HEAD_SHA="${HEAD_SHA:-}"
 APPLY="${APPLY:-auto}"                 # auto | never | force
+# Comma-separated GitHub logins allowed to force an apply by hand. Unset means nobody can:
+# the manual path fails closed. The normal path is an independent approval and needs none.
+APPLY_OPERATORS="${APPLY_OPERATORS:-}"
 CHECK_NAME="${CHECK_NAME:-Terragrunt apply}"
 RUN_URL="${RUN_URL:-}"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}/tremvok-terragrunt}"
@@ -175,8 +178,19 @@ case "$APPLY" in
     apply_reason="apply is disabled for this run"
     ;;
   force)
+    # An explicit apply skips the approval, so it needs its own authorisation. Anyone who can
+    # approve a pull request can already merge it, which is why the approval path grants no new
+    # power; forcing one does, so it is restricted to a named list and fails closed when that
+    # list is empty rather than defaulting to "whoever pressed the button".
+    actor_lc="$(printf '%s' "${GITHUB_ACTOR:-}" | tr '[:upper:]' '[:lower:]')"
+    operators_lc="$(printf '%s' "$APPLY_OPERATORS" | tr ',' '\n' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+    if [[ -z "${APPLY_OPERATORS//[[:space:]]/}" ]]; then
+      tremvok::fail "terragrunt-apply: force needs terragrunt-apply-operators to list who may do it. Empty means nobody, so this run refuses rather than applying on the strength of a flag."
+    elif ! printf '%s\n' "$operators_lc" | grep -Fxq "$actor_lc"; then
+      tremvok::fail "${GITHUB_ACTOR:-this actor} is not in terragrunt-apply-operators, so cannot force an apply."
+    fi
     may_apply=true
-    apply_reason="apply was requested explicitly"
+    apply_reason="applied by hand by @${GITHUB_ACTOR:-unknown}"
     ;;
   auto|*)
     if [[ -n "$approver_list" ]]; then
@@ -244,7 +258,11 @@ if [[ "$may_apply" == true ]]; then
       printf 'applied\n' >"${out}/status"
     else
       set +e
-      "${here}/terragrunt-run.sh" apply "$stack" "$out"
+      # The plan run's directory, so apply picks up the plan file it wrote rather than
+      # producing a second one. That is the whole return on collapsing this to one job: what
+      # is applied is the diff that was reviewed, and when it has gone stale the run says so.
+      PLAN_DIR="${WORK_DIR}/plan/$(sanitize "$stack")" \
+        "${here}/terragrunt-run.sh" apply "$stack" "$out"
       code=$?
       set -e
       if (( code != 0 )); then

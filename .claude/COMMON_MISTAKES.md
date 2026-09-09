@@ -26,6 +26,31 @@ body="$(
 It only bites when the optional line is *absent*, which in `deploy-terragrunt.sh` meant: every
 push event, immediately after a successful plan. Use `if` blocks inside `$( )`.
 
+## A helper that ends with `set -e` hands errexit back ON to a caller that turned it off
+
+`set +e` is not scoped. A function written as
+
+```bash
+run() { set +e; some_tool "$@"; local code=$?; set -e; return $code; }
+```
+
+leaves errexit **enabled** when it returns, whatever the caller had. So this:
+
+```bash
+set +e            # "I will handle failures myself"
+do_plan           # …which internally does set +e … set -e
+code=$?           # never reached: do_plan's non-zero return killed the shell
+```
+
+exits the script at `do_plan` rather than at `code=$?`, and silently — the status file is
+written, nothing is printed, and the step just ends. It bit `terragrunt-run.sh` on the exact
+path where a plan reporting "changes" is a *success*, so the symptom was "a plan with a diff
+fails and a clean plan passes".
+
+The fix is to stop toggling the global flag: capture with `|| code=$?`, which errexit exempts,
+and let callers test the code. A function invoked in a condition (`if f`, `f || …`, `! f`) also
+has errexit suppressed for its whole body, so the toggling buys nothing there either.
+
 ## FastAPI + `from __future__ import annotations` + a closure dependency = auth silently gone
 
 `create_app()` defined `caller_repository` locally and used

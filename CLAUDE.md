@@ -1,14 +1,32 @@
 # Tremvok
 
-Deployment orchestration + notifications: the deploy-side counterpart to Diatreme. Two surfaces
-in one repo — a GitHub **composite action** (`action.yml` + `scripts/*.sh`, bash, bats-tested)
-targeting AWS, and a **FastAPI deployment-record/notifier service** (`src/tremvok/`, Python 3.12,
-uv, pytest) that runs as a Lambda. They talk over HTTP; neither imports the other. Most users
-only touch the action. Infrastructure is `terraform/`, provable end to end on LocalStack.
+A published Marketplace action: one composite action, five targets (`docs`, `s3-cloudfront`,
+`lambda-zip`, `terragrunt`, `ansible`), plus an optional FastAPI deployment-record service on
+Lambda. Consumers pin `@v2` and a broken release breaks their deploys, so the action's input
+contract is the thing to be careful with. Infrastructure is `terraform/`, provable on LocalStack.
 
 @.claude/QUICK_START.md
 @.claude/ARCHITECTURE_MAP.md
-@.claude/COMMON_MISTAKES.md
+
+`CLAUDE.md` is canonical. `AGENTS.md` restates the same rules for agents that do not read this
+file; edit the two together.
+
+## Footguns — read `.claude/COMMON_MISTAKES.md` before debugging any of these
+
+Fifteen incidents, each with symptom, cause and fix. The clusters:
+
+- **A script exits silently under `set -e`** — a false `[[ ]]` last in `$( )`, a helper that
+  re-enables errexit, a loop ending on a false test, `cmd | tee`.
+- **Green on Linux, `bad substitution` on macOS** — bash 4 syntax; the runners ship 3.2.
+- **A FastAPI route answers 422 `{"loc":["query","repository"]}`** — the auth dependency stopped
+  being a dependency.
+- **The Lambda imports fine locally and dies on request one** — architecture, installer
+  determinism, and why the zip cannot be import-tested on a laptop.
+- **A gate that reports the wrong thing** — a required check that never reports, an unreadable
+  review list read as "nobody approved".
+- **An AWS call that does something other than what it says** — `sync --delete` on an empty
+  build, `--value https://…` fetching the URL, an IAM grant that was never needed, `docker
+  compose` missing where `docker` is present.
 
 ## Hard constraints
 
@@ -20,11 +38,16 @@ only touch the action. Infrastructure is `terraform/`, provable end to end on Lo
   resources.
 - **Notification sinks are failure-isolated.** A deploy that succeeded never fails because a
   webhook did.
+- **Never hand-edit `scripts/lib/input-targets.json`.** It is generated; regenerate after any
+  input change or CI fails. See ARCHITECTURE_MAP.
+- **Bash on the runner, Python off it.** Target adapters are bash. Python is for the generators,
+  linters, packager and tests — none of which run on a caller's runner in the deploy path.
 
 ## Finding code
 
-- `AGENTS.md` = full editing rules and local validation commands. `README.md` = the user guide.
-  `terraform/README.md` = costs, the cost ceiling and the LocalStack gaps.
+- Before locating unfamiliar code, read `./PROJECT_INDEX.json`.
+- `AGENTS.md` = full editing rules. `README.md` = the user guide. `terraform/README.md` = costs
+  and the LocalStack gaps. `docs/migration.md` = the v1→v2 input renames.
 - Load `.claude/decisions/` (ADRs) and `.claude/sessions/` ONLY when the task relates to them.
 - Human docs are `./docs` (MkDocs); `.claude/*.md` is terse agent context. Keep them distinct.
 

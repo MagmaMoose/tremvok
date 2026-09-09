@@ -1,0 +1,69 @@
+# An MkDocs site, built strictly and published to GitHub Pages.
+#
+# Two jobs, and the split is not stylistic: `actions/deploy-pages` requires `pages: write`
+# and the `github-pages` environment, and a composite action can declare neither. So Tremvok
+# builds and stages the artifact and this workflow publishes it.
+#
+# Set Settings -> Pages -> Source = "GitHub Actions" once per repository.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'mkdocs.yml']
+  pull_request:
+    paths: ['docs/**', 'mkdocs.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MagmaMoose/tremvok@v2  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          target: docs
+          # A pull request has nothing to deploy, so build without staging an artifact: the
+          # build is the check, and it can never publish by accident.
+          docs-target: ${{ github.event_name != 'pull_request' && 'github-pages' || 'none' }}
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write        # actions/deploy-pages
+      id-token: write     # actions/deploy-pages
+    environment:
+      # Fixed, not a choice: GitHub creates `github-pages` when the Pages source is set to
+      # "GitHub Actions", and actions/deploy-pages expects that name.
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+      # `deploy-pages` reports success once GitHub ACCEPTS the artifact, which is not the
+      # same as the site answering. Tremvok's own `verify-url` cannot cover this one: the
+      # action ran in the job above, before the deploy existed. Every other target verifies
+      # itself.
+      - name: Verify it is serving
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$PAGE_URL" || true)
+            [ "${code:-000}" -ge 200 ] && [ "${code:-000}" -lt 400 ] && exit 0
+            echo "attempt ${attempt}: ${PAGE_URL} -> ${code:-000}, retrying" >&2
+            sleep $((attempt * 8))
+          done
+          echo "::error::Deployed, but ${PAGE_URL} never answered." >&2
+          exit 1

@@ -1,8 +1,10 @@
 # API reference
 
+<!-- sources: src/tremvok/api/app.py, src/tremvok/oidc.py, src/tremvok/store.py -->
+
 Optional. Leave the action's `api-url` empty and nothing here is called.
 
-Base URL: whatever `terraform output api_url` reports — an API Gateway HTTP API endpoint in
+Base URL: whatever `terraform output api_url` reports, an API Gateway HTTP API endpoint in
 production, a Lambda Function URL under LocalStack.
 
 ## Authentication
@@ -20,7 +22,7 @@ The action does this for you (`record-deployment.sh`); a workflow only needs
 Verification, in order:
 
 1. `alg` must be `RS256`. `none` and the HMAC algorithms are rejected before any signature work
-   — with HS256, anyone holding the public key can sign their own token with it.
+  With HS256, anyone holding the public key can sign their own token with it.
 2. The signature must verify against the issuer's JWKS (fetched and cached per execution
    environment, refetched on an unknown `kid` so key rotation is a non-event).
 3. `iss` must be a configured issuer, `aud` must match, `exp`/`nbf` must be current within 60
@@ -28,7 +30,7 @@ Verification, in order:
 4. `repository_owner` must be in `allowed_owners`, and must agree with `repository`.
 
 **Step 4 is the one that matters.** GitHub issues an OIDC token to every repository on
-github.com, so steps 1–3 prove only that the caller is *a* GitHub Actions workflow. An empty
+github.com, so steps 1, 3 prove only that the caller is *a* GitHub Actions workflow. An empty
 `allowed_owners` denies everything, which is the correct reading of "deployed without being told
 who may use it".
 
@@ -36,7 +38,7 @@ who may use it".
 
 Set `<parameter-prefix>/jwks-document` to a JWKS and the function verifies against it without
 any outbound call to the issuer. That is how a GitHub Enterprise Server deployment behind
-restricted egress works — and how the LocalStack harness has an issuer at all.
+restricted egress works, and how the LocalStack harness has an issuer at all.
 
 ## Endpoints
 
@@ -44,7 +46,7 @@ restricted egress works — and how the LocalStack harness has an issuer at all.
 
 No auth, no storage read. A health check that reads DynamoDB turns a throttled table into an
 unhealthy service; this endpoint's only job is to say the function is warm and the package
-imported — which, given a compiled `pydantic-core`, is a genuinely useful thing to know.
+imported, which, given a compiled `pydantic-core`, is a genuinely useful thing to know.
 
 ```json
 {"status": "ok", "service": "tremvok", "version": "0.1.0"}
@@ -74,7 +76,7 @@ another repository inexpressible rather than merely rejected. `extra: "forbid"` 
 anyway is a `422`, not a silent drop.
 
 `status` is one of `success`, `failure`, `skipped`, `rolled-back`. `target` is one of
-`s3-cloudfront`, `lambda-zip`, `terragrunt`, `other`. `url` and `run_url` must be `http(s)` —
+`s3-cloudfront`, `lambda-zip`, `terragrunt`, `other`. `url` and `run_url` must be `http(s)`.
 a notification renders them as links, and a `javascript:` URL in a chat card is a phishing
 primitive.
 
@@ -90,7 +92,7 @@ A repeat of the same `delivery_id` returns `200` with `duplicate: true` and send
 deliberately **not** a `409`: the caller retried a notify step, which is correct behaviour, and
 a 4xx there would fail a job whose deploy succeeded.
 
-`notified` omits sinks that are not configured, and reports `false` for a sink that failed —
+`notified` omits sinks that are not configured, and reports `false` for a sink that failed.
 which never fails the request.
 
 ### `GET /v1/deployments?environment=&limit=`

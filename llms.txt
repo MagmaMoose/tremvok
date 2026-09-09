@@ -1,18 +1,19 @@
 # Tremvok
 
-> Tremvok is deployment orchestration and notifications for MagmaMoose: a GitHub Marketplace composite action that ships an already-built artifact to an AWS target (S3/CloudFront, Lambda, or Terragrunt), verifies it went live, and announces the result — plus an optional FastAPI service on AWS Lambda that records deployment history and fans notifications out, authenticated by GitHub OIDC. Install the action with `uses: MagmaMoose/tremvok@v1`. It is the deploy-side counterpart to Diatreme, which decides what version is released.
+> Tremvok is one GitHub Marketplace composite action for the whole deploy side: pick a `target` — `docs` (MkDocs to GitHub Pages or Cloudflare Pages), `s3-cloudfront`, `lambda-zip`, `terragrunt` or `ansible` — and it deploys, verifies the result actually serves, and announces it. Every input is validated against the selected target, so an input belonging to another target is a hard error rather than a silent no-op. There is also an optional FastAPI service on AWS Lambda that records deployment history and fans notifications out, authenticated by GitHub OIDC. Install with `uses: MagmaMoose/tremvok@v2` (`@v1` is the docs-only action and still works). It is the deploy-side counterpart to Diatreme, which decides what version is released.
 
 This repository has two surfaces: the **composite action** (`action.yml` + `scripts/*.sh`) and the **API** (`src/tremvok/`, FastAPI on Lambda). They communicate over HTTP and neither imports the other. Most users only need the action; the API is optional and off unless `api-url` is set.
 
 ## Documentation
 
-- [README](README.md): user guide — quickstart, targets, the full input/output tables, skip and failure-isolation behaviour.
+- [README](README.md): user guide — quickstart, the five targets, the most-used inputs, skip and failure-isolation behaviour.
 - [Architecture](docs/architecture.md): how the pieces fit, and the specific production failures each guard exists to prevent.
-- [Action reference](docs/action.md): every input and output, per target.
+- [Action reference](docs/action-reference.md): every input and output, which target each applies to, and the permissions each target needs. Generated from action.yml.
+- [Migrating to v2](docs/migration.md): the v1 and `deploy/` rename tables, and what changed behaviourally.
 - [API reference](docs/api.md): endpoints, the OIDC authentication model, and the storage schema.
 - [Infrastructure](terraform/README.md): the free-tier accounting, the cost ceiling, secrets handling, and what a LocalStack run does not prove.
 - [AGENTS.md](AGENTS.md): contributor/agent guide — editing rules, local validation, repository boundaries.
-- [Examples](examples/README.md): complete, ready-to-copy `deploy.yml` workflows, one per target.
+- [Examples](examples/README.md): complete, ready-to-copy workflows, one per target.
 - [Changelog](CHANGELOG.md): Keep a Changelog + Semantic Versioning.
 
 ## Targets

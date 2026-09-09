@@ -56,15 +56,23 @@ jobs:
           echo "${tmp}/bats/bin" >> "$GITHUB_PATH"
 
       - name: shellcheck
-        run: uv run shellcheck -S warning deploy/scripts/*.sh deploy/scripts/lib/*.sh terraform/localstack/*.sh
+        run: uv run shellcheck -S warning scripts/*.sh scripts/lib/*.sh terraform/localstack/*.sh
 
       - name: The action.yml contract
         # Same checks as a pytest file rather than inline YAML, so a contributor runs them with
         # `uv run pytest` and CI cannot drift from what they saw: every script the action names
         # exists, every output points at a real step, every env var a step sets is read by the
-        # script it runs, every input is documented, and every notification step is gated on
-        # `always()`.
-        run: uv run pytest tests/test_action_contract.py -q
+        # script it runs (following the whole chain, not only the first hop), every input is
+        # documented, and every notification step is gated on `always()`.
+        run: uv run pytest tests/test_action_contract.py tests/test_input_targets.py -q
+
+      - name: Generated files are current
+        # The applicability map is what the runtime validator reads and the reference page is
+        # what a caller reads. Both are generated from action.yml, so a stale one means the
+        # documentation and the check disagree — which is worse than having neither.
+        run: |
+          uv run python scripts/gen_input_targets.py --check
+          uv run python scripts/gen_action_reference.py --check
 
       - name: bats
         run: bats tests/bats
@@ -102,7 +110,7 @@ jobs:
             x86_64|amd64) arch=x86_64 ;;
             *) arch=arm64 ;;
           esac
-          uv run python deploy/scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
+          uv run python scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
           rm -rf dist/unpacked
           uv run python -m zipfile -e dist/native.zip dist/unpacked
           cd dist/unpacked

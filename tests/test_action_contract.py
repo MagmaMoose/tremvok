@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-ACTION_TEXT = (ROOT / "deploy" / "action.yml").read_text()
+ACTION_TEXT = (ROOT / "action.yml").read_text()
 ACTION = yaml.safe_load(ACTION_TEXT)
 STEPS = ACTION["runs"]["steps"]
 
@@ -26,20 +26,52 @@ PASS_THROUGH = {
     "AWS_REGION",
 }
 
+SCRIPTS = ROOT / "scripts"
+
+
+def scripts_reachable_from(names: list[str]) -> list[pathlib.Path]:
+    """Every script a step can end up running, not only the one it names.
+
+    A step that runs `terragrunt-changed-files.sh` ends in `deploy-terragrunt.sh`, which
+    ends in `terragrunt-run.sh`. Following only the first hop would report every variable
+    the last one reads as "set but never read" — the exact false alarm that teaches people
+    to add things to PASS_THROUGH until the test means nothing.
+    """
+    seen: set[str] = set()
+    queue = list(names)
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        path = resolve(name)
+        if path is None:
+            continue
+        queue.extend(re.findall(r"([A-Za-z0-9_.-]+\.sh)", path.read_text()))
+    return [p for p in (resolve(n) for n in sorted(seen)) if p is not None]
+
+
+def resolve(name: str) -> pathlib.Path | None:
+    """`scripts/` or `scripts/lib/`. The shared helpers are sourced by every script."""
+    for candidate in (SCRIPTS / name, SCRIPTS / "lib" / name):
+        if candidate.is_file():
+            return candidate
+    return None
+
 
 def steps_running_scripts() -> list[tuple[dict, list[pathlib.Path]]]:
     out = []
     for step in STEPS:
         names = re.findall(r"scripts/([A-Za-z0-9_.-]+\.sh)", step.get("run", ""))
         if names:
-            out.append((step, [ROOT / "deploy" / "scripts" / n for n in names]))
+            out.append((step, scripts_reachable_from(names)))
     return out
 
 
 def test_every_script_the_action_names_exists():
-    for step, scripts in steps_running_scripts():
-        for script in scripts:
-            assert script.is_file(), f"{step.get('name')} runs a missing {script.name}"
+    for step in STEPS:
+        for name in re.findall(r"scripts/([A-Za-z0-9_.-]+\.(?:sh|py))", step.get("run", "")):
+            assert (SCRIPTS / name).is_file(), f"{step.get('name')} runs a missing {name}"
 
 
 def test_every_output_points_at_a_real_step():
@@ -76,19 +108,19 @@ def test_every_step_that_runs_a_script_declares_bash():
 
 
 def test_every_input_and_output_is_documented_in_the_reference():
-    """The deploy action's reference is docs/action.md, NOT the README.
+    """The reference is docs/action-reference.md, NOT the README.
 
     The README is rendered verbatim on the Marketplace with no nav and no search, so
     scripts/lint_docs.py holds it to an action profile that bans a full `## Inputs` table
-    and caps it at 120 lines — a full table for a second action would break both. The
-    README carries the most-used inputs and links out; this file is where every input has
-    to appear, and this test is what keeps that true.
+    and caps it at 120 lines. The README carries the most-used inputs and links out; the
+    generated reference is where every input has to appear, and this test is what notices
+    when the committed page has gone stale against action.yml.
     """
-    reference = (ROOT / "docs" / "action.md").read_text()
+    reference = (ROOT / "docs" / "action-reference.md").read_text()
     undocumented = [n for n in ACTION["inputs"] if f"`{n}`" not in reference]
-    assert not undocumented, f"inputs missing from docs/action.md: {undocumented}"
+    assert not undocumented, f"inputs missing from docs/action-reference.md: {undocumented}"
     missing_outputs = [n for n in ACTION["outputs"] if f"`{n}`" not in reference]
-    assert not missing_outputs, f"outputs missing from docs/action.md: {missing_outputs}"
+    assert not missing_outputs, f"outputs missing from docs/action-reference.md: {missing_outputs}"
 
 
 def test_notification_steps_run_even_when_the_deploy_failed():
@@ -100,7 +132,7 @@ def test_notification_steps_run_even_when_the_deploy_failed():
             assert "always()" in step.get("if", ""), f"{name} is not gated on always()"
 
 
-@pytest.mark.parametrize("script", sorted((ROOT / "deploy" / "scripts").glob("*.sh")))
+@pytest.mark.parametrize("script", sorted((ROOT / "scripts").glob("*.sh")))
 def test_every_script_fails_closed_and_is_executable(script):
     assert script.stat().st_mode & 0o111, f"{script.name} is not executable"
     text = script.read_text()

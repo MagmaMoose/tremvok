@@ -1,36 +1,45 @@
 {
   "name": "tremvok",
-  "description": "Deployment orchestration + notifications: a composite GitHub action targeting AWS, plus an optional FastAPI deployment-record service on Lambda.",
+  "description": "One composite GitHub action with five deployment targets (docs, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
+  "generated": "2026-09-09",
   "generated_for": "agents \u2014 read this before grepping the tree",
   "surfaces": {
-    "docs_action": {
+    "action": {
       "entrypoint": "action.yml",
-      "note": "Tremvok Docs composite action — builds and stages an MkDocs site for GitHub Pages. Logic lives in scripts/ (Python utilities).",
+      "note": "Glue only. One action, five targets selected by `target`; every decision lives in scripts/, which is bats-tested and bash 3.2-compatible. An input belonging to another target is a hard error, checked first, before the checkout.",
       "scripts": {
-        "scripts/access_covers.py": "reads Cloudflare Access API response on stdin; outputs YES/NO/ERROR — blocks publish unless YES",
-        "scripts/gen_action_reference.py": "generates docs/action-reference.md from action.yml; run with --check in CI",
-        "scripts/lint_docs.py": "repo-shape checks for the MagmaMoose documentation standard (beyond markdownlint/MkDocs)"
+        "scripts/lib/common.sh": "logging, set_output (heredoc form for multi-line), require, retry, is_true, slug",
+        "scripts/lib/input-targets.json": "GENERATED. which inputs apply to which target, plus each default; read by validate-inputs.sh",
+        "scripts/validate-inputs.sh": "inputs vs target; every violation named at once, before the checkout",
+        "scripts/resolve-mode.sh": "event -> deploy|preview|rollback, environment, preview alias",
+        "scripts/preflight.sh": "fork / no-credential -> honest skip with a reason; AWS targets only",
+        "scripts/assume-role.sh": "GitHub OIDC -> STS -> masked short-lived credentials",
+        "scripts/docs-detect.sh": "target: docs. uv vs pip, docs destination \u2014 all before the build",
+        "scripts/deploy-s3-cloudfront.sh": "static site to S3 + CloudFront invalidation; refuses an empty artifact dir",
+        "scripts/deploy-lambda-zip.sh": "immutable S3 key, publish version, verify CodeSha256, move alias (deploy only)",
+        "scripts/terragrunt-bootstrap.sh": "pinned, checksum-verified tofu+terragrunt, cached per version pair; plugin cache",
+        "scripts/terragrunt-changed-files.sh": "event -> changed files (API on a PR, git diff on a push), then execs deploy-terragrunt.sh",
+        "scripts/deploy-terragrunt.sh": "discover -> plan -> approval gate -> apply; the Atlantis replacement",
+        "scripts/terragrunt-discover.sh": "changed files -> stacks; modules map to nothing on purpose",
+        "scripts/terragrunt-run.sh": "plan|apply|redact one stack; plan -out is SAVED and apply uses it, re-planning only when stale",
+        "scripts/deploy-ansible.sh": "pinned ansible over SSH; secrets to 0600 files under RUNNER_TEMP; second check-mode run proves idempotence",
+        "scripts/approval-gate.sh": "independent approvers; exits non-zero rather than reporting 'nobody'",
+        "scripts/publish-check.sh": "the check run that makes apply-before-merge enforceable",
+        "scripts/verify-live.sh": "curl status + header with retries; catches uploaded-but-unbound",
+        "scripts/collect-outcome.sh": "one status every sink shares; a plan-only run is a success, a skip is a skip",
+        "scripts/notify-pr-body.sh": "renders the deploy table, hands it to notify-pr.sh",
+        "scripts/notify-pr.sh": "sticky PR comment, GHE-aware, failure-isolated",
+        "scripts/notify-webhook.sh": "Slack + Teams cards, jq-built, failure-isolated",
+        "scripts/record-deployment.sh": "OIDC-authenticated POST to the Tremvok API, failure-isolated"
       }
     },
-    "action": {
-      "entrypoint": "deploy/action.yml",
-      "note": "Glue only. Every decision lives in deploy/scripts/, which is bats-tested and bash 3.2-compatible.",
+    "python_tooling": {
+      "note": "Never runs on a caller's runner in the deploy path, which is why it may be Python.",
       "scripts": {
-        "deploy/scripts/lib/common.sh": "logging, set_output (heredoc form for multi-line), require, retry, is_true, slug",
-        "deploy/scripts/resolve-mode.sh": "event -> deploy|preview|rollback, environment, preview alias",
-        "deploy/scripts/preflight.sh": "fork / no-credential -> honest skip with a reason",
-        "deploy/scripts/assume-role.sh": "GitHub OIDC -> STS -> masked short-lived credentials",
-        "deploy/scripts/deploy-s3-cloudfront.sh": "static site to S3 + CloudFront invalidation; refuses an empty artifact dir",
-        "deploy/scripts/deploy-lambda-zip.sh": "immutable S3 key, publish version, verify CodeSha256, move alias (deploy only)",
-        "deploy/scripts/deploy-terragrunt.sh": "discover -> plan -> approval gate -> apply; the Atlantis replacement",
-        "deploy/scripts/terragrunt-discover.sh": "changed files -> stacks; modules map to nothing on purpose",
-        "deploy/scripts/terragrunt-run.sh": "plan|apply|redact one stack, buffered, -detailed-exitcode",
-        "deploy/scripts/approval-gate.sh": "independent approvers; exits non-zero rather than reporting 'nobody'",
-        "deploy/scripts/publish-check.sh": "the check run that makes apply-before-merge enforceable",
-        "deploy/scripts/verify-live.sh": "curl status + header with retries; catches uploaded-but-unbound",
-        "deploy/scripts/notify-pr.sh": "sticky PR comment, GHE-aware, failure-isolated",
-        "deploy/scripts/notify-webhook.sh": "Slack + Teams cards, jq-built, failure-isolated",
-        "deploy/scripts/record-deployment.sh": "OIDC-authenticated POST to the Tremvok API, failure-isolated"
+        "scripts/gen_input_targets.py": "GENERATES scripts/lib/input-targets.json from action.yml; --check in CI",
+        "scripts/gen_action_reference.py": "GENERATES docs/action-reference.md from action.yml; --check in CI",
+        "scripts/lint_docs.py": "repo-shape checks for the MagmaMoose documentation standard (beyond markdownlint/MkDocs)",
+        "scripts/build_api_zip.py": "the one definition of what ships to Lambda; determinism and --arch are both load-bearing"
       }
     },
     "api": {
@@ -51,21 +60,34 @@
     }
   },
   "hotspots": [
-    "src/tremvok/api/app.py: the auth dependency MUST stay module-level \u2014 see .claude/COMMON_MISTAKES.md",
-    "deploy/scripts/deploy-terragrunt.sh: longest script; the apply authorisation decision is the part to read first",
-    "deploy/scripts/build_api_zip.py: the one definition of what ships; determinism and --arch are both load-bearing"
+    "action.yml",
+    ".github/workflows/release.yml",
+    "docs/action-reference.md",
+    ".github/workflows/security.yml",
+    "README.md",
+    "docs/index.md",
+    "docs/setup.md",
+    "mkdocs.yml",
+    "pyproject.toml",
+    "scripts/gen_action_reference.py"
+  ],
+  "read_first": [
+    "action.yml: the input block for the target you care about, not the whole file",
+    "scripts/validate-inputs.sh: why a target enum can describe itself honestly",
+    "scripts/deploy-terragrunt.sh: longest script; the apply authorisation decision is the part to read first",
+    "scripts/build_api_zip.py: the one definition of what ships; determinism and --arch are both load-bearing"
   ],
   "tests": {
-    "tests/bats/": "126 cases over the shell scripts, with aws/curl stubbed",
-    "tests/test_action_contract.py": "the deploy/action.yml <-> deploy/scripts <-> docs/action.md contract: unread env vars, dead inputs, undocumented inputs, notification steps not gated on always()",
+    "tests/bats/": "188 cases over the shell scripts, with aws/curl/terragrunt/ansible-playbook stubbed",
+    "tests/test_action_contract.py": "the action.yml <-> scripts <-> docs/action-reference.md contract: unread env vars (following the whole script chain), dead inputs, undocumented inputs, notification steps not gated on always()",
     "tests/test_notify_parity.py": "asserts the shell and Python notifiers still send the same card",
-    "tests/test_terraform_contract.py": "the module <-> settings.py env-var contract, the handler path, and the IAM actions the code needs — what the LocalStack run proves, without Docker",
-    "tests/test_access_covers.py": "every YES/NO/ERROR outcome of scripts/access_covers.py — a non-YES must always block the publish",
-    "tests/test_build_api_zip.py": "packaging contract: determinism (digest stability) and --arch correctness for deploy/scripts/build_api_zip.py",
+    "tests/test_terraform_contract.py": "the module <-> settings.py env-var contract, the handler path, and the IAM actions the code needs \u2014 what the LocalStack run proves, without Docker",
+    "tests/test_build_api_zip.py": "packaging contract: determinism (digest stability) and --arch correctness for scripts/build_api_zip.py",
     "tests/test_gen_action_reference.py": "scripts/gen_action_reference.py output matches committed docs/action-reference.md",
     "tests/test_lint_docs.py": "scripts/lint_docs.py MagmaMoose documentation-shape rules",
     "tests/test_api.py": "FastAPI routes: request/response shapes, auth enforcement, error codes",
     "tests/": "122 pytest cases covering the API, script utilities, and tooling; no network, no AWS (moto + a generated RSA key)",
-    "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring"
+    "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring",
+    "tests/test_input_targets.py": "the applicability map is generated, complete, and matches action.yml's defaults; every target-only input carries its target's prefix"
   }
 }
