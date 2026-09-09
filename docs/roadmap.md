@@ -2,7 +2,7 @@
 
 <!-- sources: README.md, action.yml -->
 
-Tremvok's scope is **deployment orchestration and notification** — the deploy-side
+Tremvok's scope is **deployment orchestration and notification**: the deploy-side
 counterpart to [Diatreme](https://github.com/MagmaMoose/diatreme). One action covering
 several deployment targets, not a family of narrow ones.
 
@@ -11,17 +11,17 @@ repo, it is wrong.
 
 ## Shipped
 
-- **`target: docs`** — detect the toolchain, build strictly, publish to GitHub Pages or
+- **`target: docs`**: detect the toolchain, build strictly, publish to GitHub Pages or
   Cloudflare Pages, verify the published URL answers.
-- **`target: s3-cloudfront`** — sync a built static site with per-class cache headers,
+- **`target: s3-cloudfront`**: sync a built static site with per-class cache headers,
   invalidate CloudFront, previews under their own key prefix. Refuses to sync an empty
   artifact directory.
-- **`target: lambda-zip`** — immutable S3 keys, published versions, the alias moved only on
+- **`target: lambda-zip`**: immutable S3 keys, published versions, the alias moved only on
   a deploy, and the deployed `CodeSha256` verified against the local artifact.
-- **`target: terragrunt`** — discover, plan, gate on an independent approval, apply; a
+- **`target: terragrunt`**: discover, plan, gate on an independent approval, apply; a
   rolling pull-request comment with redacted plan excerpts, and a check run that makes
   apply-before-merge enforceable. Replaces Atlantis and its stored IAM credential.
-- **`target: ansible`** — pinned Ansible, galaxy requirements, a playbook run over SSH with
+- **`target: ansible`**: pinned Ansible, galaxy requirements, a playbook run over SSH with
   keys that cannot reach a log, check mode by default on a pull request, and a second
   check-mode run that proves the playbook converged.
 - **Post-deploy verification**, **notifications** (sticky pull-request comment, Slack,
@@ -35,7 +35,7 @@ it does". **That position is reversed**, and one action now carries every target
 
 The objection was right about the failure mode and wrong about the cause. A target enum
 becomes a listing that cannot describe itself when the inputs that do not apply to the
-selected target are *silently ignored* — the listing then documents an input surface that
+selected target are *silently ignored*. The listing then documents an input surface that
 does nothing for most callers. So the build removes the silence:
 
 - **Every input is validated against the selected target.** An input that does not apply is
@@ -45,7 +45,7 @@ does nothing for most callers. So the build removes the silence:
 - **Applicability is derived, not maintained.** `scripts/gen_input_targets.py` reads it out
   of the input descriptions in `action.yml` into the map the runtime validator uses, so the
   documentation and the check cannot disagree.
-- **Input names carry their target** — `docs-`, `s3-`, `cloudfront-`, `lambda-`,
+- **Input names carry their target**: `docs-`, `s3-`, `cloudfront-`, `lambda-`,
   `terragrunt-`, `ansible-`, with `aws-` for what the AWS targets share and no prefix for
   what everything shares.
 
@@ -58,8 +58,8 @@ README, a roadmap and a repository description that each described a different p
 - **Rollback as a first-class mode.** `mode: rollback` resolves today but no target
   implements re-publishing a previous version. Deployment history exists to make it
   possible; wiring it is the remaining work.
-- **A second non-AWS target.** Nothing in the action's shape is AWS-specific — `docs` and
-  `ansible` already are not — and the validated-input design is what makes adding one cheap.
+- **A second non-AWS target.** Nothing in the action's shape is AWS-specific: `docs` and
+  `ansible` already are not, and the validated-input design is what makes adding one cheap.
 
 ## Not planned
 

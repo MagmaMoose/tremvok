@@ -31,8 +31,8 @@ Cloudflare Pages needs no GitHub permission, so the action owns that deploy outr
 **GitHub Pages is the exception**, and the only one in the whole action:
 `actions/deploy-pages` requires `pages: write` and the `github-pages` environment, and a
 composite action can declare neither. So the action builds and stages the artifact, and a job
-of yours publishes it. The environment name is fixed — GitHub creates `github-pages` when you
-set the Pages source to "GitHub Actions", and `deploy-pages` expects that name — so this job
+of yours publishes it. The environment name is fixed. GitHub creates `github-pages` when you
+set the Pages source to "GitHub Actions", and `deploy-pages` expects that name, so this job
 is boilerplate, not a decision:
 
 ```yaml
@@ -85,13 +85,13 @@ permissions:
   checks: write          # the check run that makes apply-before-merge enforceable
 ```
 
-An independent pull-request approval is the apply authorisation — approving applies the
+An independent pull-request approval is the apply authorisation. Approving applies the
 stacks, and the check run turns green once they are applied. `terragrunt-apply-operators`
 names who may force one by hand; empty means nobody, so that path fails closed.
 
 The gate is the action's own (`scripts/approval-gate.sh`), so it needs no GitHub
 `environment:`. An unapproved run plans and stops; the role session it holds applies nothing.
-Add an `environment:` to your job only if you want what an environment adds beyond the gate —
+Add an `environment:` to your job only if you want what an environment adds beyond the gate:
 a wait timer, or secrets scoped to it.
 
 ### `ansible`
@@ -101,13 +101,13 @@ permissions: { contents: read, pull-requests: write }
 ```
 
 Runner-agnostic on purpose. A fleet reachable only from inside a private network needs a
-self-hosted runner that sits in it — that is your `runs-on:`, and the action does not check,
+self-hosted runner that sits in it. That's your `runs-on:`, and the action does not check,
 because the same playbook against reachable hosts is a legitimate use.
 
 ## An IAM role the workflow can assume
 
 For the three AWS targets. Tremvok authenticates with this run's GitHub OIDC token; nothing
-is stored in the repository. The role's trust policy is what decides who may use it — scope
+is stored in the repository. The role's trust policy is what decides who may use it. Scope
 it to the repository **and** the refs that may deploy:
 
 ```json
@@ -125,7 +125,7 @@ it to the repository **and** the refs that may deploy:
 `StringLike` on `sub` with a `ref:` prefix, not `repo:owner/name:*`. The wildcard form lets a
 pull request from a branch in the same repository assume a production deploy role.
 
-Grant it only what the target needs — for `s3-cloudfront` that is `s3:PutObject`,
+Grant it only what the target needs. For `s3-cloudfront` that's `s3:PutObject`,
 `s3:DeleteObject`, `s3:ListBucket` on the one bucket, and `cloudfront:CreateInvalidation` on
 the one distribution.
 
@@ -133,7 +133,7 @@ the one distribution.
 
 The SSH key and the vault password arrive as repository or organisation secrets, passed as
 inputs. Tremvok masks each on receipt, writes them to `0600` files under `$RUNNER_TEMP`, and
-removes them with a trap that fires however the step exits — nothing reaches a command line,
+removes them with a trap that fires however the step exits, nothing reaches a command line,
 where `ps` would show it.
 
 ```yaml

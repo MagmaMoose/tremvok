@@ -12,7 +12,7 @@ branding:
 # The objection to a target enum is that a listing full of values which error is a
 # listing that cannot say what it does. The answer is the first step of this action:
 # every input is checked against the selected target, and an input that does not apply
-# to it is a HARD ERROR naming the target — never a silent no-op. `target: ansible`
+# to it is a HARD ERROR naming the target, never a silent no-op. `target: ansible`
 # with `s3-bucket` set is a mistake, and it is reported as one.
 #
 # Input names carry their target as a prefix (`docs-`, `s3-`, `cloudfront-`,
@@ -91,7 +91,7 @@ inputs:
   # ── target: docs ─────────────────────────────────────────────────────────
   docs-target:
     description: |
-      docs: where the built site goes — github-pages (default) | cloudflare-pages | none.
+      docs: where the built site goes, github-pages (default) | cloudflare-pages | none.
       github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING
       workflow must run: a composite action cannot hold `pages: write` or declare an
       `environment:`. cloudflare-pages needs neither, so this action deploys it outright.
@@ -101,7 +101,7 @@ inputs:
 
   docs-toolchain:
     description: |
-      docs: how to install MkDocs — auto (default) | uv | pip. `auto` picks uv when a uv.lock
+      docs: how to install MkDocs, auto (default) | uv | pip. `auto` picks uv when a uv.lock
       is present, otherwise pip against `docs-requirements`. Detection exists so a caller does
       not have to declare per-repo what is already visible in the repo.
     required: false
@@ -143,7 +143,7 @@ inputs:
     default: 'true'
 
   docs-profile:
-    description: 'docs: repo profile for the shape checks — auto | action | service | spec.'
+    description: 'docs: repo profile for the shape checks, auto | action | service | spec.'
     required: false
     default: 'auto'
 
@@ -195,7 +195,7 @@ inputs:
 
   # ── targets: s3-cloudfront, lambda-zip ───────────────────────────────────
   artifact-path:
-    description: 's3-cloudfront, lambda-zip: the built artifact — a directory for s3-cloudfront, a .zip for lambda-zip.'
+    description: 's3-cloudfront, lambda-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip.'
     required: false
     default: ''
 
@@ -216,7 +216,7 @@ inputs:
     default: 'auto'
 
   cloudfront-distribution-id:
-    description: 's3-cloudfront: CloudFront distribution to invalidate after the sync. Empty means no invalidation — the CDN keeps serving the old objects until its TTL expires.'
+    description: 's3-cloudfront: CloudFront distribution to invalidate after the sync. Empty means no invalidation, the CDN keeps serving the old objects until its TTL expires.'
     required: false
     default: ''
 
@@ -252,7 +252,7 @@ inputs:
       terragrunt: space-separated path segments that never hold a stack. `modules _modules`
       by default: a module has no state of its own, and guessing which stacks use it from a
       path is how a small module tidy-up ends up planning the whole estate. Add a stack that
-      must only ever be applied by hand — one that rewrites a firewall wholesale, say — and
+      must only ever be applied by hand, one that rewrites a firewall wholesale, say, and
       the pipeline will not touch it.
     required: false
     default: 'modules _modules'
@@ -284,7 +284,7 @@ inputs:
   terragrunt-install:
     description: |
       terragrunt: install pinned, checksum-verified tofu and terragrunt binaries before
-      running — `auto` (default) installs only what is not already on PATH, `always`
+      running, `auto` (default) installs only what is not already on PATH, `always`
       reinstalls, `never` uses whatever the runner provides. The download is cached per
       version pair, so a bump lands in a new directory and can never pick up a stale binary.
     required: false
@@ -304,14 +304,14 @@ inputs:
     description: |
       terragrunt: directory to persist provider plugins in across stacks and runs, exported as
       TF_PLUGIN_CACHE_DIR. The workspace is wiped on each checkout, so without it every stack
-      re-downloads every provider — the single biggest cost in a multi-stack run. Empty
+      re-downloads every provider, the single biggest cost in a multi-stack run. Empty
       disables the cache.
     required: false
     default: '~/.terraform-plugin-cache'
 
   terragrunt-refresh:
     description: |
-      terragrunt: refresh state from the provider before planning — `auto` (default) skips the
+      terragrunt: refresh state from the provider before planning, `auto` (default) skips the
       refresh on a pull request and keeps it everywhere else, `true` always refreshes, `false`
       never does. Config-versus-state is enough for a pull-request check; the scheduled drift
       run is the one that has to ask the provider.
@@ -376,7 +376,7 @@ inputs:
 
   ansible-check:
     description: |
-      ansible: run in check mode — `auto` (default) means check mode on a pull request and a
+      ansible: run in check mode, `auto` (default) means check mode on a pull request and a
       real run everywhere else, `true` forces check mode, `false` forces a real run. A pull
       request that silently reconfigured a fleet would be a surprising way to find out what a
       diff does.
@@ -414,7 +414,7 @@ inputs:
   ansible-ssh-known-hosts:
     description: |
       ansible: known_hosts entries for the inventory, one per line. Empty means host-key
-      checking is disabled for the run, which is a real downgrade — supply this for anything
+      checking is disabled for the run, which is a real downgrade, supply this for anything
       reachable from a network you do not control.
     required: false
     default: ''
@@ -434,7 +434,7 @@ inputs:
 
   # ── Verification ─────────────────────────────────────────────────────────
   verify-url:
-    description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind — the one failure that otherwise looks green.'
+    description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green.'
     required: false
     default: ''
 
@@ -506,7 +506,7 @@ inputs:
     default: 'false'
 
   allow-dispatch-from-any-ref:
-    description: 'Let a manual run deploy from a branch other than the default one. Off by default — publishing a topic branch to production usually is not what "Run workflow" meant.'
+    description: 'Let a manual run deploy from a branch other than the default one. Off by default, publishing a topic branch to production usually is not what "Run workflow" meant.'
     required: false
     default: 'false'
 
@@ -542,7 +542,7 @@ outputs:
     description: 'docs: absolute path to the built site.'
     value: ${{ steps.docs-build.outputs.site-dir }}
   docs-toolchain:
-    description: 'docs: the toolchain actually used — uv or pip.'
+    description: 'docs: the toolchain actually used, uv or pip.'
     value: ${{ steps.docs-detect.outputs.toolchain }}
   page-url:
     description: "docs: the site's canonical URL. Set for cloudflare-pages; empty for github-pages, whose deploy the calling workflow owns."
@@ -587,7 +587,7 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         # Terragrunt maps changed files to stacks, and a push event's "before" commit is
-        # unreachable in a shallow clone — which reports zero changed files and discovers
+        # unreachable in a shallow clone, which reports zero changed files and discovers
         # zero stacks, silently.
         fetch-depth: ${{ inputs.target == 'terragrunt' && 0 || 1 }}
 
@@ -606,7 +606,7 @@ runs:
         ALLOW_DISPATCH_FROM_ANY_REF: ${{ inputs.allow-dispatch-from-any-ref }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/resolve-mode.sh"
 
-    - name: Preflight — can this run deploy at all?
+    - name: Preflight, can this run deploy at all?
       id: preflight
       shell: bash
       env:
@@ -734,7 +734,7 @@ runs:
     # Runs BEFORE the deploy, deliberately. A Cloudflare Pages project is served on the
     # open internet at <project>.pages.dev by default, so "the repo is private" gates
     # nothing: the moment content is uploaded it is public. Checking afterwards would be
-    # checking after the leak. This VERIFIES rather than creates — an Access application
+    # checking after the leak. This VERIFIES rather than creates, an Access application
     # is made once by a human, and what this guarantees is that nothing publishes until
     # that has happened.
     - name: Require Cloudflare Access
@@ -784,7 +784,7 @@ runs:
         ROLE_DURATION_SECONDS: ${{ inputs.aws-role-duration-seconds }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/assume-role.sh"
 
-    - name: Deploy — S3 + CloudFront
+    - name: Deploy, S3 + CloudFront
       id: deploy-s3
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 's3-cloudfront'
       shell: bash
@@ -802,7 +802,7 @@ runs:
         AWS_REGION: ${{ inputs.aws-region }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-s3-cloudfront.sh"
 
-    - name: Deploy — Lambda package
+    - name: Deploy, Lambda package
       id: deploy-lambda
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 'lambda-zip'
       shell: bash
@@ -833,7 +833,7 @@ runs:
         PLUGIN_CACHE: ${{ inputs.terragrunt-plugin-cache }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/terragrunt-bootstrap.sh"
 
-    - name: Deploy — Terragrunt
+    - name: Deploy, Terragrunt
       id: deploy-terragrunt
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 'terragrunt'
       shell: bash
@@ -866,7 +866,7 @@ runs:
       with:
         python-version: ${{ inputs.ansible-python-version }}
 
-    - name: Deploy — Ansible
+    - name: Deploy, Ansible
       id: deploy-ansible
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 'ansible'
       shell: bash
@@ -920,7 +920,7 @@ runs:
         JOB_STATUS: ${{ job.status }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/collect-outcome.sh"
 
-    - name: Notify — sticky pull-request comment
+    - name: Notify, sticky pull-request comment
       # `always()` on every notification step. A deploy that failed is exactly when the humans
       # most need to be told, and a step without it is skipped the moment anything upstream
       # goes red. The terragrunt target keeps its own rolling comment, so it is excluded here
@@ -941,7 +941,7 @@ runs:
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/notify-pr-body.sh"
 
-    - name: Notify — Slack and Teams
+    - name: Notify, Slack and Teams
       if: always() && steps.preflight.outputs.skip != 'true'
       shell: bash
       env:

@@ -1,5 +1,7 @@
 # Architecture
 
+<!-- sources: action.yml, scripts/, src/tremvok/, terraform/modules/tremvok-api/ -->
+
 Two surfaces, one repository, no shared imports.
 
 ```text
@@ -26,21 +28,21 @@ GitHub Actions runner
 ## One action, five targets
 
 `target` selects the adapter; everything before and after it is shared. The parts that are
-not target-specific — resolving the mode from the event, the honest skip, verification, the
-outcome, the three notification sinks — are written once and every target gets them, which
+not target-specific, resolving the mode from the event, the honest skip, verification, the
+outcome, the three notification sinks, are written once and every target gets them, which
 is the argument for one action rather than five.
 
 The cost of a target enum is that a caller can pass an input belonging to a different
 target. Silently ignoring it is what would make the Marketplace listing dishonest, so
 `validate-inputs.sh` runs first, before the checkout, and refuses the run with every
 misplaced input named at once. Applicability comes from `scripts/lib/input-targets.json`,
-generated from the input descriptions in `action.yml` — so the page a caller reads and the
+generated from the input descriptions in `action.yml`, so the page a caller reads and the
 check the run performs are built from the same source and cannot disagree.
 
 ## Why the action is bash over a thin YAML file
 
 `action.yml` maps inputs to environment variables and runs a script. That is all it does. The
-alternative — conditions and string assembly in YAML expressions — cannot be tested, cannot be
+alternative, conditions and string assembly in YAML expressions, cannot be tested, cannot be
 run locally, and produces its failures inside a runner. Everything in `scripts/` runs under
 `bats` with `aws`, `curl`, `terragrunt` and `ansible-playbook` stubbed, so a test can assert
 the exact command line a deploy would have issued, including the flags that only matter when
@@ -66,7 +68,7 @@ fleet.
 
 | Guard | The failure it prevents |
 |---|---|
-| Refuse to sync an empty artifact directory | a build that quietly produced nothing, plus `sync --delete`, empties the live site — and exits `0` |
+| Refuse to sync an empty artifact directory | a build that quietly produced nothing, plus `sync --delete`, empties the live site, and exits `0` |
 | `set -o pipefail` everywhere; never `cmd \| tee` | `tee`'s exit code masked an auth failure and the run "reported success" |
 | Verify a **header**, not just a `200` | a deploy that uploads but does not bind: the old version keeps serving and everything looks green |
 | Immutable artifact keys | overwriting a published key changes the code behind a version somebody already reviewed |
@@ -92,7 +94,7 @@ the GitHub Deployments API slot in behind the same interface without touching th
 ## The API, and why it is not just webhooks
 
 v1 of the design had no backend: Slack and Teams are incoming webhooks, and the pull-request
-comment uses `GITHUB_TOKEN`. That still works — leave `api-url` empty and nothing calls the
+comment uses `GITHUB_TOKEN`. That still works, leave `api-url` empty and nothing calls the
 service.
 
 The backend earns its place when you want either of two things:
@@ -109,14 +111,14 @@ The security model is the interesting part, and it is deliberately narrow: the `
 record lands under is the token's claim rather than a request field, so recording a deployment
 against someone else's repository is not *expressible*. And because GitHub issues an OIDC token
 to every repository on github.com, a valid signature alone proves only that the caller is *a*
-workflow — `allowed_owners` is what makes it one of ours, and an empty list denies everything.
+workflow, `allowed_owners` is what makes it one of ours, and an empty list denies everything.
 
 ## Idempotency
 
 The action derives a `delivery_id` of `<run_id>:<attempt>:<environment>:<mode>`. A retried
 notify step inside the same attempt is the same delivery; a re-run of the job is a new one. The
 API takes an idempotency token in DynamoDB with a conditional put **before** writing the record,
-and deletes the token again if the record write fails — so a failed record is retryable rather
+and deletes the token again if the record write fails, so a failed record is retryable rather
 than permanently swallowed by its own dedup marker.
 
 The property this buys is that **notifications are exactly-once**. Duplicate history rows would
@@ -127,7 +129,7 @@ be cosmetic; a second Slack ping for the same deploy is the thing humans actuall
 The obvious implementation is PyJWT, which needs `cryptography`: an 8 MB platform-specific
 wheel that has to be cross-built for the Lambda's architecture and would dominate the package.
 Verifying an RSA PKCS#1 v1.5 signature is `pow(sig, e, n)` and a constant-time compare against a
-fixed prefix — thirty lines of integer arithmetic.
+fixed prefix, thirty lines of integer arithmetic.
 
 This is safe to hand-roll in a way that *signing* would not be: verification touches no secret,
 so there is no timing channel, and the comparison is `hmac.compare_digest` regardless.

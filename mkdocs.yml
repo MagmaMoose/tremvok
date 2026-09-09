@@ -32,7 +32,9 @@ nav:
       # including which target each input belongs to — read out of the same descriptions the
       # runtime validator's map is built from, so the page and the check cannot disagree.
       - Action: action-reference.md
+      - Configuration: configuration.md
       - API: api.md
+  - Troubleshooting: troubleshooting.md
   - Architecture: architecture.md
   - Migrating to v2: migration.md
   - Roadmap: roadmap.md

@@ -1,15 +1,31 @@
 {
   "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/secrets/**)",
+      "Read(./**/*.tfstate)",
+      "Read(./**/*.tfstate.*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(gh repo edit:*)"
+    ],
     "allow": [
       "Bash(bats:*)",
       "Bash(shellcheck:*)",
       "Bash(uv run pytest:*)",
       "Bash(uv run ruff:*)",
       "Bash(uv run mypy:*)",
+      "Bash(uv run --group docs mkdocs:*)",
       "Bash(make -C terraform validate)",
       "Bash(tofu fmt:*)",
       "Bash(tofu validate:*)",
-      "Bash(python3 scripts/build_api_zip.py:*)"
+      "Bash(python3 scripts/build_api_zip.py:*)",
+      "Bash(python3 scripts/gen_input_targets.py:*)",
+      "Bash(python3 scripts/gen_action_reference.py:*)"
     ]
   }
 }

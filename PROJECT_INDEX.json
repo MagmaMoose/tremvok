@@ -1,6 +1,7 @@
 {
   "name": "tremvok",
   "description": "One composite GitHub action with five deployment targets (docs, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
+  "generated": "2026-09-09",
   "generated_for": "agents \u2014 read this before grepping the tree",
   "surfaces": {
     "action": {
@@ -62,7 +63,20 @@
     }
   },
   "hotspots": [
-    "src/tremvok/api/app.py: the auth dependency MUST stay module-level \u2014 see .claude/COMMON_MISTAKES.md",
+    "action.yml",
+    ".github/workflows/release.yml",
+    "docs/action-reference.md",
+    ".github/workflows/security.yml",
+    "README.md",
+    "docs/index.md",
+    "docs/setup.md",
+    "mkdocs.yml",
+    "pyproject.toml",
+    "scripts/gen_action_reference.py"
+  ],
+  "read_first": [
+    "action.yml: the input block for the target you care about, not the whole file",
+    "scripts/validate-inputs.sh: why a target enum can describe itself honestly",
     "scripts/deploy-terragrunt.sh: longest script; the apply authorisation decision is the part to read first",
     "scripts/build_api_zip.py: the one definition of what ships; determinism and --arch are both load-bearing"
   ],
@@ -79,11 +93,5 @@
     "tests/": "122 pytest cases covering the API, script utilities, and tooling; no network, no AWS (moto + a generated RSA key)",
     "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring",
     "tests/test_input_targets.py": "the applicability map is generated, complete, and matches action.yml's defaults; every target-only input carries its target's prefix"
-  },
-  "read_first": [
-    "action.yml: the input block for the target you care about, not the whole file",
-    "scripts/validate-inputs.sh: why a target enum can describe itself honestly",
-    "scripts/deploy-terragrunt.sh: longest script; the apply authorisation decision is the part to read first",
-    "scripts/build_api_zip.py: the one definition of what ships; determinism and --arch are both load-bearing"
-  ]
+  }
 }

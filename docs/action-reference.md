@@ -21,8 +21,8 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` — 80 inputs, of which `target` is the only one
-that is required.
+`MagmaMoose/tremvok@v2` takes 80 inputs. `target` is the only one that
+is required.
 
 | Input | Applies to | Default | Description |
 | --- | --- | --- | --- |
@@ -35,15 +35,15 @@ that is required.
 | `aws-region` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: AWS region. Falls back to the AWS\_REGION environment variable. |
 | `aws-role-to-assume` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: IAM role ARN to assume with this run's GitHub OIDC token. Strongly preferred over stored keys: the credential expires in an hour and the role's trust policy decides which repository and ref may use it. Requires `permissions: id-token: write`. Leave empty to use credentials an earlier step already configured. |
 | `aws-role-duration-seconds` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | `3600` | s3-cloudfront, lambda-zip, terragrunt: lifetime of the assumed-role session. |
-| `docs-target` | `docs` | `github-pages` | docs: where the built site goes — github-pages (default) \| cloudflare-pages \| none. github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING workflow must run: a composite action cannot hold `pages: write` or declare an `environment:`. cloudflare-pages needs neither, so this action deploys it outright. none builds and stops, which is what a pull-request check wants. |
-| `docs-toolchain` | `docs` | `auto` | docs: how to install MkDocs — auto (default) \| uv \| pip. `auto` picks uv when a uv.lock is present, otherwise pip against `docs-requirements`. Detection exists so a caller does not have to declare per-repo what is already visible in the repo. |
+| `docs-target` | `docs` | `github-pages` | docs: where the built site goes, github-pages (default) \| cloudflare-pages \| none. github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING workflow must run: a composite action cannot hold `pages: write` or declare an `environment:`. cloudflare-pages needs neither, so this action deploys it outright. none builds and stops, which is what a pull-request check wants. |
+| `docs-toolchain` | `docs` | `auto` | docs: how to install MkDocs, auto (default) \| uv \| pip. `auto` picks uv when a uv.lock is present, otherwise pip against `docs-requirements`. Detection exists so a caller does not have to declare per-repo what is already visible in the repo. |
 | `docs-dependency-group` | `docs` | `docs` | docs: uv dependency-group holding the docs tooling (uv toolchain only). |
 | `docs-requirements` | `docs` | `docs/requirements.txt` | docs: requirements file pinning the docs build (pip toolchain only). |
 | `docs-python-version` | `docs` | `3.12` | docs: Python version used to build the site. |
 | `docs-strict` | `docs` | `true` | docs: build with `--strict`, so a broken internal link or a nav entry pointing at a missing file fails rather than publishing a site with holes in it. |
 | `docs-site-dir` | `docs` | `site` | docs: directory the built site is written to. |
 | `docs-lint` | `docs` | `true` | docs: run the repo-shape checks (README budget and section order, licence agreement, link targets, Marketplace preflight, INHERIT clobber) before building. These are the rules nothing else covers; --strict already catches broken internal links. |
-| `docs-profile` | `docs` | `auto` | docs: repo profile for the shape checks — auto \| action \| service \| spec. |
+| `docs-profile` | `docs` | `auto` | docs: repo profile for the shape checks, auto \| action \| service \| spec. |
 | `docs-readme-budget` | `docs` | `0` | docs: override the README line budget. 0 uses the profile default. |
 | `docs-markdownlint` | `docs` | `true` | docs: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN\_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. |
 | `docs-cloudflare-project` | `docs` | not set | docs: Cloudflare Pages project name. Defaults to `<repo>-docs`. Created on first deploy if it does not already exist. |
@@ -51,26 +51,26 @@ that is required.
 | `docs-cloudflare-api-token` | `docs` | not set | docs: Cloudflare API token with Pages:Edit. Required for docs-target: cloudflare-pages. Pass a secret, never a literal. |
 | `docs-cloudflare-branch` | `docs` | not set | docs: branch Cloudflare records the deployment against. The project's production branch yields a production deploy; anything else is a preview. Defaults to the ref. |
 | `docs-require-access` | `docs` | `false` | docs: refuse to deploy unless a Cloudflare Access application already covers the site's hostname. Set true for anything whose docs must not be world-readable: a Pages project is served on the open internet at &lt;project&gt;.pages.dev by default, so "the repo is private" gates nothing on its own. This makes the gate an enforced precondition rather than a flag someone remembered to set. |
-| `artifact-path` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the built artifact — a directory for s3-cloudfront, a .zip for lambda-zip. |
+| `artifact-path` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip. |
 | `s3-bucket` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the bucket. For s3-cloudfront it serves the site; for lambda-zip it holds published artifacts. |
 | `s3-key-prefix` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: key prefix within the bucket. Previews are placed under `<s3-key-prefix>/previews/<alias>/`. |
 | `s3-delete-orphans` | `s3-cloudfront` | `auto` | s3-cloudfront: pass --delete to `aws s3 sync`, removing bucket objects with no local counterpart. `auto` (default) means yes. |
-| `cloudfront-distribution-id` | `s3-cloudfront` | not set | s3-cloudfront: CloudFront distribution to invalidate after the sync. Empty means no invalidation — the CDN keeps serving the old objects until its TTL expires. |
+| `cloudfront-distribution-id` | `s3-cloudfront` | not set | s3-cloudfront: CloudFront distribution to invalidate after the sync. Empty means no invalidation, the CDN keeps serving the old objects until its TTL expires. |
 | `cloudfront-site-url` | `s3-cloudfront` | not set | s3-cloudfront: base URL the distribution serves, used to build the URL reported in notifications. |
 | `lambda-function-name` | `lambda-zip` | not set | lambda-zip: the function to update. |
 | `lambda-function-alias` | `lambda-zip` | `live` | lambda-zip: the alias moved to the new version in deploy mode. A preview publishes a version and does not move it. |
 | `lambda-version-label` | `lambda-zip` | not set | lambda-zip: names the immutable S3 key (`<s3-key-prefix>/<lambda-version-label>.zip`). Defaults to the short commit SHA. |
 | `terragrunt-root` | `terragrunt` | `terraform` | terragrunt: directory the stacks live under. |
-| `terragrunt-exclude` | `terragrunt` | `modules _modules` | terragrunt: space-separated path segments that never hold a stack. `modules _modules` by default: a module has no state of its own, and guessing which stacks use it from a path is how a small module tidy-up ends up planning the whole estate. Add a stack that must only ever be applied by hand — one that rewrites a firewall wholesale, say — and the pipeline will not touch it. |
+| `terragrunt-exclude` | `terragrunt` | `modules _modules` | terragrunt: space-separated path segments that never hold a stack. `modules _modules` by default: a module has no state of its own, and guessing which stacks use it from a path is how a small module tidy-up ends up planning the whole estate. Add a stack that must only ever be applied by hand, one that rewrites a firewall wholesale, say, and the pipeline will not touch it. |
 | `terragrunt-scope` | `terragrunt` | `auto` | terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`, or `changed`. |
 | `terragrunt-apply` | `terragrunt` | `auto` | terragrunt: `auto` (apply when the pull request has an independent approval), `never` (plan only), or `force`. |
 | `terragrunt-apply-operators` | `terragrunt` | not set | terragrunt: comma-separated GitHub logins allowed to force an apply by hand (`terragrunt-apply: force` on a manual run). Empty means nobody can, so the manual path fails closed. The normal path is an independent pull-request approval and needs nothing here. |
 | `terragrunt-check-name` | `terragrunt` | `Terragrunt apply` | terragrunt: name of the check run published against the head commit. Make it a required check to enforce apply-before-merge. |
-| `terragrunt-install` | `terragrunt` | `auto` | terragrunt: install pinned, checksum-verified tofu and terragrunt binaries before running — `auto` (default) installs only what is not already on PATH, `always` reinstalls, `never` uses whatever the runner provides. The download is cached per version pair, so a bump lands in a new directory and can never pick up a stale binary. |
+| `terragrunt-install` | `terragrunt` | `auto` | terragrunt: install pinned, checksum-verified tofu and terragrunt binaries before running, `auto` (default) installs only what is not already on PATH, `always` reinstalls, `never` uses whatever the runner provides. The download is cached per version pair, so a bump lands in a new directory and can never pick up a stale binary. |
 | `terragrunt-version` | `terragrunt` | `1.0.8` | terragrunt: the Terragrunt version to install and run. |
 | `terragrunt-tofu-version` | `terragrunt` | `1.12.1` | terragrunt: the OpenTofu version to install and run under Terragrunt. |
-| `terragrunt-plugin-cache` | `terragrunt` | `~/.terraform-plugin-cache` | terragrunt: directory to persist provider plugins in across stacks and runs, exported as TF\_PLUGIN\_CACHE\_DIR. The workspace is wiped on each checkout, so without it every stack re-downloads every provider — the single biggest cost in a multi-stack run. Empty disables the cache. |
-| `terragrunt-refresh` | `terragrunt` | `auto` | terragrunt: refresh state from the provider before planning — `auto` (default) skips the refresh on a pull request and keeps it everywhere else, `true` always refreshes, `false` never does. Config-versus-state is enough for a pull-request check; the scheduled drift run is the one that has to ask the provider. |
+| `terragrunt-plugin-cache` | `terragrunt` | `~/.terraform-plugin-cache` | terragrunt: directory to persist provider plugins in across stacks and runs, exported as TF\_PLUGIN\_CACHE\_DIR. The workspace is wiped on each checkout, so without it every stack re-downloads every provider, the single biggest cost in a multi-stack run. Empty disables the cache. |
+| `terragrunt-refresh` | `terragrunt` | `auto` | terragrunt: refresh state from the provider before planning, `auto` (default) skips the refresh on a pull request and keeps it everywhere else, `true` always refreshes, `false` never does. Config-versus-state is enough for a pull-request check; the scheduled drift run is the one that has to ask the provider. |
 | `terragrunt-timeout` | `terragrunt` | `900` | terragrunt: seconds any one init, plan or apply may take before it is killed. 0 disables the timeout. A stalled provider call otherwise looks like a silent hang until the job limit. |
 | `terragrunt-log-level` | `terragrunt` | not set | terragrunt: value for TF\_LOG when diagnosing a stuck provider call (debug, trace). Empty (default) leaves provider logging off; the log is written next to the plan and redacted before it is shown. |
 | `terragrunt-extra-args` | `terragrunt` | not set | terragrunt: extra flags appended to every plan and apply, split on whitespace. |
@@ -82,16 +82,16 @@ that is required.
 | `ansible-limit` | `ansible` | not set | ansible: value for `--limit`, restricting the run to a subset of the inventory. |
 | `ansible-tags` | `ansible` | not set | ansible: value for `--tags`. |
 | `ansible-skip-tags` | `ansible` | not set | ansible: value for `--skip-tags`. |
-| `ansible-check` | `ansible` | `auto` | ansible: run in check mode — `auto` (default) means check mode on a pull request and a real run everywhere else, `true` forces check mode, `false` forces a real run. A pull request that silently reconfigured a fleet would be a surprising way to find out what a diff does. |
+| `ansible-check` | `ansible` | `auto` | ansible: run in check mode, `auto` (default) means check mode on a pull request and a real run everywhere else, `true` forces check mode, `false` forces a real run. A pull request that silently reconfigured a fleet would be a surprising way to find out what a diff does. |
 | `ansible-diff` | `ansible` | `true` | ansible: pass `--diff`, so the log shows what each changed task changed. |
 | `ansible-extra-vars` | `ansible` | not set | ansible: value for `--extra-vars`. Accepts `key=value` pairs or JSON. |
 | `ansible-extra-args` | `ansible` | not set | ansible: extra flags appended to the playbook run, split on whitespace. |
 | `ansible-ssh-private-key` | `ansible` | not set | ansible: SSH private key used to reach the inventory. Pass a secret, never a literal. It is masked on receipt, written to a 0600 file under RUNNER\_TEMP, and removed when the step exits however it exits. |
 | `ansible-ssh-user` | `ansible` | not set | ansible: value for `--user`. Leave empty to let the inventory or ansible.cfg decide. |
-| `ansible-ssh-known-hosts` | `ansible` | not set | ansible: known\_hosts entries for the inventory, one per line. Empty means host-key checking is disabled for the run, which is a real downgrade — supply this for anything reachable from a network you do not control. |
+| `ansible-ssh-known-hosts` | `ansible` | not set | ansible: known\_hosts entries for the inventory, one per line. Empty means host-key checking is disabled for the run, which is a real downgrade, supply this for anything reachable from a network you do not control. |
 | `ansible-vault-password` | `ansible` | not set | ansible: vault password. Pass a secret. Masked on receipt, written to a 0600 file under RUNNER\_TEMP, removed when the step exits. |
 | `ansible-verify-idempotence` | `ansible` | `true` | ansible: after a successful real run, run the playbook again in check mode and fail if any task would still change. A zero exit only proves the playbook ran; this is what proves it converged. Skipped automatically when the run itself was check mode. |
-| `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind — the one failure that otherwise looks green. |
+| `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green. |
 | `verify-header` | all | not set | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
 | `verify-header-match` | all | not set | Post-deploy: an extended regex the `verify-header` value must match. |
 | `verify-status` | all | `200` | Post-deploy: expected HTTP status from `verify-url`. |
@@ -105,7 +105,7 @@ that is required.
 | `api-audience` | all | `tremvok` | OIDC audience the Tremvok API expects. |
 | `auth-token` | all | `${{ github.token }}` | Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. |
 | `allow-fork-preview` | all | `false` | Let a fork pull request attempt a deploy. Off by default and almost always wrong: a fork cannot read secrets, so this only converts an honest skip into an auth error. |
-| `allow-dispatch-from-any-ref` | all | `false` | Let a manual run deploy from a branch other than the default one. Off by default — publishing a topic branch to production usually is not what "Run workflow" meant. |
+| `allow-dispatch-from-any-ref` | all | `false` | Let a manual run deploy from a branch other than the default one. Off by default, publishing a topic branch to production usually is not what "Run workflow" meant. |
 
 ## Outputs
 
@@ -121,7 +121,7 @@ that is required.
 | `skip-reason` | Why it skipped, in a sentence. |
 | `record-id` | Identifier returned by the Tremvok API, when api-url is set. |
 | `site-dir` | docs: absolute path to the built site. |
-| `docs-toolchain` | docs: the toolchain actually used — uv or pip. |
+| `docs-toolchain` | docs: the toolchain actually used, uv or pip. |
 | `page-url` | docs: the site's canonical URL. Set for cloudflare-pages; empty for github-pages, whose deploy the calling workflow owns. |
 | `deployment-url` | docs: the URL of THIS deployment (&lt;hash&gt;.&lt;project&gt;.pages.dev). Per-deployment, so useful for a preview link but not what anyone should link to. |
 | `version-id` | lambda-zip: the published Lambda version. |

@@ -51,7 +51,7 @@ validator keys on, so a misplaced input is caught rather than ignored.
 | `cloudflare-api-token` | `docs-cloudflare-api-token` |
 | `cloudflare-branch` | `docs-cloudflare-branch` |
 | `require-access` | `docs-require-access` |
-| `stage-pages` | **removed** — it was already a deprecated alias; use `docs-target: none` |
+| `stage-pages` | **removed**: it was already a deprecated alias; use `docs-target: none` |
 
 `working-directory` and `checkout` are unchanged: they genuinely apply to every target.
 
@@ -60,7 +60,7 @@ validator keys on, so a misplaced input is caught rather than ignored.
 | v1 | v2 |
 | --- | --- |
 | `toolchain` | `docs-toolchain` |
-| `target` | `target` — now the selector you passed in, not the docs destination |
+| `target` | `target`, now the selector you passed in, not the docs destination |
 | `site-dir`, `page-url`, `deployment-url` | unchanged |
 
 ## The reusable workflows are gone
@@ -71,7 +71,7 @@ only was a place for the two to disagree.
 
 The half they carried that the action cannot is the Pages deploy: `actions/deploy-pages`
 needs `pages: write` and the `github-pages` environment, and a composite action can declare
-neither. That becomes a job in your own workflow — the shape is in [Setup](setup.md), and it
+neither. That becomes a job in your own workflow, the shape is in [Setup](setup.md), and it
 is about ten lines. It is the only place in the action where an `environment:` is
 load-bearing; the Terragrunt apply gate is the action's own logic and needs none.
 
@@ -100,7 +100,7 @@ renames:
 | `check-name` | `terragrunt-check-name` |
 
 It never appeared in a release note, and the three files in `examples/` that pointed at it
-were pointing at the root action anyway — which is a large part of why the surfaces merged.
+were pointing at the root action anyway, which is a large part of why the surfaces merged.
 
 ## Behaviour changes worth knowing
 
@@ -109,7 +109,7 @@ were pointing at the root action anyway — which is a large part of why the sur
   both, raised before the checkout.
 - **The Terragrunt apply uses the saved plan.** Plan writes `-out`, apply applies that file.
   When the saved plan has gone stale the run says so in the log and re-plans rather than
-  refusing — `PLAN SOURCE:` in the log names which one ran.
+  refusing, `PLAN SOURCE:` in the log names which one ran.
 - **A plan-only Terragrunt run reports success, not failure.** It deployed nothing on
   purpose. At v1 the notification called that a failed deploy.
 - **`schedule` and `pull_request_review` resolve.** `mode: auto` used to fail on both, which

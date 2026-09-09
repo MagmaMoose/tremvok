@@ -1,5 +1,9 @@
 # Contributing to Tremvok
 
+> `CLAUDE.md` is the canonical agent-context file; this file restates the same rules in full for
+> agents that do not read it. **Edit the two together** — two files of record that drift apart
+> are worse than one, because then the agents disagree and neither is wrong.
+
 Tremvok has two surfaces in one repository. They talk over HTTP and **neither imports the
 other**; a change that couples them is the change to push back on.
 
@@ -27,6 +31,13 @@ other**; a change that couples them is the change to push back on.
    nobody finds until production.
 7. **Every guard gets a test that names the failure it prevents.** The tests here are the
    documentation of what went wrong once.
+8. **`scripts/lib/input-targets.json` is generated, never hand-edited.** It is what
+   `validate-inputs.sh` reads at runtime and what the reference page is built from. Regenerate
+   with `python3 scripts/gen_input_targets.py` after any input change; CI fails on drift.
+9. **Bash on the runner, Python off it.** Target adapters are bash, under `bats`. Python is for
+   the generators, the linters, the packager and the tests — none of which run on a caller's
+   runner in the deploy path. Adding one to an adapter costs every AWS run a `setup-python`
+   step and puts that code outside the contract the bats suite enforces.
 
 ## Local validation
 
