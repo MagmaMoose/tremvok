@@ -38,7 +38,13 @@ MARKER = re.compile(r"^([a-z0-9][a-z0-9-]*(?:\s*,\s*[a-z0-9][a-z0-9-]*)*)\s*:\s"
 
 def targets_for(description: str) -> list[str]:
     """The targets an input applies to, from the marker at the head of its description."""
-    first_line = (description or "").strip().splitlines()[0] if description else ""
+    # `splitlines()` on a description that is only whitespace returns an EMPTY list, so
+    # indexing [0] raised IndexError and took the whole generator down with it — and with it
+    # CI, since the map and the reference are both --check'd. Nothing in action.yml is
+    # whitespace-only today, which is exactly why it went unnoticed. Default the missing
+    # first line to "" instead: no marker means every target, which is the right answer.
+    lines = (description or "").strip().splitlines()
+    first_line = lines[0] if lines else ""
     match = MARKER.match(first_line)
     if not match:
         return list(TARGETS)

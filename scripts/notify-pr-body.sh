@@ -19,6 +19,12 @@ RUN_URL="${RUN_URL:-}"
 # `if` blocks rather than `[[ … ]] && printf` inside the substitution: a false test as the
 # LAST command of a command substitution makes the assignment fail, and under `set -e` that
 # ends the script. It only bites when the optional line is absent, which is the common case.
+#
+# The single quotes below are the printf FORMAT STRING, and the backticks in it are literal
+# Markdown code-span delimiters; the %s args expand as positional parameters. Taking SC2016's
+# advice and switching to double quotes would make bash parse `%s` as command substitution,
+# run %s as a command, and post a comment with every table cell empty, at exit 0. Same reason
+# and same directive as deploy-terragrunt.sh.
 # shellcheck disable=SC2016
 body="$(
   printf '### Tremvok — %s `%s` to `%s`\n\n' "$MODE" "$TARGET" "$ENVIRONMENT"
