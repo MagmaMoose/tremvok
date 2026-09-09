@@ -24,9 +24,6 @@ STEPS = ACTION["runs"]["steps"]
 PASS_THROUGH = {
     # Read by the AWS CLI and SDK inside the script's own subprocesses, never by the script.
     "AWS_REGION",
-    # Read by wrangler, which the Cloudflare Pages script invokes but does not parse.
-    "CLOUDFLARE_ACCOUNT_ID",
-    "CLOUDFLARE_API_TOKEN",
 }
 
 SCRIPTS = ROOT / "scripts"

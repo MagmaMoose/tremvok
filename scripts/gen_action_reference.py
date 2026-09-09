@@ -126,7 +126,7 @@ def render() -> str:
         "",
         "| Target | What it does |",
         "| --- | --- |",
-        "| `docs` | Build an MkDocs site strictly, publish it to Pages or Cloudflare Pages |",
+        "| `docs` | Build an MkDocs site strictly, publish it to GitHub Pages |",
         "| `s3-cloudfront` | Sync a built static site to S3, invalidate CloudFront |",
         "| `lambda-zip` | Publish a Lambda package to S3, update the function, move an alias |",
         "| `terragrunt` | Discover, plan and (on an approval) apply Terragrunt stacks |",

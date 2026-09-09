@@ -2,9 +2,7 @@
 # Work out how to build the docs, and where they are going, before anything is installed.
 #
 # Detection rather than declaration: `uv.lock` in the tree is the fact, and a caller
-# restating it in config is one more thing that can disagree with the repo. Every failure
-# here is deliberately raised *before* the build, so a missing Cloudflare credential costs
-# a second rather than the two minutes it takes to build a site nobody can publish.
+# restating it in config is one more thing that can disagree with the repo.
 set -euo pipefail
 # shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
@@ -12,9 +10,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 REQUESTED="${REQUESTED:-auto}"
 REQUIREMENTS="${REQUIREMENTS:-docs/requirements.txt}"
 TARGET="${TARGET:-github-pages}"
-CF_PROJECT="${CF_PROJECT:-}"
-CF_ACCOUNT="${CF_ACCOUNT:-}"
-CF_TOKEN="${CF_TOKEN:-}"
 REPO_NAME="${REPO_NAME:-docs}"
 
 case "$REQUESTED" in
@@ -34,15 +29,9 @@ esac
 [[ -f mkdocs.yml ]] || tremvok::fail "no mkdocs.yml in ${PWD} — nothing to build."
 
 case "$TARGET" in
-  github-pages|cloudflare-pages|none) ;;
-  *) tremvok::fail "docs-target must be github-pages, cloudflare-pages or none (got '${TARGET}')" ;;
+  github-pages|none) ;;
+  *) tremvok::fail "docs-target must be github-pages or none (got '${TARGET}')" ;;
 esac
-
-if [[ "$TARGET" == "cloudflare-pages" ]]; then
-  [[ -n "$CF_ACCOUNT" ]] || tremvok::fail "docs-target: cloudflare-pages needs docs-cloudflare-account-id."
-  [[ -n "$CF_TOKEN" ]] || tremvok::fail "docs-target: cloudflare-pages needs docs-cloudflare-api-token."
-  tremvok::set_output cf-project "${CF_PROJECT:-${REPO_NAME}-docs}"
-fi
 
 tremvok::set_output toolchain "$resolved"
 tremvok::set_output target "$TARGET"

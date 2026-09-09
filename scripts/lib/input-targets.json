@@ -147,36 +147,6 @@
       ],
       "default": "true"
     },
-    "docs-cloudflare-project": {
-      "targets": [
-        "docs"
-      ],
-      "default": ""
-    },
-    "docs-cloudflare-account-id": {
-      "targets": [
-        "docs"
-      ],
-      "default": ""
-    },
-    "docs-cloudflare-api-token": {
-      "targets": [
-        "docs"
-      ],
-      "default": ""
-    },
-    "docs-cloudflare-branch": {
-      "targets": [
-        "docs"
-      ],
-      "default": ""
-    },
-    "docs-require-access": {
-      "targets": [
-        "docs"
-      ],
-      "default": "false"
-    },
     "artifact-path": {
       "targets": [
         "s3-cloudfront",

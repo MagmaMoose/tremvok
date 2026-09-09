@@ -16,6 +16,9 @@ import sys
 import pytest
 import yaml
 
+import gen_input_targets
+import gen_action_reference
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAP = ROOT / "scripts" / "lib" / "input-targets.json"
 ACTION = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
@@ -90,3 +93,64 @@ def test_the_selector_itself_is_required_and_has_no_default():
     somebody who meant to deploy a Lambda."""
     assert ACTION["inputs"]["target"]["required"] is True
     assert "default" not in ACTION["inputs"]["target"]
+
+
+# Direct import tests — subprocess calls above do not contribute to coverage measurement.
+
+def test_targets_for_returns_all_when_description_has_no_target_prefix():
+    all_targets = gen_input_targets.TARGETS
+    assert gen_input_targets.targets_for("Post-deploy: the URL.") == all_targets
+    assert gen_input_targets.targets_for("") == all_targets
+    assert gen_input_targets.targets_for(None) == all_targets
+
+
+def test_targets_for_parses_single_target_prefix():
+    assert gen_input_targets.targets_for("docs: Cloudflare project name.") == ["docs"]
+    assert gen_input_targets.targets_for("ansible: SSH key.") == ["ansible"]
+
+
+def test_targets_for_parses_multi_target_prefix():
+    result = gen_input_targets.targets_for("s3-cloudfront, lambda-zip: the bucket.")
+    assert result == ["s3-cloudfront", "lambda-zip"]
+
+
+def test_targets_for_treats_unknown_prefix_as_prose():
+    assert gen_input_targets.targets_for("Post-deploy: something.") == gen_input_targets.TARGETS
+
+
+def test_build_returns_all_declared_targets():
+    data = gen_input_targets.build()
+    assert data["targets"] == gen_input_targets.TARGETS
+
+
+def test_build_excludes_the_selector_input():
+    data = gen_input_targets.build()
+    assert "target" not in data["inputs"]
+
+
+def test_render_produces_valid_json():
+    import json as _json
+    text = gen_input_targets.render()
+    parsed = _json.loads(text)
+    assert "inputs" in parsed
+    assert "targets" in parsed
+
+
+def test_action_reference_default_formats_value():
+    assert gen_action_reference.default("auto") == "`auto`"
+    assert gen_action_reference.default("") == "not set"
+    assert gen_action_reference.default(None) == "not set"
+
+
+def test_action_reference_applies_to_selector():
+    assert gen_action_reference.applies_to("target", {}) == "the selector"
+
+
+def test_action_reference_applies_to_single_target():
+    result = gen_action_reference.applies_to("docs-site-dir", {"description": "docs: the dir."})
+    assert result == "`docs`"
+
+
+def test_action_reference_applies_to_all():
+    result = gen_action_reference.applies_to("environment", {"description": "Logical environment name."})
+    assert result == "all"

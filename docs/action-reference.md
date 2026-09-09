@@ -13,7 +13,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 | Target | What it does |
 | --- | --- |
-| `docs` | Build an MkDocs site strictly, publish it to Pages or Cloudflare Pages |
+| `docs` | Build an MkDocs site strictly, publish it to GitHub Pages |
 | `s3-cloudfront` | Sync a built static site to S3, invalidate CloudFront |
 | `lambda-zip` | Publish a Lambda package to S3, update the function, move an alias |
 | `terragrunt` | Discover, plan and (on an approval) apply Terragrunt stacks |
@@ -21,12 +21,12 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 80 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 75 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
 | --- | --- | --- | --- |
-| `target` | the selector | not set | The deployment target. One of: docs Build an MkDocs site strictly, publish it to GitHub Pages or Cloudflare Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. |
+| `target` | the selector | not set | The deployment target. One of: docs Build an MkDocs site strictly, publish it to GitHub Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. |
 | `mode` | all | `auto` | What this run should do. One of: auto (default) push to the default branch = deploy, pull\_request = preview, workflow\_dispatch = deploy (pinned to the default branch). deploy Publish to the environment. preview Publish somewhere disposable; production is untouched. rollback Re-publish a previously published version. |
 | `environment` | all | not set | Logical environment name, surfaced in notifications and the deployment record. Defaults to "production" (deploy) or "preview". |
 | `working-directory` | all | `.` | Directory to run in. Paths in the other inputs are relative to it. |
@@ -35,7 +35,7 @@ is required.
 | `aws-region` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: AWS region. Falls back to the AWS\_REGION environment variable. |
 | `aws-role-to-assume` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: IAM role ARN to assume with this run's GitHub OIDC token. Strongly preferred over stored keys: the credential expires in an hour and the role's trust policy decides which repository and ref may use it. Requires `permissions: id-token: write`. Leave empty to use credentials an earlier step already configured. |
 | `aws-role-duration-seconds` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | `3600` | s3-cloudfront, lambda-zip, terragrunt: lifetime of the assumed-role session. |
-| `docs-target` | `docs` | `github-pages` | docs: where the built site goes, github-pages (default) \| cloudflare-pages \| none. github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING workflow must run: a composite action cannot hold `pages: write` or declare an `environment:`. cloudflare-pages needs neither, so this action deploys it outright. none builds and stops, which is what a pull-request check wants. |
+| `docs-target` | `docs` | `github-pages` | docs: where the built site goes, github-pages (default) \| none. github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING workflow must run: a composite action cannot hold `pages: write` or declare an `environment:`. none builds and stops, which is what a pull-request check wants. |
 | `docs-toolchain` | `docs` | `auto` | docs: how to install MkDocs, auto (default) \| uv \| pip. `auto` picks uv when a uv.lock is present, otherwise pip against `docs-requirements`. Detection exists so a caller does not have to declare per-repo what is already visible in the repo. |
 | `docs-dependency-group` | `docs` | `docs` | docs: uv dependency-group holding the docs tooling (uv toolchain only). |
 | `docs-requirements` | `docs` | `docs/requirements.txt` | docs: requirements file pinning the docs build (pip toolchain only). |
@@ -46,11 +46,6 @@ is required.
 | `docs-profile` | `docs` | `auto` | docs: repo profile for the shape checks, auto \| action \| service \| spec. |
 | `docs-readme-budget` | `docs` | `0` | docs: override the README line budget. 0 uses the profile default. |
 | `docs-markdownlint` | `docs` | `true` | docs: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN\_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. |
-| `docs-cloudflare-project` | `docs` | not set | docs: Cloudflare Pages project name. Defaults to `<repo>-docs`. Created on first deploy if it does not already exist. |
-| `docs-cloudflare-account-id` | `docs` | not set | docs: Cloudflare account id. Required for docs-target: cloudflare-pages. |
-| `docs-cloudflare-api-token` | `docs` | not set | docs: Cloudflare API token with Pages:Edit. Required for docs-target: cloudflare-pages. Pass a secret, never a literal. |
-| `docs-cloudflare-branch` | `docs` | not set | docs: branch Cloudflare records the deployment against. The project's production branch yields a production deploy; anything else is a preview. Defaults to the ref. |
-| `docs-require-access` | `docs` | `false` | docs: refuse to deploy unless a Cloudflare Access application already covers the site's hostname. Set true for anything whose docs must not be world-readable: a Pages project is served on the open internet at &lt;project&gt;.pages.dev by default, so "the repo is private" gates nothing on its own. This makes the gate an enforced precondition rather than a flag someone remembered to set. |
 | `artifact-path` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip. |
 | `s3-bucket` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the bucket. For s3-cloudfront it serves the site; for lambda-zip it holds published artifacts. |
 | `s3-key-prefix` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: key prefix within the bucket. Previews are placed under `<s3-key-prefix>/previews/<alias>/`. |
@@ -122,8 +117,6 @@ is required.
 | `record-id` | Identifier returned by the Tremvok API, when api-url is set. |
 | `site-dir` | docs: absolute path to the built site. |
 | `docs-toolchain` | docs: the toolchain actually used, uv or pip. |
-| `page-url` | docs: the site's canonical URL. Set for cloudflare-pages; empty for github-pages, whose deploy the calling workflow owns. |
-| `deployment-url` | docs: the URL of THIS deployment (&lt;hash&gt;.&lt;project&gt;.pages.dev). Per-deployment, so useful for a preview link but not what anyone should link to. |
 | `version-id` | lambda-zip: the published Lambda version. |
 | `stacks` | terragrunt: how many stacks this run discovered. |
 | `plan-changes` | terragrunt: how many of those stacks planned with a diff. |

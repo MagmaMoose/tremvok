@@ -1,5 +1,5 @@
 name: 'Tremvok'
-description: 'Deploy anything, then prove it went live: docs to Pages or Cloudflare, static sites to S3/CloudFront, Lambda packages, Terragrunt stacks, and fleets over Ansible.'
+description: 'Deploy anything, then prove it went live: docs to GitHub Pages, static sites to S3/CloudFront, Lambda packages, Terragrunt stacks, and fleets over Ansible.'
 author: 'MagmaMoose'
 
 branding:
@@ -29,7 +29,7 @@ inputs:
   target:
     description: |
       The deployment target. One of:
-        docs           Build an MkDocs site strictly, publish it to GitHub Pages or Cloudflare Pages.
+        docs           Build an MkDocs site strictly, publish it to GitHub Pages.
         s3-cloudfront  Sync a built static site to S3 and invalidate CloudFront.
         lambda-zip     Publish a Lambda package to S3, update the function, move an alias.
         terragrunt     Discover, plan and (on an approval) apply Terragrunt stacks.
@@ -91,11 +91,10 @@ inputs:
   # ── target: docs ─────────────────────────────────────────────────────────
   docs-target:
     description: |
-      docs: where the built site goes, github-pages (default) | cloudflare-pages | none.
+      docs: where the built site goes, github-pages (default) | none.
       github-pages stages a Pages artifact for actions/deploy-pages, which the CALLING
       workflow must run: a composite action cannot hold `pages: write` or declare an
-      `environment:`. cloudflare-pages needs neither, so this action deploys it outright.
-      none builds and stops, which is what a pull-request check wants.
+      `environment:`. none builds and stops, which is what a pull-request check wants.
     required: false
     default: 'github-pages'
 
@@ -160,38 +159,6 @@ inputs:
       gate on net-new findings anyway.
     required: false
     default: 'true'
-
-  docs-cloudflare-project:
-    description: 'docs: Cloudflare Pages project name. Defaults to `<repo>-docs`. Created on first deploy if it does not already exist.'
-    required: false
-    default: ''
-
-  docs-cloudflare-account-id:
-    description: 'docs: Cloudflare account id. Required for docs-target: cloudflare-pages.'
-    required: false
-    default: ''
-
-  docs-cloudflare-api-token:
-    description: 'docs: Cloudflare API token with Pages:Edit. Required for docs-target: cloudflare-pages. Pass a secret, never a literal.'
-    required: false
-    default: ''
-
-  docs-cloudflare-branch:
-    description: |
-      docs: branch Cloudflare records the deployment against. The project's production branch
-      yields a production deploy; anything else is a preview. Defaults to the ref.
-    required: false
-    default: ''
-
-  docs-require-access:
-    description: |
-      docs: refuse to deploy unless a Cloudflare Access application already covers the site's
-      hostname. Set true for anything whose docs must not be world-readable: a Pages project is
-      served on the open internet at <project>.pages.dev by default, so "the repo is private"
-      gates nothing on its own. This makes the gate an enforced precondition rather than a flag
-      someone remembered to set.
-    required: false
-    default: 'false'
 
   # ── targets: s3-cloudfront, lambda-zip ───────────────────────────────────
   artifact-path:
@@ -522,7 +489,7 @@ outputs:
     value: ${{ steps.resolve.outputs.environment }}
   url:
     description: 'URL of what was deployed, when the target produces one.'
-    value: ${{ steps.deploy-s3.outputs.url || steps.docs-cloudflare.outputs.page-url }}
+    value: ${{ steps.deploy-s3.outputs.url }}
   deployed:
     description: 'true when something was actually deployed (false for a skip).'
     value: ${{ steps.outcome.outputs.deployed }}
@@ -544,12 +511,6 @@ outputs:
   docs-toolchain:
     description: 'docs: the toolchain actually used, uv or pip.'
     value: ${{ steps.docs-detect.outputs.toolchain }}
-  page-url:
-    description: "docs: the site's canonical URL. Set for cloudflare-pages; empty for github-pages, whose deploy the calling workflow owns."
-    value: ${{ steps.docs-cloudflare.outputs.page-url }}
-  deployment-url:
-    description: 'docs: the URL of THIS deployment (<hash>.<project>.pages.dev). Per-deployment, so useful for a preview link but not what anyone should link to.'
-    value: ${{ steps.docs-cloudflare.outputs.deployment-url }}
   version-id:
     description: 'lambda-zip: the published Lambda version.'
     value: ${{ steps.deploy-lambda.outputs.version-id }}
@@ -628,9 +589,6 @@ runs:
         REQUESTED: ${{ inputs.docs-toolchain }}
         REQUIREMENTS: ${{ inputs.docs-requirements }}
         TARGET: ${{ inputs.docs-target }}
-        CF_PROJECT: ${{ inputs.docs-cloudflare-project }}
-        CF_ACCOUNT: ${{ inputs.docs-cloudflare-account-id }}
-        CF_TOKEN: ${{ inputs.docs-cloudflare-api-token }}
         REPO_NAME: ${{ github.event.repository.name }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/docs-detect.sh"
 
@@ -730,39 +688,6 @@ runs:
           mkdocs build $strict_flag --site-dir "$SITE_DIR"
         fi
         echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
-
-    # Runs BEFORE the deploy, deliberately. A Cloudflare Pages project is served on the
-    # open internet at <project>.pages.dev by default, so "the repo is private" gates
-    # nothing: the moment content is uploaded it is public. Checking afterwards would be
-    # checking after the leak. This VERIFIES rather than creates, an Access application
-    # is made once by a human, and what this guarantees is that nothing publishes until
-    # that has happened.
-    - name: Require Cloudflare Access
-      if: steps.docs-detect.outputs.target == 'cloudflare-pages' && inputs.docs-require-access == 'true'
-      shell: bash
-      env:
-        CF_TOKEN: ${{ inputs.docs-cloudflare-api-token }}
-        CF_ACCOUNT: ${{ inputs.docs-cloudflare-account-id }}
-        HOST_TO_CHECK: ${{ steps.docs-detect.outputs.cf-project }}.pages.dev
-        CHECK: ${{ github.action_path }}/scripts/access_covers.py
-      run: bash "${GITHUB_ACTION_PATH}/scripts/require-access.sh"
-
-    # Cloudflare Pages needs no GitHub permissions and no `environment:`, so unlike the
-    # GitHub Pages path the action owns the whole deploy rather than handing an artifact
-    # back to the caller. That asymmetry is the reason `docs-target` exists at all.
-    - name: Deploy to Cloudflare Pages
-      id: docs-cloudflare
-      if: steps.docs-detect.outputs.target == 'cloudflare-pages'
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      env:
-        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.docs-cloudflare-account-id }}
-        CLOUDFLARE_API_TOKEN: ${{ inputs.docs-cloudflare-api-token }}
-        PROJECT: ${{ steps.docs-detect.outputs.cf-project }}
-        SITE_DIR: ${{ inputs.docs-site-dir }}
-        BRANCH: ${{ inputs.docs-cloudflare-branch }}
-        DRY_RUN: ${{ inputs.dry-run }}
-      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-cloudflare-pages.sh"
 
     - name: Configure Pages
       if: steps.docs-detect.outputs.stage-pages == 'true'
@@ -932,7 +857,7 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         COMMENT_KEY: ${{ inputs.target }}-${{ steps.resolve.outputs.environment }}
         STATUS: ${{ steps.outcome.outputs.status }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.docs-cloudflare.outputs.deployment-url }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         MODE: ${{ steps.resolve.outputs.mode }}
@@ -952,7 +877,7 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.docs-cloudflare.outputs.page-url }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -969,7 +894,7 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.docs-cloudflare.outputs.page-url }}
+        URL: ${{ steps.deploy-s3.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

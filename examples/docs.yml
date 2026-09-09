@@ -2,8 +2,7 @@
 #
 # Two jobs, and the split is not stylistic: `actions/deploy-pages` requires `pages: write`
 # and the `github-pages` environment, and a composite action can declare neither. So Tremvok
-# builds and stages the artifact and this workflow publishes it. That is the only job the
-# action hands back — for Cloudflare Pages it owns the deploy outright, and one job is enough.
+# builds and stages the artifact and this workflow publishes it.
 #
 # Set Settings -> Pages -> Source = "GitHub Actions" once per repository.
 name: Docs

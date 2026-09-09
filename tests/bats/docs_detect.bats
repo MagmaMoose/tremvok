@@ -54,21 +54,6 @@ setup() {
   [ "$(output_value stage-pages)" = "false" ]
 }
 
-@test "cloudflare-pages without a credential fails before the build, not after it" {
-  : >uv.lock
-  TARGET=cloudflare-pages run bash "${SCRIPTS}/docs-detect.sh"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"cloudflare-account-id"* ]]
-}
-
-@test "the cloudflare project defaults to <repo>-docs" {
-  : >uv.lock
-  TARGET=cloudflare-pages CF_ACCOUNT=acct CF_TOKEN=tok REPO_NAME=widget \
-    run bash "${SCRIPTS}/docs-detect.sh"
-  [ "$status" -eq 0 ]
-  [ "$(output_value cf-project)" = "widget-docs" ]
-}
-
 @test "an unknown docs-target is refused" {
   : >uv.lock
   TARGET=netlify run bash "${SCRIPTS}/docs-detect.sh"

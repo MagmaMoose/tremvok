@@ -14,9 +14,7 @@
         "scripts/resolve-mode.sh": "event -> deploy|preview|rollback, environment, preview alias",
         "scripts/preflight.sh": "fork / no-credential -> honest skip with a reason; AWS targets only",
         "scripts/assume-role.sh": "GitHub OIDC -> STS -> masked short-lived credentials",
-        "scripts/docs-detect.sh": "target: docs. uv vs pip, docs destination, cloudflare preconditions \u2014 all before the build",
-        "scripts/require-access.sh": "target: docs. refuses a Cloudflare publish unless Access already covers the host",
-        "scripts/deploy-cloudflare-pages.sh": "target: docs. idempotent project create, then wrangler deploy",
+        "scripts/docs-detect.sh": "target: docs. uv vs pip, docs destination \u2014 all before the build",
         "scripts/deploy-s3-cloudfront.sh": "static site to S3 + CloudFront invalidation; refuses an empty artifact dir",
         "scripts/deploy-lambda-zip.sh": "immutable S3 key, publish version, verify CodeSha256, move alias (deploy only)",
         "scripts/terragrunt-bootstrap.sh": "pinned, checksum-verified tofu+terragrunt, cached per version pair; plugin cache",
@@ -41,7 +39,6 @@
         "scripts/gen_input_targets.py": "GENERATES scripts/lib/input-targets.json from action.yml; --check in CI",
         "scripts/gen_action_reference.py": "GENERATES docs/action-reference.md from action.yml; --check in CI",
         "scripts/lint_docs.py": "repo-shape checks for the MagmaMoose documentation standard (beyond markdownlint/MkDocs)",
-        "scripts/access_covers.py": "reads Cloudflare Access API response on stdin; outputs YES/NO/ERROR \u2014 blocks publish unless YES",
         "scripts/build_api_zip.py": "the one definition of what ships to Lambda; determinism and --arch are both load-bearing"
       }
     },
@@ -81,11 +78,10 @@
     "scripts/build_api_zip.py: the one definition of what ships; determinism and --arch are both load-bearing"
   ],
   "tests": {
-    "tests/bats/": "126 cases over the shell scripts, with aws/curl stubbed",
+    "tests/bats/": "188 cases over the shell scripts, with aws/curl stubbed",
     "tests/test_action_contract.py": "the action.yml <-> scripts <-> docs/action-reference.md contract: unread env vars (following the whole script chain), dead inputs, undocumented inputs, notification steps not gated on always()",
     "tests/test_notify_parity.py": "asserts the shell and Python notifiers still send the same card",
     "tests/test_terraform_contract.py": "the module <-> settings.py env-var contract, the handler path, and the IAM actions the code needs \u2014 what the LocalStack run proves, without Docker",
-    "tests/test_access_covers.py": "every YES/NO/ERROR outcome of scripts/access_covers.py \u2014 a non-YES must always block the publish",
     "tests/test_build_api_zip.py": "packaging contract: determinism (digest stability) and --arch correctness for scripts/build_api_zip.py",
     "tests/test_gen_action_reference.py": "scripts/gen_action_reference.py output matches committed docs/action-reference.md",
     "tests/test_lint_docs.py": "scripts/lint_docs.py MagmaMoose documentation-shape rules",

@@ -81,8 +81,8 @@ STUBEOF
 }
 
 @test "the ssh key is masked, written 0600, and gone when the step ends" {
-  SSH_PRIVATE_KEY=$'-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----' \
-    run bash "${SCRIPTS}/deploy-ansible.sh"
+  SSH_PRIVATE_KEY=$'-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----' # gitleaks:allow
+  run bash "${SCRIPTS}/deploy-ansible.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"::add-mask::b3BlbnNzaC1rZXktdjEAAAAA"* ]]
   grep -q -- '--private-key' "$STUB_LOG"
