@@ -10,7 +10,7 @@ load helper
 
 # Long enough to be a plausible token and to be masked; no `%` in it, so the mask that is
 # registered is the literal string and a test can look for it.
-TOKEN='ghs_A1b2C3d4E5f6G7h8I9j0'
+TOKEN='ghs_A1b2C3d4E5f6G7h8I9j0' # gitleaks:allow — fabricated test value, not a real credential
 
 setup() {
   setup_common
