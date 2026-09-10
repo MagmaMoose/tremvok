@@ -132,6 +132,31 @@ The gate is the action's own (`scripts/approval-gate.sh`), so it needs no GitHub
 Add an `environment:` to your job only if you want what an environment adds beyond the gate:
 a wait timer, or secrets scoped to it.
 
+### Per-stack state credentials
+
+If your production state lives in a different storage account from the rest, which is a
+deliberate blast-radius boundary rather than an accident, one credential can't reach both.
+`terragrunt-stack-env` applies environment per stack:
+
+```yaml
+with:
+  target: terragrunt
+  terragrunt-stack-env: |
+    */prd/*|*/prod/*  ARM_ACCESS_KEY=${{ secrets.PRD_STATE_KEY }}
+    *                 ARM_ACCESS_KEY=${{ secrets.STATE_KEY }}
+```
+
+One `<glob> KEY=VALUE` per line. The first matching line wins for a given key, so the
+specific pattern goes above the catch-all, exactly as it would in a `case`. Blank lines and
+`#` comments are ignored, and a line with a pattern but no assignment fails the run rather
+than being skipped.
+
+The values are secrets, so they're passed to each invocation with `env` rather than exported
+into the shell: one stack's credential never reaches the next stack's run. The apply gets the
+same environment the plan got, which matters more than it sounds. A plan that reads state
+with one credential and an apply that writes it with another is the worst version of this
+bug, because the plan looks fine.
+
 ### `ansible`
 
 ```yaml

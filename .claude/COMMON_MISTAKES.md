@@ -26,6 +26,32 @@ body="$(
 It only bites when the optional line is *absent*, which in `deploy-terragrunt.sh` meant: every
 push event, immediately after a successful plan. Use `if` blocks inside `$( )`.
 
+## `${{ }}` inside an action.yml DESCRIPTION is evaluated, and `secrets` is not a context
+
+A description is documentation, so an example written in it looks inert:
+
+```yaml
+  terragrunt-stack-env:
+    description: |
+      */prd/*  ARM_ACCESS_KEY=${{ secrets.PRD_STATE_KEY }}      # <- an EXAMPLE
+```
+
+GitHub parses every `${{ }}` in the file regardless of where it sits, and `secrets` is not
+available to a composite action. The whole action then fails to load, for every consumer, on
+every target:
+
+    Unrecognized named-value: 'secrets'. Located at position 1 within expression:
+    secrets.PRD_STATE_KEY
+    ##[error]Failed to load .../action.yml
+
+Not a lint, not a warning about that one input: the action does not run at all. `github.token`
+in a `default:` is fine because `github` IS a valid context, which is what makes this
+inconsistent enough to walk into. Write example expressions as placeholders
+(`<the production state key>`), never as real `${{ }}`.
+
+Caught by the dogfood `Build site` job, which is the only check that actually loads the action
+rather than parsing the YAML. `python3 -c 'import yaml; yaml.safe_load(...)'` passes happily.
+
 ## A helper that ends with `set -e` hands errexit back ON to a caller that turned it off
 
 `set +e` is not scoped. A function written as
