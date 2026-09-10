@@ -29,11 +29,17 @@ reason=""
 if tremvok::is_true "$IS_FORK" && ! tremvok::is_true "$ALLOW_FORK_PREVIEW"; then
   skip=true
   reason="this pull request comes from a fork, so the workflow cannot read the deployment credential. Nothing was deployed, and that is the intended behaviour — a fork must not be able to publish."
-elif [[ "$TARGET" == "s3-cloudfront" || "$TARGET" == "lambda-zip" || "$TARGET" == "terragrunt" ]] \
+elif [[ "$TARGET" == "s3-cloudfront" || "$TARGET" == "lambda-zip" ]] \
   && [[ -z "$ROLE_TO_ASSUME" && -z "$AWS_ACCESS_KEY_ID" && -z "$AWS_WEB_IDENTITY_TOKEN_FILE" ]]; then
-  # Only the AWS targets. The docs target publishes to GitHub Pages or Cloudflare and the
-  # ansible target talks to hosts over SSH, so demanding an AWS credential from either would
-  # skip a run that was never going to need one — an honest skip that is simply wrong.
+  # Only the two targets that call AWS themselves. Every other target publishes somewhere
+  # else: github-pages to Pages, cloudflare-workers to Cloudflare, ansible to hosts over SSH.
+  # terragrunt is the one that looks like an AWS target and is not. It is provider-agnostic:
+  # its credentials come from the backend and provider blocks its own configuration names,
+  # which may be AWS, Azure, GCP, a private cloud, or several of them in one run, and
+  # terragrunt-stack-env exists to carry exactly those. Demanding an AWS credential from any
+  # of these skips a run that was never going to need one, which is an honest skip that is
+  # simply wrong. A terragrunt run that genuinely needed AWS fails in the provider instead,
+  # with a message naming the provider, and that is the better message of the two.
   skip=true
   reason="no AWS credential is available for target: ${TARGET}. Set aws-role-to-assume (OIDC, preferred) or configure credentials in an earlier step. Nothing was deployed."
 fi

@@ -76,9 +76,10 @@ approved() {
   ! grep -q 'terragrunt apply' "$STUB_LOG"
 }
 
-@test "an approval authorises the apply" {
+@test "an approval event authorises the apply" {
   approved
-  PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value applied)" = "true" ]
   [ "$(output_value approvers)" = "@reviewer" ]
@@ -87,7 +88,8 @@ approved() {
 
 @test "a failed plan blocks the apply even with an approval" {
   approved
-  PLAN_EXIT=1 PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  PLAN_EXIT=1 PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -ne 0 ]
   [ "$(output_value plan-failures)" = "1" ]
   ! grep -q 'terragrunt apply' "$STUB_LOG"
@@ -102,14 +104,16 @@ approved() {
 
 @test "apply=never plans and stops, approval or not" {
   approved
-  APPLY=never PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  APPLY=never PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value applied)" = "false" ]
 }
 
 @test "a failing apply is reported and fails the run" {
   approved
-  APPLY_EXIT=1 PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  APPLY_EXIT=1 PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -ne 0 ]
   [ "$(output_value apply-failures)" = "1" ]
 }
@@ -140,7 +144,8 @@ STUBEOF
 
 @test "a dry run plans nothing and applies nothing" {
   approved
-  DRY_RUN=true PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  DRY_RUN=true PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   ! grep -q '^terragrunt' "$STUB_LOG"
 }
@@ -181,6 +186,7 @@ STUBEOF
   # the worst version of this bug, because the plan looks fine.
   approved
   STACK_ENV=$'*/prod/*  ARM_ACCESS_KEY=PRDKEY' PR_NUMBER=42 \
+    EVENT_NAME=pull_request_review REVIEW_STATE=approved \
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   grep -q '^apply ARM_ACCESS_KEY=PRDKEY' "${STUB_LOG}.env"
@@ -490,12 +496,14 @@ RECEOF
   refute grep -q '/commits/' "$STUB_LOG"
 }
 
-@test "apply-on-merge on a pull request changes nothing, because the event already carries the number and the lookup is only for a push" {
+@test "apply-on-merge on a pull request looks up nothing, because the event already carries the number and the lookup is only for a push" {
   approved
   APPLY_ON_MERGE=true PR_NUMBER=42 EVENT_NAME=pull_request run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
-  [ "$(output_value applied)" = "true" ]
   refute grep -q '/commits/' "$STUB_LOG"
+  # And it applies nothing: a `pull_request` run is not an apply authorisation, whatever
+  # approval the pull request is already carrying. See the section below.
+  [ "$(output_value applied)" = "false" ]
 }
 
 @test "scope auto on a manual run plans the estate, and the whole estate only while no pull request is in scope" {
@@ -531,4 +539,108 @@ RECEOF
   grep -q 'Planned; not applied' "$STUB_LOG"
   # And no lookup: the gate on the merged path is the event, not the input.
   refute grep -q '/commits/' "$STUB_LOG"
+}
+
+
+# --- a standing approval is not an apply authorisation ---------------------------------------
+#
+# The failure this section fixes: `auto` set may_apply purely on "the pull request has an
+# approval", with nothing said about the event. A reviewer approves commit A, the author
+# pushes commit B, and the `pull_request` run for B reads the same standing approval and
+# applies B. Nobody reviewed B. It is only safe on a repository whose branch protection
+# dismisses stale reviews on push, which this action can neither see nor require.
+
+@test "REGRESSION: a plain pull_request run with a standing approval plans and reports rather than applying, so a commit pushed after an approval is never applied unreviewed" {
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value plan-changes)" = "1" ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  # The approval is still read and still reported: it is the apply that waits, not the review.
+  [ "$(output_value approvers)" = "@reviewer" ]
+  # Still blocking, so the merge cannot go through with the change unapplied.
+  grep -q '"conclusion": "action_required"' "$STUB_LOG"
+  grep -q 'Approved, but not applied for this commit' "$STUB_LOG"
+}
+
+@test "the gate for a standing approval never claims the run is waiting for an approval, because one is standing and the reviewer would go looking for a review they already left" {
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  refute grep -q 'Waiting for an independent approval' "${WORK_DIR}/comment.md"
+  grep -q 'Approved by @reviewer' "${WORK_DIR}/comment.md"
+  grep -q 'no apply has run for this commit' "${WORK_DIR}/comment.md"
+  # And how to start one, or the state is a dead end.
+  grep -q 'Dismiss the approval and re-approve' "${WORK_DIR}/comment.md"
+  grep -q 'terragrunt-apply: force' "${WORK_DIR}/comment.md"
+}
+
+@test "REGRESSION: an EDITED approving review does not apply, because a workflow whose pull_request_review trigger has no types: filter also receives edits, and an approval edited today would otherwise apply whatever HEAD is now" {
+  # What GitHub sends when somebody fixes a typo in the body of an approval they left weeks
+  # ago: action=edited, state=approved, and HEAD is a commit nobody reviewed.
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request_review EVENT_ACTION=edited REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "a DISMISSED review event does not apply, for the same reason an edited one does not" {
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request_review EVENT_ACTION=dismissed REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+}
+
+@test "a submitted approval still applies, so the event-action guard does not break the path it protects" {
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request_review EVENT_ACTION=submitted REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "an approval event spends the approval: the same pull request applies when the run is the approval itself" {
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "a COMMENTED review does not spend an approval left on an earlier commit, because writing a comment is not approving this one" {
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=commented \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -q 'Approved, but not applied for this commit' "$STUB_LOG"
+}
+
+@test "a review event with no state in the payload still applies, because an unset field is evidence of nothing and the approval list is what is left" {
+  approved
+  PR_NUMBER=42 EVENT_NAME=pull_request_review run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "a manual run that names a pull request plans it rather than applying it on the strength of an approval nobody re-gave, because terragrunt-apply: force is the manual authorisation" {
+  approved
+  SCOPE=changed PR_NUMBER=42 EVENT_NAME=workflow_dispatch run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "force is unchanged by the event guard: an operator applies without any approval at all" {
+  APPLY=force GITHUB_ACTOR=operator APPLY_OPERATORS=operator PR_NUMBER=42 EVENT_NAME=pull_request \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  grep -q 'terragrunt apply' "$STUB_LOG"
 }

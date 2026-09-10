@@ -228,11 +228,12 @@ inputs:
   terragrunt-pull-request:
     description: |
       terragrunt: act on this pull request number instead of the one in the event payload.
-      For a manual run that has to plan or apply a named pull request. Its reviews are what
-      the approval gate reads, its thread is where the plan comment goes, and its head commit
-      is what the check run is published against, fetched from the API because a dispatch
-      event carries no pull request. Empty (default) uses the event, which is every automatic
-      run. Digits only.
+      For a manual run that has to plan a named pull request. Its reviews are what the
+      approval gate reads, its thread is where the plan comment goes, and its head commit is
+      what the check run is published against, fetched from the API because a dispatch event
+      carries no pull request. Empty (default) uses the event, which is every automatic run.
+      Digits only. A manual run plans: dispatching a workflow is not approving a commit, so
+      `terragrunt-apply: force` is what applies one by hand.
 
       Checking out the right tree stays yours: pass `ref: refs/pull/<n>/merge` to your own
       actions/checkout step and set `checkout: false` here, or the run plans whatever is on
@@ -241,7 +242,13 @@ inputs:
     default: ''
 
   terragrunt-apply:
-    description: 'terragrunt: `auto` (apply when the pull request has an independent approval), `never` (plan only), or `force`.'
+    description: |
+      terragrunt: `auto` (apply on an independent approval), `never` (plan only), or `force`.
+      Under `auto` the run must also be the event that asks for an apply: a pull-request review
+      that is an approval, or a push with `terragrunt-apply-on-merge` on. A run that only finds
+      an approval already standing plans and reports, because that approval was given for the
+      commit it was given for and a commit pushed after it has not been reviewed. Re-approving
+      applies. `force` skips the approval and is restricted to `terragrunt-apply-operators`.
     required: false
     default: 'auto'
 
@@ -1004,6 +1011,10 @@ runs:
         TG_LOG_LEVEL: ${{ inputs.terragrunt-log-level }}
         EXTRA_ARGS: ${{ inputs.terragrunt-extra-args }}
         EVENT_NAME: ${{ github.event_name }}
+        # The review's own state, so a run triggered by a COMMENTED review does not spend an
+        # approval left on an earlier commit. Empty on every other event.
+        REVIEW_STATE: ${{ github.event.review.state }}
+        EVENT_ACTION: ${{ github.event.action }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         # The override, resolved in terragrunt-changed-files.sh rather than by a `||` here:

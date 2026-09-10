@@ -127,6 +127,20 @@ An independent pull-request approval is the apply authorisation. Approving appli
 stacks, and the check run turns green once they are applied. `terragrunt-apply-operators`
 names who may force one by hand; empty means nobody, so that path fails closed.
 
+**Approving is what applies, and the run has to be the approval.** A `pull_request` run that
+finds an approval already standing plans and reports rather than applying it: the approval was
+given for the commit it was given for, and a commit pushed after it has not been reviewed. The
+check run then reads `Approved, but not applied for this commit`. Dismiss the approval and
+re-approve to apply the commit in front of you. This is what `pull_request_review` is doing in
+the triggers above, and a workflow without it never applies at all. A review that is a comment
+or a change request is not an approval either, so it plans.
+
+**No AWS credential is required.** Terragrunt takes its credentials from the backend and
+provider blocks in your own configuration, so an estate on Azure, GCP or a private cloud runs
+without `aws-role-to-assume` and without `id-token: write`; drop both from the block above if
+nothing in the run reaches AWS. [Per-stack state credentials](#per-stack-state-credentials)
+below is how a state-backend key reaches one stack and not the others.
+
 The gate is the action's own (`scripts/approval-gate.sh`), so it needs no GitHub
 `environment:`. Add an `environment:` to your job only if you want what an environment adds
 beyond the gate: a wait timer, or secrets scoped to it.
@@ -170,6 +184,25 @@ answers "who may authorise an apply?"; this one answers "should a merge commit a
 With it on, the path needs `pull-requests: read` on the token, which the `pull-requests: write`
 above already covers.
 
+#### Which stacks a change plans
+
+A stack is a directory holding `terragrunt.hcl`. On a pull request or a push, the changed
+files decide which of them run:
+
+| The change | The stacks it plans |
+| --- | --- |
+| A file inside a stack | that stack, however deep the file sits inside it |
+| A file above the stacks, such as a shared `root.hcl` | every stack beneath that file's own directory, because every one of them includes it through `find_in_parent_folders` |
+| A file directly in `terragrunt-root` | every stack, for the same reason |
+| A file under `modules/` (or anything in `terragrunt-exclude`) | none |
+| A file outside `terragrunt-root` | none |
+
+A module maps to nothing on purpose: it has no state of its own, and guessing which stacks use
+it from its path is how a small module tidy-up ends up planning the whole estate. The
+scheduled drift run covers it. Everything above is per changed path and the results are
+merged, so one pull request that edits a shared root and one stack plans that whole subtree
+once.
+
 #### Failing fast on an unreachable endpoint
 
 Terragrunt buffers plan output to a file, so a state backend or provider API the runner cannot
@@ -208,7 +241,7 @@ on:
   workflow_dispatch:
     inputs:
       pull_request:
-        description: 'Pull request number to plan or apply. Empty plans the default branch.'
+        description: 'Pull request number to plan. Empty plans the default branch.'
         type: string
         default: ''
 
@@ -296,8 +329,9 @@ passed and the run says so. Nothing to do with ansible-vault the file-encryption
 
 ## An IAM role the workflow can assume
 
-For the three AWS targets. Tremvok authenticates with this run's GitHub OIDC token; nothing
-is stored in the repository. The role's trust policy is what decides who may use it. Scope
+For the three targets that can use an AWS role. `s3-cloudfront` and `lambda-zip` need one, and
+`terragrunt` needs one only when its own backend or providers reach AWS. Tremvok authenticates
+with this run's GitHub OIDC token; nothing is stored in the repository. The role's trust policy is what decides who may use it. Scope
 it to the repository **and** the refs that may deploy:
 
 ```json
