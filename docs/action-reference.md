@@ -22,7 +22,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 98 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 99 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -46,6 +46,7 @@ is required.
 | `pages-profile` | `github-pages` | `auto` | github-pages: repo profile for the shape checks, auto \| action \| service \| spec. |
 | `pages-readme-budget` | `github-pages` | `0` | github-pages: override the README line budget. 0 uses the profile default. |
 | `pages-markdownlint` | `github-pages` | `true` | github-pages: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN\_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. |
+| `build-git-credentials` | `github-pages`, `cloudflare-workers` | not set | github-pages, cloudflare-workers: credentials for the private git hosts the build fetches from, one `<host> <username>:<token>` per line. Empty (default) changes nothing. git.example.invalid x-access-token:&lt;a short-lived token&gt; A docs build that installs its theme with `pkg @ git+https://<host>/<org>/<repo>.git@<tag>` needs that clone authenticated, and the clone is git's own, several processes below this action. Each line becomes one `url.<credentialled>.insteadOf` rewrite carried in GIT\_CONFIG\_COUNT / GIT\_CONFIG\_KEY\_n / GIT\_CONFIG\_VALUE\_n for the rest of this job, so the requirements file keeps pinning the plain URL and stays reviewable. Never `git config --global`: a self-hosted runner is shared and long-lived, and a global rewrite would leave the token in `~/.gitconfig` for whatever runs on that machine next. The username is written out rather than assumed, because the forges disagree about it: `x-access-token` for a GitHub App token, `oauth2` for a GitLab one. The split is at the FIRST `:`, which is the safe way round — the username is the half that cannot contain one, so a token that does survives intact. Every token is masked on receipt and never echoed. A malformed line is refused by index and host, and the host is only quoted when it looks like one, because a bare token pasted as a line would otherwise be printed into an annotation as public as the repository. Blank lines and `#` comments are ignored. |
 | `artifact-path` | `s3-cloudfront`, `lambda-zip`, `cloudflare-workers` | not set | s3-cloudfront, lambda-zip, cloudflare-workers: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip. |
 | `s3-bucket` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the bucket. For s3-cloudfront it serves the site; for lambda-zip it holds published artifacts. |
 | `s3-key-prefix` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: key prefix within the bucket. Previews are placed under `<s3-key-prefix>/previews/<alias>/`. |

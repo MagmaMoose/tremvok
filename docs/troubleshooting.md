@@ -52,6 +52,50 @@ cause is a `sub` condition scoped to a branch the run isn't on. See
 [Setup](setup.md#an-iam-role-the-workflow-can-assume) for the policy shape, and note the
 `StringLike` on `sub` should carry a `ref:` prefix rather than `repo:owner/name:*`.
 
+### `build-git-credentials line <n> has no ':' between the username and the token`
+
+A line is exactly `<host> <username>:<token>`. The username is written out rather than
+guessed, because the forges disagree: `x-access-token` for a GitHub App installation token,
+`oauth2` for a GitLab one.
+
+Every message from this input names the line by its index and its host and stops there. The
+token is never shown, and neither is the line, because the annotation carrying it is as public
+as the repository. Count blank lines and `#` comments when you go looking for line `<n>`: the
+index names the line you typed.
+
+### `build-git-credentials line <n> has a token under 8 characters`
+
+Refused rather than used. A real token is never that short, so this is a truncated paste —
+usually a secret that resolved to nothing because it isn't set on this repository, leaving the
+line half-formed. Masking a string that short would be worse than not masking it: every
+occurrence of those few characters in every later line of the log would turn into asterisks.
+
+### `build-git-credentials line <n> starts with a URL, not a host` / `does not start with a host`
+
+Write the bare host — `git.example.invalid`, not `https://git.example.invalid/org/repo.git`.
+The rewrite is built from it, and it has to match the host in the dependency URL exactly or
+git never applies it. Both refusals name the line by index alone: what's in that field may
+itself be a credential.
+
+### `build-git-credentials names host <host> twice`
+
+Two rewrites for one host, and which one git picks isn't defined, so the credential in use
+wouldn't be the one you can read off the input. One line per host; if two builds need
+different tokens for the same host, they need different jobs.
+
+### `GIT_CONFIG_COUNT holds '<value>', which is not a number`
+
+Something earlier in the job set `GIT_CONFIG_COUNT` to something git can't read. This step
+extends that count rather than starting again at 0, so a rewrite an earlier step configured
+survives; it can't do that against a value it can't parse. Fix or unset the variable.
+
+### The build still can't clone, and nothing was refused
+
+The rewrite only fires on an exact host match. Check the host in the line is spelled the same
+as the host in the dependency URL, and that the token is scoped to the repository being
+cloned: an installation token reaches only the repositories its installation was given, and
+the clone fails with git's own `Authentication failed` rather than anything Tremvok prints.
+
 ## `target: github-pages`
 
 ### `no uv.lock and no docs/requirements.txt — cannot tell how to install MkDocs`
