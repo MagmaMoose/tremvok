@@ -331,7 +331,8 @@ passed and the run says so. Nothing to do with ansible-vault the file-encryption
 
 For the three targets that can use an AWS role. `s3-cloudfront` and `lambda-zip` need one, and
 `terragrunt` needs one only when its own backend or providers reach AWS. Tremvok authenticates
-with this run's GitHub OIDC token; nothing is stored in the repository. The role's trust policy is what decides who may use it. Scope
+with this run's GitHub OIDC token; nothing is stored in the repository.
+The role's trust policy is what decides who may use it. Scope
 it to the repository **and** the refs that may deploy:
 
 ```json
