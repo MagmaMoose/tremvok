@@ -360,7 +360,7 @@ RECEOF
   # turning the default branch red is not what fixes an unapproved merge.
   grep -q '"conclusion": "neutral"' "$STUB_LOG"
   # No pull request in scope, so no comment is attempted at all.
-  ! grep -q '/comments' "$STUB_LOG"
+  refute grep -q '/comments' "$STUB_LOG"
 }
 
 @test "a merged pull request with no independent approval is reported on its own thread as neutral, never as the action_required check that would turn the default branch red over a merge nothing can block" {
@@ -379,7 +379,7 @@ RECEOF
   grep -q '"conclusion": "neutral"' "$STUB_LOG"
   grep -q 'Planned; not applied' "$STUB_LOG"
   refute grep -q '"conclusion": "action_required"' "$STUB_LOG"
-  ! grep -q 'Apply required before merge' "$STUB_LOG"
+  refute grep -q 'Apply required before merge' "$STUB_LOG"
 }
 
 @test "reviews that cannot be read on the merged path fail the run loudly, so an API outage never goes quietly green as 'nobody approved'" {
@@ -405,7 +405,7 @@ RECEOF
   grep -q 'No changes to apply' "$STUB_LOG"
   # The check run and the comment agree, which is the point: before this they did not.
   grep -q 'Nothing to apply' "${WORK_DIR}/comment.md"
-  ! grep -q '"conclusion": "failure"' "$STUB_LOG"
+  refute grep -q '"conclusion": "failure"' "$STUB_LOG"
 }
 
 @test "a commit-to-pull-request lookup that cannot be read fails an auto run rather than applying or skipping on a guess" {
@@ -477,7 +477,7 @@ RECEOF
   [ "$(grep -c 'issues/comments/99' "$STUB_LOG")" -eq 2 ]
   refute grep -qE '^https://[^ ]*/issues/123/comments$' "$STUB_LOG"
   grep -q 'Applied' "${WORK_DIR}/comment.md"
-  ! grep -q 'applying now' "${WORK_DIR}/comment.md"
+  refute grep -q 'applying now' "${WORK_DIR}/comment.md"
 }
 
 @test "a pull_request run is unchanged by the push path: the same gate wording and the same action_required conclusion" {
@@ -487,7 +487,7 @@ RECEOF
   grep -q '"conclusion": "action_required"' "$STUB_LOG"
   grep -q 'Apply required before merge' "$STUB_LOG"
   # No commit-to-pull-request lookup: the event already carries the number.
-  ! grep -q '/commits/' "$STUB_LOG"
+  refute grep -q '/commits/' "$STUB_LOG"
 }
 
 @test "apply-on-merge on a pull request changes nothing, because the event already carries the number and the lookup is only for a push" {
@@ -495,7 +495,7 @@ RECEOF
   APPLY_ON_MERGE=true PR_NUMBER=42 EVENT_NAME=pull_request run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value applied)" = "true" ]
-  ! grep -q '/commits/' "$STUB_LOG"
+  refute grep -q '/commits/' "$STUB_LOG"
 }
 
 @test "scope auto on a manual run plans the estate, and the whole estate only while no pull request is in scope" {
@@ -520,7 +520,7 @@ RECEOF
   # somebody may be watching for this one on the drift cron. It is gated on the input, so a
   # caller who opts into nothing keeps what they have.
   grep -q '"conclusion": "action_required"' "$STUB_LOG"
-  ! grep -q '"conclusion": "neutral"' "$STUB_LOG"
+  refute grep -q '"conclusion": "neutral"' "$STUB_LOG"
 }
 
 @test "the same scheduled drift run publishes neutral once terragrunt-apply-on-merge is on, because that caller has opted into the merged-apply path and its conclusions" {
@@ -530,5 +530,5 @@ RECEOF
   grep -q '"conclusion": "neutral"' "$STUB_LOG"
   grep -q 'Planned; not applied' "$STUB_LOG"
   # And no lookup: the gate on the merged path is the event, not the input.
-  ! grep -q '/commits/' "$STUB_LOG"
+  refute grep -q '/commits/' "$STUB_LOG"
 }
