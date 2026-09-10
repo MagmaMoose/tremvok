@@ -73,8 +73,9 @@ repo.
 
 Expected on a pull request, and there's no input to change it. GitHub Pages has one site and
 no preview destination, so a run in `mode: preview` (which is what a pull request resolves to)
-builds and checks without staging an artifact, and `dry-run: true` does the same. The log says
-`staging a Pages artifact: false` in the run summary, and `stage-pages=false` in the log. On a push to the default branch both say true.
+builds and checks without staging an artifact, and `dry-run: true` does the same. The run
+summary says `staging a Pages artifact: false`; the log says `stage-pages=false`. On a push
+to the default branch both say true.
 
 If a push also staged nothing, check the job summary for a skip: a fork pull request and an
 unwired repository both report one with a reason.
