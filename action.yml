@@ -241,8 +241,8 @@ inputs:
       matching line wins for a given KEY, so a specific pattern goes above the catch-all
       exactly as it would in a `case`. Blank lines and `#` comments are ignored.
 
-        */prd/*|*/prod/*  ARM_ACCESS_KEY=${{ secrets.PRD_STATE_KEY }}
-        *                 ARM_ACCESS_KEY=${{ secrets.STATE_KEY }}
+        */prd/*|*/prod/*  ARM_ACCESS_KEY=<the production state key>
+        *                 ARM_ACCESS_KEY=<the shared state key>
 
       For an estate whose production state lives in a separate account from the rest, which
       is a deliberate blast-radius boundary rather than an accident: one credential cannot
