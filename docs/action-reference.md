@@ -22,7 +22,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 87 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 93 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -85,6 +85,12 @@ is required.
 | `ansible-ssh-user` | `ansible` | not set | ansible: value for `--user`. Leave empty to let the inventory or ansible.cfg decide. |
 | `ansible-ssh-known-hosts` | `ansible` | not set | ansible: known\_hosts entries for the inventory, one per line. Empty means host-key checking is disabled for the run, which is a real downgrade, supply this for anything reachable from a network you do not control. |
 | `ansible-vault-password` | `ansible` | not set | ansible: vault password. Pass a secret. Masked on receipt, written to a 0600 file under RUNNER\_TEMP, removed when the step exits. |
+| `vault-addr` | `ansible` | not set | ansible: base URL of a HashiCorp Vault, e.g. `https://vault.example.com:8200`. Set it, with `vault-token`, to name secrets by Vault reference instead of passing them in. Only the fields you reference are read. |
+| `vault-token` | `ansible` | not set | ansible: Vault token the references are read with. Pass a secret. Needs read on the paths you reference and nothing else. |
+| `vault-namespace` | `ansible` | not set | ansible: Vault namespace (Enterprise). Empty is correct for open-source Vault. |
+| `ansible-ssh-private-key-vault` | `ansible` | not set | ansible: Vault reference to the SSH private key, `<path>#<field>`, e.g. `secret/data/team/app#ssh_private_key`. The alternative to `ansible-ssh-private-key`, not a supplement: setting both fails. Use this where Vault is already the source of truth, so rotating there keeps rotating here and the key is not copied into a second store that quietly goes stale. |
+| `ansible-ssh-known-hosts-vault` | `ansible` | not set | ansible: Vault reference to the known\_hosts entries, `<path>#<field>`. The alternative to `ansible-ssh-known-hosts`. |
+| `ansible-vault-password-vault` | `ansible` | not set | ansible: Vault reference to the ansible-vault password, `<path>#<field>`. The alternative to `ansible-vault-password`. |
 | `ansible-verify-idempotence` | `ansible` | `true` | ansible: after a successful real run, run the playbook again in check mode and fail if any task would still change. A zero exit only proves the playbook ran; this is what proves it converged. Skipped automatically when the run itself was check mode. |
 | `cloudflare-api-token` | `cloudflare-workers` | not set | cloudflare-workers: API token Wrangler authenticates with. Pass a secret, never a literal. Mint it from Cloudflare's "Edit Cloudflare Workers" template rather than a hand-picked permission list, or the first deploy of a custom domain fails on a permission nobody thought to grant. |
 | `cloudflare-account-id` | `cloudflare-workers` | not set | cloudflare-workers: Cloudflare account id. Pass a secret. |

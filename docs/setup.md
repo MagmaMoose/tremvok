@@ -187,6 +187,40 @@ with:
 `ansible-ssh-known-hosts` is optional and omitting it disables host-key checking, which the
 run says out loud. Supply it for anything reachable from a network you do not control.
 
+### Reading them from HashiCorp Vault instead
+
+If a secret already lives in Vault, name it by reference rather than copying it into a GitHub
+secret. A copy is a second thing to rotate, and the failure mode is silent: you rotate in
+Vault, the copy keeps working, and nobody finds out until it doesn't.
+
+```yaml
+with:
+  target: ansible
+  ansible-playbook: ansible/site.yml
+  ansible-inventory: ansible/inventory/production
+  vault-addr: https://vault.example.com:8200
+  vault-token: ${{ secrets.VAULT_TOKEN }}
+  ansible-ssh-private-key-vault: secret/data/team/app#ssh_private_key
+```
+
+The reference is `<path>#<field>`. Each `-vault` input is the **alternative** to the literal
+one, never a supplement: setting `ansible-ssh-private-key` and `ansible-ssh-private-key-vault`
+together fails rather than quietly preferring one. `ansible-ssh-known-hosts-vault` and
+`ansible-vault-password-vault` work the same way.
+
+!!! note "Two different products called Vault"
+    `vault-addr` and `vault-token` are HashiCorp Vault. `ansible-vault-password` is
+    ansible-vault, the file-encryption tool, and has nothing to do with it. That's why the
+    HashiCorp inputs aren't prefixed `ansible-vault-`: it would read as the wrong one.
+
+KV v1 and v2 both work without you saying which: v2 nests the payload one level deeper, and
+both shapes are tried. If you're on v2 the path needs its `/data/` segment
+(`secret/data/team/app`, not `secret/team/app`), and a 404 says so.
+
+The token needs read on the paths you reference and nothing else. What comes back is masked
+and written to a `0600` file exactly like a literal secret, on the same single code path, and
+a failed read fails the run rather than continuing with no key.
+
 ## (Optional) The Tremvok API
 
 Only needed for deployment history, or for notifications that do not put a webhook URL in

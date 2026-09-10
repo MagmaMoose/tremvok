@@ -383,6 +383,44 @@ inputs:
     required: false
     default: ''
 
+  vault-addr:
+    description: |
+      ansible: base URL of a HashiCorp Vault, e.g. `https://vault.example.com:8200`. Set it,
+      with `vault-token`, to name secrets by Vault reference instead of passing them in. Only
+      the fields you reference are read.
+    required: false
+    default: ''
+
+  vault-token:
+    description: 'ansible: Vault token the references are read with. Pass a secret. Needs read on the paths you reference and nothing else.'
+    required: false
+    default: ''
+
+  vault-namespace:
+    description: 'ansible: Vault namespace (Enterprise). Empty is correct for open-source Vault.'
+    required: false
+    default: ''
+
+  ansible-ssh-private-key-vault:
+    description: |
+      ansible: Vault reference to the SSH private key, `<path>#<field>`, e.g.
+      `secret/data/team/app#ssh_private_key`. The alternative to `ansible-ssh-private-key`,
+      not a supplement: setting both fails. Use this where Vault is already the source of
+      truth, so rotating there keeps rotating here and the key is not copied into a second
+      store that quietly goes stale.
+    required: false
+    default: ''
+
+  ansible-ssh-known-hosts-vault:
+    description: 'ansible: Vault reference to the known_hosts entries, `<path>#<field>`. The alternative to `ansible-ssh-known-hosts`.'
+    required: false
+    default: ''
+
+  ansible-vault-password-vault:
+    description: 'ansible: Vault reference to the ansible-vault password, `<path>#<field>`. The alternative to `ansible-vault-password`.'
+    required: false
+    default: ''
+
   ansible-verify-idempotence:
     description: |
       ansible: after a successful real run, run the playbook again in check mode and fail if
@@ -891,6 +929,12 @@ runs:
         SSH_USER: ${{ inputs.ansible-ssh-user }}
         SSH_KNOWN_HOSTS: ${{ inputs.ansible-ssh-known-hosts }}
         VAULT_PASSWORD: ${{ inputs.ansible-vault-password }}
+        SSH_PRIVATE_KEY_VAULT: ${{ inputs.ansible-ssh-private-key-vault }}
+        SSH_KNOWN_HOSTS_VAULT: ${{ inputs.ansible-ssh-known-hosts-vault }}
+        VAULT_PASSWORD_VAULT: ${{ inputs.ansible-vault-password-vault }}
+        VAULT_ADDR: ${{ inputs.vault-addr }}
+        VAULT_TOKEN: ${{ inputs.vault-token }}
+        VAULT_NAMESPACE: ${{ inputs.vault-namespace }}
         VERIFY_IDEMPOTENCE: ${{ inputs.ansible-verify-idempotence }}
         EVENT_NAME: ${{ github.event_name }}
         DRY_RUN: ${{ inputs.dry-run }}
