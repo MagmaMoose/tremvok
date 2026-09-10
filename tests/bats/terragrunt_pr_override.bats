@@ -138,9 +138,24 @@ STUBEOF
   refute grep -q 'shafromapi1234' "$STUB_LOG"
 }
 
-@test "the override plus an approval applies, so a named pull request is a full path and not a plan-only curiosity" {
+@test "the override plus terragrunt-apply: force applies, so a named pull request is a full path and not a plan-only curiosity" {
+  # `force` and not a standing approval. A manual run is not an approval: nobody re-approved
+  # this commit by dispatching the workflow, and applying on an approval the run merely
+  # observed is how a commit pushed after that approval gets applied unreviewed. The manual
+  # apply has its own authorisation, `terragrunt-apply-operators`, and this is it.
+  export APPROVERS='[{"user":{"login":"reviewer"},"state":"APPROVED","submitted_at":"2026-08-18T10:00:00Z"}]'
+  APPLY=force GITHUB_ACTOR=operator APPLY_OPERATORS=operator TG_PULL_REQUEST=1234 \
+    run bash "${SCRIPTS}/terragrunt-changed-files.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'terragrunt apply' "$STUB_LOG"
+  # And the apply is still aimed at the named pull request, not at the event's.
+  grep -q '/issues/1234/comments' "$STUB_LOG"
+}
+
+@test "the override plus an approval nobody re-gave plans and reports, so a manual run cannot spend an approval left on an earlier commit" {
   export APPROVERS='[{"user":{"login":"reviewer"},"state":"APPROVED","submitted_at":"2026-08-18T10:00:00Z"}]'
   TG_PULL_REQUEST=1234 run bash "${SCRIPTS}/terragrunt-changed-files.sh"
   [ "$status" -eq 0 ]
-  grep -q 'terragrunt apply' "$STUB_LOG"
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -q 'Approved, but not applied for this commit' "$STUB_LOG"
 }

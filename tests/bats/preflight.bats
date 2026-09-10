@@ -28,6 +28,19 @@ setup() { setup_common; unset AWS_ACCESS_KEY_ID AWS_WEB_IDENTITY_TOKEN_FILE; }
   done
 }
 
+@test "a terragrunt run on a non-AWS estate is not skipped for want of a credential it never uses" {
+  # The failure: terragrunt was treated as an AWS target, so an estate whose state lives in
+  # Azure storage (the case terragrunt-stack-env carries ARM_ACCESS_KEY for) got
+  # "no AWS credential is available for target: terragrunt" and every terragrunt step in
+  # action.yml, all of them gated on this skip, became a no-op. Terragrunt takes its
+  # credentials from its own backend and provider configuration, so this run must proceed.
+  IS_FORK=false TARGET=terragrunt ROLE_TO_ASSUME= run bash "${SCRIPTS}/preflight.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value skip)" = "false" ]
+  [ -z "$(output_value skip-reason)" ]
+  refute grep -q "no AWS credential" "$GITHUB_STEP_SUMMARY"
+}
+
 @test "a role makes it proceed" {
   IS_FORK=false ROLE_TO_ASSUME=arn:aws:iam::1:role/x run bash "${SCRIPTS}/preflight.sh"
   [ "$status" -eq 0 ]

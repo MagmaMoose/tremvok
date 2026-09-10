@@ -52,6 +52,30 @@ called v1.x because the release pipeline could not see them.
 - `mode: auto` now resolves `schedule` and `pull_request_review`, which it used to refuse —
   breaking the Terragrunt drift run on its own cron.
 
+- **A standing approval no longer applies on a plain `pull_request` run.** Under
+  `terragrunt-apply: auto` the apply now needs an event that authorises it: a
+  `pull_request_review` whose review is an approval, or the merged-push path with
+  `terragrunt-apply-on-merge` on. Reading an approval the run merely found standing is no
+  longer enough.
+
+  The sequence this prevents: a reviewer approves commit A, the author pushes commit B, and
+  the `pull_request` run for B reads the same approval and applies B. Nobody reviewed B. It
+  is only safe where branch protection dismisses stale reviews on push, which the action can
+  neither see nor require, so the guard is in the action.
+
+  This is a behaviour change for existing callers and it ships rather than hiding behind an
+  input, because an input defaulting to the unsafe answer is the same defect with a knob on
+  it. What changes in practice: a run that used to apply now plans, comments and publishes
+  the check as `action_required` with the title `Approved, but not applied for this commit`.
+  If you relied on the old behaviour, add
+  `pull_request_review: { types: [submitted, dismissed] }` to your triggers, which is what
+  `docs/setup.md` has always shown, and re-approving applies the commit in front of you. For
+  a one-off, `terragrunt-apply: force` applies by hand for an actor named in
+  `terragrunt-apply-operators`. Two smaller consequences of the same rule: a run triggered by
+  a COMMENTED or CHANGES_REQUESTED review plans rather than spending an older approval, and a
+  `workflow_dispatch` that names a pull request with `terragrunt-pull-request` plans it,
+  since dispatching a workflow is not approving a commit.
+
 ### Added
 
 - **`build-git-credentials`** (default empty, so nothing changes for an existing caller): the
@@ -220,6 +244,36 @@ called v1.x because the release pipeline could not see them.
   the action they call — which is a large part of why the surfaces merged.
 - `preflight.sh` no longer skips `docs` and `ansible` runs for want of an AWS credential
   neither target uses.
+- **`preflight.sh` no longer skips the `terragrunt` target for want of an AWS credential**,
+  which made the whole target a no-op on any estate that is not on AWS: every terragrunt step
+  in `action.yml` is gated on that skip. Terragrunt is provider-agnostic, and its credentials
+  come from the backend and provider blocks in the caller's own configuration, which may be
+  AWS, Azure, GCP, a private cloud, or several in one run. `terragrunt-stack-env` exists to
+  carry exactly those. The requirement now covers `s3-cloudfront` and `lambda-zip` alone, the
+  two targets that call AWS themselves. A terragrunt run that genuinely needed AWS now fails
+  in the provider, with a message naming the provider, which is the better of the two errors.
+- **A change to a shared `root.hcl` or any other file above the stacks now maps to the stacks
+  beneath it.** `terragrunt-discover.sh` walked up from a changed path to its nearest
+  enclosing stack and stopped, so a file that sits ABOVE every stack had no enclosing stack
+  and mapped to nothing: the run reported zero stacks and published the check as SUCCESS with
+  "No Terraform stacks affected", and the pull request merged green with nothing planned and
+  nothing applied. A changed path inside `terragrunt-root` with no enclosing stack now maps to
+  the stacks beneath the nearest of its ancestors that holds any, so a shared root affects
+  every stack that includes it through `find_in_parent_folders`, and a path directly in
+  `terragrunt-root` affects every stack there is. A file that IS inside a stack still maps to
+  that one stack, which is narrower and already right.
+
+  **This reverses the rule that a change under `modules/` maps to nothing.** That rule was
+  argued on the grounds that guessing which stacks use a module from its path is how a module
+  tidy-up plans the whole estate, and that the scheduled drift run covers what is missed. What
+  it did in practice was publish SUCCESS with "No Terraform stacks affected" for a real change
+  to shared logic, merge green, and apply nothing. The two errors are not symmetric: planning
+  is read-only and an apply only applies what its plan found, so a module edit that changes no
+  stack produces an empty diff and costs wall-clock, while the narrow answer costs
+  correctness. A module usually lives in a directory the exclude list keeps out of the stack
+  list, so no stack sits beneath it and only walking up reaches them. It stays bounded by
+  stopping at the first ancestor that holds stacks, so a separate estate under the same root
+  is untouched.
 - `terragrunt-bootstrap.sh`'s checksum lookup runs with `|| true`: with `pipefail` on, a
   `grep` that matched nothing made the assignment non-zero and `set -e` exited the script
   silently, exactly where the loudest possible failure is wanted.

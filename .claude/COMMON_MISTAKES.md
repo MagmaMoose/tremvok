@@ -251,3 +251,42 @@ on behaviour when the stub can model it: `resolve_merged_pr.bats` pins `curl --f
 stub that answers the way curl does (body + exit 0 without the flag, nothing + exit 22 with
 it), so deleting the flag turns "unreadable" into "no merged pull request" and the test goes
 red.
+
+## An approval is state; only an event authorises an apply
+
+`deploy-terragrunt.sh` under `terragrunt-apply: auto` set `may_apply` on `[[ -n
+"$approver_list" ]]` alone. A pull request that already carries an approval then applies on
+**every** event that reaches the target, so: reviewer approves commit A, author pushes commit
+B, the `pull_request` run for B reads the same standing approval and applies B. Nobody reviewed
+B. It only looks safe on a repository whose branch protection dismisses stale reviews on push,
+which the action cannot see and must not assume.
+
+The rule: read the approval to know the change **may** be applied, and the event to know an
+apply was **asked for now**. Here that is a `pull_request_review` whose review is an approval,
+or the merged-push path with `terragrunt-apply-on-merge` on. Neither `workflow_dispatch` nor a
+COMMENTED review is an approval of the commit in front of you. `EVENT_NAME` is the one source
+for the event; do not re-derive it beside `resolve-mode.sh`.
+
+## Copying the estate pipeline's `stack_is_affected` verbatim plans the whole subtree
+
+That function walks every ancestor of the changed path that is still inside `terraform/`, and
+for each one matches every stack beneath it. Read quickly it looks like "a shared file affects
+the stacks under it". It is not: the walk keeps climbing, so `terraform/<estate>/<a>/<b>/x.tf`
+reaches `terraform/<estate>` and sweeps **every** stack in that estate. Checked against the
+real tree, a file inside one stack maps to 23 stacks under that algorithm and to 1 under
+`terragrunt-discover.sh`; a file under `_modules/` maps to 23 there and to 0 here.
+
+So the walk-down was taken and the climb was not: a changed path with no enclosing stack maps
+to the stacks beneath **its own directory** (`dirname`, once), which is what makes a shared
+`root.hcl` mean its own subtree and leaves the deliberate "a module maps to nothing" rule
+standing. Both scripts agree exactly on the case the fix was for: 23 and 5 stacks for the two
+shared roots in that tree.
+
+## A target in `preflight.sh`'s AWS-credential list is a target that cannot run without AWS
+
+Every terragrunt step in `action.yml` is gated on `steps.preflight.outputs.skip != 'true'`, so
+naming `terragrunt` in that credential check did not degrade the run, it deleted it: no plan,
+no check run, an `::notice::` and a green job. Terragrunt is provider-agnostic and
+`terragrunt-stack-env` exists to carry an Azure or other backend credential, so the only
+targets that belong in that list are the ones whose own scripts call `aws`.
+

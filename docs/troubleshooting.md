@@ -36,9 +36,17 @@ auth error.
 
 ### `Tremvok skipped: no AWS credential is available for target: <target>`
 
-Only the three AWS targets raise this. Set `aws-role-to-assume`, or configure credentials in an
-earlier step. `github-pages`, `cloudflare-workers` and `ansible` never see it: they publish
-somewhere else, so demanding an AWS credential would skip a run that never needed one.
+Only `s3-cloudfront` and `lambda-zip` raise this, the two targets that call AWS themselves. Set
+`aws-role-to-assume`, or configure credentials in an earlier step.
+
+No other target sees it. `github-pages`, `cloudflare-workers` and `ansible` publish somewhere
+else, and `terragrunt` takes its credentials from the backend and provider blocks in your own
+configuration, which may name AWS, Azure, GCP, a private cloud, or several in one run. Skipping
+any of them for a missing AWS credential skips a run that never needed one. If a terragrunt run
+does need AWS and has none, terragrunt fails in the provider with a message naming it, which is
+the more useful error. Before this was fixed, a terragrunt run with no `aws-role-to-assume` was
+skipped outright: every terragrunt step is gated on this skip, so the target quietly did
+nothing.
 
 ### `role-to-assume is set but this job cannot mint an OIDC token`
 
@@ -246,6 +254,23 @@ That's the intended state for a pull request with pending changes. It turns gree
 are applied, which is what makes apply-before-merge enforceable. Get an independent approval:
 approving applies the stacks.
 
+### The check run says `Approved, but not applied for this commit`
+
+The pull request carries an independent approval, but this run was not started by it, so it
+planned and reported instead of applying. An approval applies the commit it was given for: the
+usual way to see this is an approval on one commit followed by a push of another, where
+applying the new one would apply a commit nobody reviewed.
+
+Dismiss the approval and re-approve to apply the commit in front of you. If the workflow has no
+`pull_request_review` trigger, add one (`types: [submitted, dismissed]`) or nothing will ever
+apply. `terragrunt-apply: force` applies by hand for an actor named in
+`terragrunt-apply-operators`.
+
+The same state appears when the run was triggered by a review that is a comment or a change
+request rather than an approval, and on a `workflow_dispatch` that names a pull request with
+`terragrunt-pull-request`: dispatching a workflow is not approving a commit, so that path plans
+and `terragrunt-apply: force` is its apply.
+
 ### `could not read the reviews of #<n>`
 
 The API call failed. The run refuses to apply rather than treating an unreadable review list as
@@ -352,6 +377,26 @@ the reviewed plan or nothing, re-run the whole job so plan and apply are adjacen
 Discovery maps changed files to stacks by path, and a change under `modules/` maps to nothing on
 purpose: a module has no state of its own. Guessing which stacks use it is how a small module
 tidy-up ends up planning the whole estate. `terragrunt-scope: all` plans everything.
+
+### The check run says `No Terraform stacks affected` and the change was Terraform
+
+Check where the changed file sits. A file inside a stack maps to that stack; a file above the
+stacks maps to every stack beneath its own directory; a file under `modules/` or outside
+`terragrunt-root` maps to nothing. [Which stacks a change
+plans](setup.md#which-stacks-a-change-plans) is the whole table.
+
+Until this was fixed, only the first of those worked: a shared `root.hcl` has no enclosing
+stack, so it mapped to nothing and the run published `No Terraform stacks affected` as a
+success. The pull request merged green with every stack that includes that root unplanned. If
+you are pinned to a release from before the fix, that is what you are seeing, and
+`terragrunt-scope: all` is the workaround.
+
+### A shared root plans more stacks than you expected
+
+Working as intended. Every stack beneath a shared `root.hcl` includes it through
+`find_in_parent_folders`, so changing it changes all of them, and a file directly in
+`terragrunt-root` reaches every stack in the estate. Move the change lower if it should not
+have that reach, or split the root.
 
 ## `target: ansible`
 
