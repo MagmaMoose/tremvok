@@ -11,7 +11,7 @@
 #   pull_request           plan every affected stack, comment the result, publish the check
 #                          as `action_required` when there is anything to apply
 #   review (approved)      apply the pull request's merge result, then turn the check green
-#   push to the default    apply what was merged
+#   push to the default    plan; and with `terragrunt-apply-on-merge` on, apply what was merged
 #   schedule               plan everything (drift), notify on changes or failures
 #
 # What is deliberately NOT here: applying an unapproved change. An approval is the
@@ -30,6 +30,12 @@ EVENT_NAME="${EVENT_NAME:-}"
 PR_NUMBER="${PR_NUMBER:-}"
 HEAD_SHA="${HEAD_SHA:-}"
 APPLY="${APPLY:-auto}"                 # auto | never | force
+# Whether a push to the default branch may apply what was merged. Off by default, and that
+# default is load-bearing: a caller pinned to the published tag with `on: push` has always
+# planned on a merge and applied on none, and a default that quietly starts applying every
+# changed stack is not a change anyone reviews in their own diff. Off, the whole merged-pull-
+# request path below is skipped: no lookup, no approval read, plan only.
+APPLY_ON_MERGE="${APPLY_ON_MERGE:-false}"
 # Comma-separated GitHub logins allowed to force an apply by hand. Unset means nobody can:
 # the manual path fails closed. The normal path is an independent approval and needs none.
 APPLY_OPERATORS="${APPLY_OPERATORS:-}"
@@ -44,26 +50,79 @@ RUN_URL="${RUN_URL:-}"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}/tremvok-terragrunt}"
 DRY_RUN="${DRY_RUN:-false}"
 MAX_COMMENT_EXCERPT="${MAX_COMMENT_EXCERPT:-6000}"
+# Overridable so the tests can put a recorder in front of it and assert it was never run;
+# production always uses the script next to this one. Same shape as VAULT_READ_BIN in
+# deploy-ansible.sh.
+RESOLVE_MERGED_PR_BIN="${RESOLVE_MERGED_PR_BIN:-${here}/resolve-merged-pr.sh}"
 
 mkdir -p "$WORK_DIR"
+
+# ── nothing from a stack-env line is ever echoed whole ───────────────────────────────────
+# terragrunt-stack-env exists to carry per-stack state-backend credentials, so everything from
+# the first `=` onwards is a secret by assumption. A guard that refuses a malformed line by
+# printing it is worse than no guard: the ::error:: annotation and the step summary are as
+# public as the repository. Every message below names the line INDEX, the glob and the KEY,
+# and nothing else.
+
+# The glob half. It needs the same cut as the assignment half, because a line with no
+# whitespace at all (`ARM_ACCESS_KEY=…`, the glob forgotten) is exactly the mistake somebody
+# makes with a credential in hand, and it puts the whole assignment in the glob slot.
+# The glob half, and only when it is ACTUALLY a glob.
+#
+# Cutting the token at its first `=` is not enough, and the case that breaks it is the likely
+# one: a YAML block scalar whose long value wrapped onto its own line leaves a bare credential
+# alone in the glob slot. A base64 state-backend key has no `=` until the `==` padding at the
+# very end, so "everything before the first `=`" is the whole key, printed into an ::error::
+# annotation by the guard whose job was to keep it out of one.
+#
+# A real glob is a path pattern: it holds no `=`, no whitespace, and is short. Anything else is
+# not a glob, so there is nothing safe to quote from it and the index is the whole report.
+stack_env_glob_label() { # glob
+  case "$1" in
+    *=*) printf '%s' 'not a glob (it contains "="), so it is named by line number only' ;;
+    "") printf '%s' 'empty' ;;
+    # Positive test, not a blocklist. A stack glob matches a directory path, so it carries a
+    # `/` or a `*`; a bare token with neither is not one, and a short secret is indis-
+    # tinguishable from a short word. Only quote what looks like the thing it claims to be.
+    */*|*'*'*) if (( ${#1} > 64 )); then
+                 printf '%s' 'not a glob (too long to be a path pattern), so it is named by line number only'
+               else
+                 printf "'%s'" "$1"
+               fi ;;
+    *) printf '%s' 'not a glob (no "/" or "*" in it), so it is named by line number only' ;;
+  esac
+}
+
+# The assignment half, named rather than printed.
+stack_env_key_label() { # assignment
+  case "$1" in
+    =*) printf '%s' 'an empty key' ;;
+    *=*) printf "key '%s'" "${1%%=*}" ;;
+    # No `=` at all means there is no KEY to name and what is there could be anything: a value
+    # whose `=` was mistyped, or a password pasted a line early. Described, never printed.
+    *) printf '%s' "no '=' in it at all" ;;
+  esac
+}
 
 # Emits the KEY=VALUE lines that apply to one stack: every line whose glob matches, first
 # match per KEY winning. Deliberately NOT eval'd, and deliberately not echoed: these values
 # are credentials.
 validate_stack_env() {
-  local line pattern assignment
+  local line pattern assignment index=0
   [[ -n "$STACK_ENV" ]] || return 0
   while IFS= read -r line; do
+    # Counted before the skips, so the index names the line the caller actually typed.
+    index=$(( index + 1 ))
     line="${line#"${line%%[![:space:]]*}"}"
     [[ -n "$line" && "$line" != '#'* ]] || continue
     pattern="${line%%[[:space:]]*}"
     assignment="${line#"$pattern"}"
     assignment="${assignment#"${assignment%%[![:space:]]*}"}"
     [[ -n "$assignment" ]] \
-      || tremvok::fail "terragrunt-stack-env line '${line}' has a pattern but no KEY=VALUE after it"
+      || tremvok::fail "terragrunt-stack-env line ${index} has a glob but no KEY=VALUE after it: $(stack_env_glob_label "$pattern"). The line is named by index, glob and key and never printed: this input carries credentials, and an ::error:: annotation is as public as the repository."
     case "$assignment" in
       [A-Za-z_]*=*) ;;
-      *) tremvok::fail "terragrunt-stack-env line '${line}' does not assign a KEY=VALUE" ;;
+      *) tremvok::fail "terragrunt-stack-env line ${index} does not assign a KEY=VALUE: the glob is $(stack_env_glob_label "$pattern") and what follows it has $(stack_env_key_label "$assignment"). A KEY starts with a letter or an underscore. The line is named by index, glob and key and never printed: this input carries credentials." ;;
     esac
   done <<<"$STACK_ENV"
 }
@@ -107,10 +166,18 @@ validate_stack_env
 # ── which stacks ─────────────────────────────────────────────────────────────────────────
 scope="$SCOPE"
 if [[ "$scope" == "auto" ]]; then
-  case "$EVENT_NAME" in
-    schedule|workflow_dispatch) scope="all" ;;
-    *) scope="changed" ;;
-  esac
+  if [[ -n "$PR_NUMBER" ]]; then
+    # A pull request is in scope however it got here, from the event or named by hand with
+    # terragrunt-pull-request. Either way `auto` means the stacks that pull request touches.
+    # A no-op when the override is empty: PR_NUMBER is otherwise non-empty only on
+    # pull_request and pull_request_review, where `auto` already meant `changed`.
+    scope="changed"
+  else
+    case "$EVENT_NAME" in
+      schedule|workflow_dispatch) scope="all" ;;
+      *) scope="changed" ;;
+    esac
+  fi
 fi
 
 # `while read` rather than `mapfile`, which is bash 4 — see the note in lib/common.sh. The
@@ -212,15 +279,86 @@ tremvok::summary "| Stack | Result | Plan |"
 tremvok::summary "|:--|:--|:--|"
 tremvok::summary "$rows"
 
+# ── which pull request authorises this run ───────────────────────────────────────────────
+# A pull_request or pull_request_review carries the number in its event. A push does not, and
+# the approval that authorises the apply belongs to the pull request the commit was merged
+# from.
+#
+# All of it is behind `terragrunt-apply-on-merge`, which is off by default. Off, a push does
+# not reach this block at all: no lookup, no approval read, plan only.
+#
+# After the plan on purpose: an unreadable answer is more useful with the plan already in the
+# log, and the ordering leaves the plan comment one write, not two.
+merged_pr=""
+# Did this run consult the merged-pull-request path at all? Without it, "no merged pull
+# request" would be said about a run that never asked.
+merge_gate=false
+# The lookup was made and could not be read. Separate from merge_lookup_failed below, which is
+# only the subset of those that must fail the run: an unreadable answer still has to be
+# reported as unreadable, and never as "this commit came from no merged pull request", which is
+# the confusion the whole three-exit-code contract exists to prevent.
+merge_lookup_unreadable=false
+# Set instead of failing inline. See the report chain and the bottom of this file.
+merge_lookup_failed=false
+lookup_sha="${GITHUB_SHA:-$HEAD_SHA}"
+if [[ -z "$PR_NUMBER" && "$EVENT_NAME" == "push" ]] && tremvok::is_true "$APPLY_ON_MERGE"; then
+  merge_gate=true
+  merged_pr_status=0
+  # `|| merged_pr_status=$?` rather than a bare assignment: under `set -e` the assignment's
+  # failure would kill the run, and the exit code is the whole signal. 0 found, 2 no merged
+  # pull request, 1 unreadable, never collapsed.
+  merged_pr="$(SHA="$lookup_sha" "$RESOLVE_MERGED_PR_BIN" 2>/dev/null)" \
+    || merged_pr_status=$?
+  case "$merged_pr_status" in
+    0) tremvok::log "this commit was merged from pull request #${merged_pr}" ;;
+    2) merged_pr="" ;;
+    *)
+      merged_pr=""
+      merge_lookup_unreadable=true
+      # A flag, NOT tremvok::fail. Failing here kills the run before the check run and the step
+      # outputs are published, and a required check that never reports blocks the pull request
+      # for ever. Enforced at the bottom of this file instead, beside the other refusal, once
+      # everything is out.
+      #
+      # Not "before the plan comment": there is no comment to publish on this path. An
+      # unreadable lookup leaves merged_pr empty, and this arm is only reached with PR_NUMBER
+      # empty too, so gate_pr is empty and post_comment returns without posting. That is what
+      # the `never`/`force` warning below means by "nowhere to go".
+      #
+      # Scoped to `auto` because that is the only mode whose decision depends on the answer,
+      # and to a plan that has something outstanding, for the same reason the unreadable-review
+      # -list refusal below is: refusing to apply nothing is not a refusal. The asymmetry the
+      # earlier pass left here — reviews guarded on plan_changes, the lookup not — could not be
+      # argued for. What is at stake is set by the plan, which this run has already made and
+      # can read either way; whether the *reason* the approval is unknown is a missing number
+      # or an unreadable review list does not change that a clean plan has nothing to apply,
+      # and turning the default branch red on a transient API blip while the same run reports
+      # "No changes to apply" is the contradiction that guard was added to remove.
+      if [[ "$APPLY" != "auto" ]]; then
+        tremvok::warn "could not read the pull requests for this commit; the plan comment has nowhere to go."
+      elif (( plan_changes == 0 )); then
+        # Still said out loud: a token missing `pull-requests: read` is a standing
+        # misconfiguration, and it must not stay invisible until the first merge that changes
+        # something. A warning, because nothing is outstanding.
+        tremvok::warn "could not read the pull requests for ${lookup_sha}, so this run cannot tell whether the change was approved. Every affected stack planned clean, so there was nothing to apply and nothing is left outstanding."
+      else
+        merge_lookup_failed=true
+        tremvok::error "could not read the pull requests for ${lookup_sha}, so this run cannot tell whether the change was approved."
+      fi
+      ;;
+  esac
+fi
+gate_pr="${PR_NUMBER:-$merged_pr}"
+
 # ── decide whether this run may apply ────────────────────────────────────────────────────
 approver_list=""
 approval_readable=true
-if [[ -n "$PR_NUMBER" ]]; then
+if [[ -n "$gate_pr" ]]; then
   # Captured to a variable first: `if ! x="$(cmd)"` keeps the command's exit status, which is
   # the whole point here. An unreadable review list must never look like "nobody approved" —
   # but it must not fail a run that was only ever going to plan either, so it is recorded and
   # enforced at the apply decision below.
-  if approvers_raw="$(PR_NUMBER="$PR_NUMBER" "${here}/approval-gate.sh" 2>/dev/null)"; then
+  if approvers_raw="$(PR_NUMBER="$gate_pr" "${here}/approval-gate.sh" 2>/dev/null)"; then
     while IFS= read -r who; do
       [[ -n "$who" ]] && approver_list="${approver_list}@${who} "
     done <<<"$approvers_raw"
@@ -232,6 +370,10 @@ approver_list="${approver_list% }"
 
 may_apply=false
 apply_reason=""
+# Set only on the merged path, and that asymmetry is deliberate. On a pull request the
+# action_required check already blocks the merge, so a red job on every API blip buys nothing;
+# on a push nothing blocks, so refusing has to be loud or it is silence.
+apply_refused=false
 case "$APPLY" in
   never)
     apply_reason="apply is disabled for this run"
@@ -254,11 +396,40 @@ case "$APPLY" in
   auto|*)
     if [[ -n "$approver_list" ]]; then
       may_apply=true
-      apply_reason="approved by ${approver_list}"
+      if [[ -n "$merged_pr" ]]; then
+        apply_reason="approved by ${approver_list} on #${merged_pr}"
+      else
+        apply_reason="approved by ${approver_list}"
+      fi
     elif [[ "$approval_readable" == false ]]; then
-      apply_reason="the review list could not be read, so this run refuses to apply"
-    else
+      apply_reason="the reviews of #${gate_pr} could not be read, so this run refuses to apply"
+      # Guarded on plan_changes, and that guard is the whole point. Refusing to apply nothing
+      # is not a refusal: a merge where every stack plans clean has nothing at stake, and
+      # failing it red on a transient reviews-API blip contradicts the same run's own comment
+      # saying "Nothing to apply". The refusal exists to stop unapproved work being applied,
+      # so it only fires when there was work.
+      if [[ -n "$merged_pr" ]] && (( plan_changes > 0 )); then
+        apply_refused=true
+      fi
+    elif [[ -n "$merged_pr" ]]; then
+      apply_reason="#${merged_pr} was merged without an independent approval"
+    elif [[ -n "$PR_NUMBER" ]]; then
       apply_reason="waiting for an independent approval"
+    elif [[ "$merge_lookup_unreadable" == true ]]; then
+      # Before the arm below, and the reason this flag exists separately from merge_gate: the
+      # lookup was made and did not answer, so "came from no merged pull request" would be a
+      # statement this run cannot make. It reaches the step summary and the warning above.
+      apply_reason="the pull requests for ${lookup_sha} could not be read, so this run cannot tell whether the change was approved"
+    elif [[ "$merge_gate" == true ]]; then
+      apply_reason="this commit came from no merged pull request, so there was no approval to check"
+    elif [[ "$EVENT_NAME" == "push" ]]; then
+      # The default. Naming the input, because "no pull request is in scope" would send
+      # somebody looking for a missing pull request rather than at the knob.
+      apply_reason="terragrunt-apply-on-merge is off, so a push plans and applies nothing"
+    else
+      # A schedule's drift run, or any event with no pull request at all. There was never an
+      # approval to read, and saying "no merged pull request" about it would be untrue.
+      apply_reason="no pull request is in scope, so there was no approval to check"
     fi
     ;;
 esac
@@ -268,39 +439,65 @@ if (( plan_failures > 0 )) && [[ "$may_apply" == true ]]; then
   apply_reason="${plan_failures} stack(s) failed to plan"
 fi
 
+# Gated on plan_changes so a clean plan says nothing. Warning about nothing outstanding is
+# noise, and noise is how a warning stops being read.
+if [[ "$may_apply" != true ]] && (( plan_changes > 0 )); then
+  tremvok::summary ""
+  tremvok::summary "**Not applied.** ${plan_changes} of ${#stacks[@]} stack(s) have pending changes — ${apply_reason}."
+  if [[ -z "$PR_NUMBER" ]]; then
+    tremvok::warn "${plan_changes} of ${#stacks[@]} stack(s) planned with changes and none were applied: ${apply_reason}."
+  fi
+fi
+
 # ── the pull-request comment ─────────────────────────────────────────────────────────────
+# Rendered against gate_pr, so a merge comments on the pull request it was merged from. One
+# sticky comment keyed `<!-- tremvok:terragrunt -->`, edited in place by notify-pr.sh, so the
+# merged pull request's plan comment gains the apply outcome rather than a second comment.
 gate_section=""
-if [[ -n "$PR_NUMBER" ]]; then
+if [[ -n "$gate_pr" ]]; then
   if [[ "$may_apply" == true ]]; then
     gate_section=$(printf '### Apply\n\n⏳ **%s — applying now.**\n\nThis section is rewritten when the run finishes.\n' "$apply_reason")
   elif (( plan_changes == 0 && plan_failures == 0 )); then
     gate_section=$(printf '### Apply\n\n✅ **Nothing to apply.** Every affected stack planned clean.\n')
+  elif [[ "$apply_refused" == true ]]; then
+    # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
+    gate_section=$(printf '### Apply\n\n❌ **%s.**\n\nNothing was applied. Retry the run, or check the token still has `pull-requests: read`.\n' "$(capitalize "$apply_reason")")
+  elif [[ -n "$merged_pr" ]]; then
+    # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
+    gate_section=$(printf '### Apply\n\n⚠️ **%s, so the affected stacks were not applied.**\n\nThis is reported rather than failed: an unapproved merge is a branch-protection matter, not a broken build. The stacks stay unapplied until someone applies them, and the scheduled drift run keeps reporting them. Re-run with `terragrunt-apply: force` to apply them by hand.\n' "$(capitalize "$apply_reason")")
   else
     gate_section=$(printf '### Apply\n\n🔒 **%s.**\n\nApproving this pull request applies the stacks above — the run picks up the merge result, exactly what lands on the default branch — and the merge unblocks once it passes.\n' "$(capitalize "$apply_reason")")
   fi
 fi
 
-# `if` blocks, not `[[ ... ]] && printf`. The last command inside a command substitution sets
-# the substitution's exit status, so a false `[[ ]]` at the end makes the *assignment* fail —
-# and under `set -e` that kills the run. It only bites when the optional line is absent, which
-# here means: every push event, right after a successful plan.
-comment_body="$(
-  printf '## Terragrunt plan\n\n'
-  printf '| Stack | Result | Plan |\n|:--|:--|:--|\n%s\n' "$rows"
-  printf '%s\n' "$details"
-  if [[ -n "$RUN_URL" ]]; then
-    printf '\n_[Full output in the workflow run](%s); credential-shaped values are redacted._\n' "$RUN_URL"
-  fi
-  if [[ -n "$gate_section" ]]; then
-    printf '\n%s\n' "$gate_section"
-  fi
-)"
-printf '%s' "$comment_body" >"${WORK_DIR}/comment.md"
+# A brace group redirected to a file, not `x="$( ... )"`. The last command inside a command
+# substitution sets the substitution's exit status, so a false `[[ ]]` at the end makes the
+# *assignment* fail, and under `set -e` that kills the run. `{ } > file` has no such trap.
+#
+# A function because the body is rendered twice: once before the apply and once after, so the
+# comment never stays on "applying now" for ever.
+render_comment() {
+  {
+    printf '## Terragrunt plan\n\n'
+    printf '| Stack | Result | Plan |\n|:--|:--|:--|\n%s\n' "$rows"
+    printf '%s\n' "$details"
+    if [[ -n "$RUN_URL" ]]; then
+      printf '\n_[Full output in the workflow run](%s); credential-shaped values are redacted._\n' "$RUN_URL"
+    fi
+    if [[ -n "$gate_section" ]]; then
+      printf '\n%s\n' "$gate_section"
+    fi
+  } >"${WORK_DIR}/comment.md"
+}
 
-if [[ -n "$PR_NUMBER" ]]; then
-  PR_NUMBER="$PR_NUMBER" COMMENT_KEY="terragrunt" BODY_FILE="${WORK_DIR}/comment.md" \
+post_comment() {
+  [[ -n "$gate_pr" ]] || return 0
+  PR_NUMBER="$gate_pr" COMMENT_KEY="terragrunt" BODY_FILE="${WORK_DIR}/comment.md" \
     "${here}/notify-pr.sh" || tremvok::warn "the plan comment did not post."
-fi
+}
+
+render_comment
+post_comment
 
 # ── apply ────────────────────────────────────────────────────────────────────────────────
 applied=false
@@ -345,11 +542,36 @@ if [[ "$may_apply" == true ]]; then
   done
 fi
 
+# Without this the comment is left saying "applying now" for ever, which is the one thing a
+# rewritten gate section exists to prevent. No workflow link inside the section: the body
+# already carries one a line above it, so an empty RUN_URL cannot render a dead link.
+if [[ "$applied" == true && -n "$gate_pr" ]]; then
+  if (( apply_failures == 0 )); then
+    gate_section=$(printf '### Apply\n\n🚀 **Applied** — %s.\n' "$apply_reason")
+  else
+    gate_section=$(printf '### Apply\n\n❌ **Apply failed** — %s of %s stack(s): %s. %s.\n' "$apply_failures" "${#stacks[@]}" "${failed_stacks[*]}" "$apply_reason")
+  fi
+  render_comment
+  post_comment
+fi
+
 # ── report ───────────────────────────────────────────────────────────────────────────────
+# The arms below are in the SAME order as the gate_section arms above (applied, then clean,
+# then refused, then the rest), so the check run and the pull-request comment can never say
+# different things about one run. The two extra arms have no counterpart in gate_section
+# because neither can coexist with a comment: a plan failure is reported in the rows, and an
+# unreadable commit-to-pull-request lookup leaves gate_pr empty, so there is no thread to
+# comment on.
 if (( plan_failures > 0 )); then
   conclusion="failure"
   title="${plan_failures} stack(s) failed to plan"
   summary="Fix the plan before applying. The plan comment on this pull request has the redacted output."
+elif [[ "$merge_lookup_failed" == true ]]; then
+  # Set only when the plan had something outstanding, the same guard as apply_refused below,
+  # so this arm and the "No changes to apply" arm further down can never both be true.
+  conclusion="failure"
+  title="Could not resolve the merged pull request"
+  summary="The pull requests for ${lookup_sha} could not be read, so this run cannot tell which pull request authorised the merge, or whether it was approved. Nothing was applied."
 elif [[ "$applied" == true && $apply_failures -gt 0 ]]; then
   conclusion="failure"
   title="${apply_failures} of ${#stacks[@]} stack(s) failed to apply"
@@ -357,14 +579,48 @@ elif [[ "$applied" == true && $apply_failures -gt 0 ]]; then
 elif [[ "$applied" == true ]]; then
   conclusion="success"
   title="Applied"
-  summary="${#stacks[@]} stack(s) applied — ${apply_reason}. Safe to merge."
+  summary="${#stacks[@]} stack(s) applied — ${apply_reason}."
+  # "Safe to merge" is nonsense once the merge has happened.
+  if [[ -n "$PR_NUMBER" ]]; then
+    summary="${summary} Safe to merge."
+  fi
 elif (( plan_changes == 0 )); then
+  # Before the refusal, exactly as gate_section puts "Nothing to apply" before it. An
+  # unreadable review list on a run that would have applied nothing is not a failure, and
+  # apply_refused is guarded on plan_changes so the two can never both be true here.
   conclusion="success"
   title="No changes to apply"
   summary="Every affected stack planned clean, so there is nothing to apply."
-else
+elif [[ "$apply_refused" == true ]]; then
+  # On the merged path an unreadable review list has to be red: nothing blocks a merge that
+  # has already happened, so a quiet skip leaves real changes unapplied with nobody told.
+  conclusion="failure"
+  title="Could not check the approval"
+  summary="The reviews of #${merged_pr} could not be read, so this run cannot tell whether the merge was approved. Nothing was applied."
+elif [[ -n "$PR_NUMBER" ]]; then
   # Not a failure and not a success: there is real work outstanding and a human has to
   # authorise it. `action_required` is the only conclusion that says so and still blocks.
+  #
+  # The predicate is PR_NUMBER, an open pull request in the event, rather than gate_pr: the
+  # check is only a gate when it lands on a head a merge is waiting on.
+  conclusion="action_required"
+  title="Apply required before merge"
+  summary="${plan_changes} stack(s) have pending changes — ${apply_reason}. This check turns green once they are applied."
+elif tremvok::is_true "$APPLY_ON_MERGE"; then
+  # No open pull request, so this check lands on a commit already on the branch and there is
+  # no merge left to block. `neutral` records the outstanding work without turning the default
+  # branch red, which is not what fixes an unapproved merge.
+  #
+  # Gated on the input, not on the event. `action_required` here is a blocking-shaped verdict
+  # on a commit nothing is waiting on, so this is the better answer, but it is still a
+  # different conclusion from the one a caller sees today. Somebody may be watching for it on
+  # the drift cron. Callers who opt into the merged-apply path get the improvement; callers
+  # who opt into nothing keep the conclusion they already have, which is the whole promise of
+  # terragrunt-apply-on-merge defaulting to false.
+  conclusion="neutral"
+  title="Planned; not applied"
+  summary="${plan_changes} of ${#stacks[@]} stack(s) have pending changes and none were applied — ${apply_reason}. Re-run with terragrunt-apply: force to apply them."
+else
   conclusion="action_required"
   title="Apply required before merge"
   summary="${plan_changes} stack(s) have pending changes — ${apply_reason}. This check turns green once they are applied."
@@ -383,3 +639,11 @@ tremvok::set_output approvers "$approver_list"
 
 (( plan_failures == 0 )) || tremvok::fail "${plan_failures} stack(s) failed to plan."
 (( apply_failures == 0 )) || tremvok::fail "${apply_failures} of ${#stacks[@]} stack(s) failed to apply: ${failed_stacks[*]}"
+# Last, so the check run, the plan comment and every step output are published before the run
+# dies. Both of these are "the API could not be read", which must never be reported as
+# "nobody approved", and only the merged path reaches either: on a pull request the
+# action_required check already blocks the merge.
+[[ "$merge_lookup_failed" != true ]] \
+  || tremvok::fail "could not read the pull requests for ${lookup_sha}, so this run cannot tell which pull request authorised the merge, or whether it was approved. Nothing was applied."
+[[ "$apply_refused" != true ]] \
+  || tremvok::fail "could not read the reviews of #${merged_pr}, so this run refuses to apply ${plan_changes} stack(s) that may never have been approved."

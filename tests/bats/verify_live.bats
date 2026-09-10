@@ -48,7 +48,7 @@ STUBEOF
 }
 
 @test "a missing required header fails even when the status is 200" {
-  # This is the dunmir case: uploaded but not bound. The apex answers 200 from the OLD
+  # The case this exists for: uploaded but not bound. The apex answers 200 from the OLD
   # version, so status alone cannot tell you the deploy landed.
   RESPONSE_HEADERS="HTTP/2 200
 server: nginx" VERIFY_URL=https://magmamoose.com/ VERIFY_HEADER=content-security-policy \

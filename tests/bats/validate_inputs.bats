@@ -101,3 +101,31 @@ setup() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"map is missing"* ]]
 }
+
+@test "a non-numeric terragrunt-pull-request is refused in the first step, so a typo does not cost a full clone, a tool install and an assumed-role session" {
+  TARGET=terragrunt TG_PULL_REQUEST='not-a-number' INPUTS_JSON='{}' \
+    run bash "${SCRIPTS}/validate-inputs.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"terragrunt-pull-request: 'not-a-number' is not a pull-request number. Digits only, e.g. 1234."* ]]
+}
+
+@test "an empty terragrunt-pull-request passes, because empty is every automatic run" {
+  TARGET=terragrunt TG_PULL_REQUEST='' INPUTS_JSON='{}' \
+    run bash "${SCRIPTS}/validate-inputs.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "a numeric terragrunt-pull-request passes" {
+  TARGET=terragrunt TG_PULL_REQUEST=1234 INPUTS_JSON='{"terragrunt-pull-request":"1234"}' \
+    run bash "${SCRIPTS}/validate-inputs.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "terragrunt-pull-request, terragrunt-preflight-urls and terragrunt-apply-on-merge are refused on another target, which is the applicability map doing its job" {
+  TARGET=ansible INPUTS_JSON='{"terragrunt-pull-request":"1234","terragrunt-preflight-urls":"https://example.com/","terragrunt-apply-on-merge":"true"}' \
+    run bash "${SCRIPTS}/validate-inputs.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"terragrunt-pull-request"* ]]
+  [[ "$output" == *"terragrunt-preflight-urls"* ]]
+  [[ "$output" == *"terragrunt-apply-on-merge"* ]]
+}

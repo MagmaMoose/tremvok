@@ -13,8 +13,39 @@ source "${here}/lib/common.sh"
 GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"
 AUTH_TOKEN="${AUTH_TOKEN:-${GITHUB_TOKEN:-}}"
 PR_NUMBER="${PR_NUMBER:-}"
+HEAD_SHA="${HEAD_SHA:-}"
+TG_PULL_REQUEST="${TG_PULL_REQUEST:-}"
 EVENT_BEFORE="${EVENT_BEFORE:-}"
 MAX_PAGES="${MAX_PAGES:-30}"
+
+# ── the pull request this run acts on ─────────────────────────────────────────────────────
+# `terragrunt-pull-request` is the one resolution point for the override: everything below,
+# and everything deploy-terragrunt.sh does with it (the approval gate, the plan comment, the
+# check run), reads PR_NUMBER out of the environment. A dispatch carries no pull_request
+# object, so the head sha has to be fetched rather than derived, and a fetch that fails ends
+# the run here, before terragrunt-discover.sh, before any init, plan or state lock.
+if [[ -n "$TG_PULL_REQUEST" ]]; then
+  tremvok::require_pr_number terragrunt-pull-request "$TG_PULL_REQUEST"
+  PR_NUMBER="$TG_PULL_REQUEST"
+  # `if !` rather than a bare assignment: a command substitution that fails takes the
+  # assignment down with it under `set -e` and never reaches a message of its own.
+  if ! HEAD_SHA="$(PR_NUMBER="$PR_NUMBER" "${here}/terragrunt-pr-head.sh")"; then
+    tremvok::fail "terragrunt-pull-request: #${PR_NUMBER} has no head commit this run can reach, so the check run would land nowhere. Nothing was planned."
+  fi
+  # deploy-terragrunt.sh is reached by `exec`, so it reads both out of the environment.
+  export PR_NUMBER HEAD_SHA
+  tremvok::log "terragrunt-pull-request=#${PR_NUMBER} head=${HEAD_SHA:0:12}"
+
+  # The tree is the caller's business: Tremvok never checks out a merge ref, and `ref:` on
+  # their own actions/checkout is what decides what gets planned. But planning the default
+  # branch's code against another pull request's file list is a silent wrong answer, so it is
+  # at least said out loud. A warning and never a failure, because `checkout: false` with a
+  # partial tree is a legitimate caller choice.
+  if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
+    || ! git merge-base --is-ancestor "$HEAD_SHA" HEAD 2>/dev/null; then
+    tremvok::warn "the checked-out tree does not contain #${PR_NUMBER}'s head commit ${HEAD_SHA:0:12}, so the plan is of whatever is on disk. Check out refs/pull/${PR_NUMBER}/merge to plan what merging would produce."
+  fi
+fi
 
 changed="${RUNNER_TEMP:-/tmp}/tremvok-changed-files.txt"
 : >"$changed"

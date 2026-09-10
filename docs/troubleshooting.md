@@ -166,11 +166,19 @@ domain already claimed by another Worker, which fails at the bind after a succes
 
 ## `target: terragrunt`
 
-### `terragrunt-stack-env line '<line>' has a pattern but no KEY=VALUE after it`
+### `terragrunt-stack-env line <n> has a glob but no KEY=VALUE after it`
 
-Every non-blank, non-comment line is `<glob>` then whitespace then `KEY=VALUE`. A pattern on
+Every non-blank, non-comment line is `<glob>` then whitespace then `KEY=VALUE`. A glob on
 its own is refused rather than skipped, because a silently dropped line means a stack runs
-with no credential and fails at `init` with something far less specific.
+with no credential and fails at `init` with something far less specific. The companion message
+is `line <n> does not assign a KEY=VALUE`, for a line whose KEY does not start with a letter
+or an underscore.
+
+The line itself is never printed. This input carries credentials, and the annotation it would
+appear in is as public as the repository, so the message names the line by its index (counting
+blank and comment lines, so it matches what you typed), the glob, and the KEY — never anything
+at or after the first `=`. A line with no whitespace on it at all, `ARM_ACCESS_KEY=…` with the
+glob forgotten, is reported as `ARM_ACCESS_KEY=<redacted>` for the same reason.
 
 ### A stack initialises against the wrong state account
 
@@ -197,7 +205,97 @@ approving applies the stacks.
 ### `could not read the reviews of #<n>`
 
 The API call failed. The run refuses to apply rather than treating an unreadable review list as
-"nobody objected". Retry, or check the token has `pull-requests: read`.
+"nobody objected". Retry, or check the token has `pull-requests: read`. On a push to the
+default branch with `terragrunt-apply-on-merge: true` this also **fails the run**, after
+publishing the check run and the comment: nothing blocks a merge that has already happened, so
+a quiet skip would leave stacks unapplied with nobody told. It fails only when there were
+pending changes it would have applied. A merge whose stacks all plan clean reports success,
+because refusing to apply nothing is not a refusal.
+
+### The check run says `Planned; not applied`
+
+Real changes were found and none were applied, on a run with `terragrunt-apply-on-merge: true`
+and no open pull request: a push whose commit came from no merged pull request, one merged
+without an independent approval, or the scheduled drift run, which never applies. `neutral`
+rather than `action_required` on purpose: this check lands on a commit that is already on the
+branch, so there is no merge left to block, and turning the default branch red is not what
+fixes an unapproved merge. The stacks stay unapplied and the scheduled drift run keeps
+reporting them. Apply them with `terragrunt-apply: force` and an actor named in
+`terragrunt-apply-operators`, or fix the branch protection that let the merge through.
+
+With `terragrunt-apply-on-merge` off, which is the default, the same run reports
+`Apply required before merge` exactly as it always has. `neutral` is the better answer for a
+commit nothing is waiting on, but it is still a different answer, so it is gated on the input:
+a caller who opts into nothing keeps the conclusion they already have.
+
+### `could not read the pull requests for <sha>`
+
+Only reachable with `terragrunt-apply-on-merge: true`. The commit-to-pull-request lookup
+failed, so the run cannot tell which pull request authorised the merge, which means it cannot
+tell whether it was approved. It fails rather than guessing, but not before the check run and
+every step output are published, so a required check is never left never reporting on that
+commit. There is no plan comment on this path: the lookup is the thing that would have said
+which thread to comment on. "Answered, and this commit came from no merged pull request" is a
+different answer and is handled differently, which is the whole point of keeping the two
+apart. Retry, or check the token has `pull-requests: read`.
+
+Like the unreadable review list above, it fails only when there were pending changes it would
+have applied: a merge whose stacks all plan clean reports success and warns, because refusing
+to apply nothing is not a refusal. Under `terragrunt-apply: never` it only warns too, because
+that mode never consults an approval.
+
+### The log says `terragrunt-apply-on-merge is off, so a push plans and applies nothing`
+
+Working as configured, and this is the default. A merge to the default branch plans the
+affected stacks and applies none of them, which is what this target has always done. Set
+`terragrunt-apply-on-merge: true` to have a merge that had an independent approval apply what
+it merged.
+
+### `terragrunt-pull-request: '<value>' is not a pull-request number`
+
+Digits only. The value becomes a path segment in a GitHub API URL, so it is checked in the
+action's first step, before the checkout, the tofu and terragrunt download and the assume-role.
+
+### `could not read pull request #<n> from <owner/repo>`
+
+`terragrunt-pull-request` names a pull request this run cannot see: a wrong number, or a token
+without `pull-requests: read`. The run ends there, before any discovery, `init` or `plan`, so
+nothing is half-applied and no state lock is taken.
+
+### `the checked-out tree does not contain #<n>'s head commit <sha>`
+
+A warning, not a failure. Tremvok never checks out a merge ref: it plans whatever is on disk,
+and the `ref:` is your own `actions/checkout` step's business. This usually means
+`terragrunt-pull-request` was set without `ref: refs/pull/<n>/merge` and `checkout: false`, so
+the plan is of the default branch's code against that pull request's file list. It is a warning
+because `checkout: false` with a partial tree is a legitimate choice.
+
+### `<n> of <m> preflight endpoints are unreachable from this runner`
+
+`terragrunt-preflight-urls` got no answer at all from those endpoints, which is DNS,
+connection refused, a connect timeout, a TLS handshake failure or a proxy refusal. The line
+above each one carries curl's own exit code, which says which: 6 DNS, 7 refused, 28 timeout,
+35 or 60 TLS. The step also prints the runner's egress IP, which is what to add if the endpoint
+is IP-allowlisted. This runs before the first plan on purpose: terragrunt buffers plan output
+to a file, so the same failure without it is a silent wait until `terragrunt-timeout`.
+
+A `401` or `403` is **not** a failure here, and an endpoint that passes has not proved your
+credential works. This check only asks whether anything is listening.
+
+### `terragrunt-preflight-urls line <n> carries credentials in the URL`
+
+A line of the form `https://user:password@host/`. These URLs reach the run log, which is public
+on a public repository, so the run refuses rather than probing it. The message names the line
+by its index and shows the URL with the userinfo replaced; it never echoes the line, for the
+same reason it refuses it. Put the credential where it belongs and probe the bare endpoint.
+An unauthenticated `401` or `403` passes this check on purpose.
+
+### `terragrunt-preflight-urls line <n> is not an http(s) URL`
+
+One bare URL per line, `http://` or `https://`. A bare hostname is refused because curl would
+guess a scheme and quietly probe something else. The line is named by index and not printed: a
+value in the wrong input is the value most likely to be a secret pasted somewhere it does not
+go.
 
 ### The log says `the saved plan for <stack> has gone stale`
 
@@ -255,6 +353,22 @@ fix is in the playbook, not in the deploy.
 ### `no playbook at <path>` / `no galaxy requirements file at <path>`
 
 Paths are relative to `working-directory`. Both are checked before anything is installed.
+
+### The playbook cannot see `VAULT_ADDR` or `VAULT_TOKEN`
+
+By design. The action removes them from the environment before `ansible-playbook` starts, so a
+token scoped to the fields Tremvok reads is not handed to every task, role and collection in
+the play. Set `ansible-vault-passthrough: true` to pass them through deliberately. With
+passthrough on and either `vault-addr` or `vault-token` missing, the run warns and passes
+neither: half a credential fails inside a task, a long way from the cause.
+
+### The playbook cannot see `SSH_PRIVATE_KEY` or `VAULT_PASSWORD` either
+
+Also by design, and with no way to turn it off. Both are unset once their values are on disk
+in `0600` files, which is what `--private-key` and `--vault-password-file` point at. A play
+that wants the key or the vault password should take the file it is already given rather than
+read the environment, and unlike a Vault token there is nothing a playbook can do with these
+that the file does not already serve.
 
 ### `host-key checking is off for this run`
 

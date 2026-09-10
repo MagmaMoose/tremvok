@@ -16,6 +16,11 @@ on:
     # The weekday drift run. Plans everything, reports what has moved.
     - cron: '0 5 * * 1-5'
   workflow_dispatch:
+    inputs:
+      pull_request:
+        description: 'Pull request number to plan or apply. Empty plans the default branch.'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -43,11 +48,35 @@ jobs:
           # Required: a shallow clone cannot reach the push event's "before" commit, so it
           # reports zero changed files and discovers zero stacks.
           fetch-depth: 0
+          # GitHub's merge of the named pull request into its base: what lands on the default
+          # branch if it merges. Empty falls back to the ref the run started from, which is
+          # every automatic run. Tremvok never checks out a merge ref itself.
+          ref: ${{ inputs.pull_request && format('refs/pull/{0}/merge', inputs.pull_request) || '' }}
 
       - uses: MagmaMoose/tremvok@v2  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           target: terragrunt
+          # The step above already checked out the right tree. Without this the action checks
+          # the workflow ref out again and the merge tree is gone.
+          checkout: false
           terragrunt-root: terraform
+          # Empty on every automatic run, so the event decides. Set on a manual run, it is the
+          # pull request whose reviews gate the apply, whose thread gets the plan comment, and
+          # whose head commit the check run is published against.
+          terragrunt-pull-request: ${{ inputs.pull_request }}
+          # Probed once each, 8 seconds apiece, before the first plan. Terragrunt buffers plan
+          # output to a file, so an unreachable state backend is a silent wait until
+          # terragrunt-timeout rather than an error. Any HTTP answer passes, 401 and 403
+          # included; only "no answer at all" fails. Reachability, not authorisation.
+          #
+          # A repository variable rather than literal URLs, so this file is safe to copy as it
+          # stands: unset means probe nothing. Set TERRAGRUNT_PREFLIGHT_URLS to your own
+          # endpoints, one per line, e.g. the state backend and the provider API. Put no
+          # credentials in them; they reach the run log.
+          terragrunt-preflight-urls: ${{ vars.TERRAGRUNT_PREFLIGHT_URLS }}
+          # A merge to the default branch plans by default and applies nothing. Set this to
+          # true to have an approved merge apply what it merged.
+          terragrunt-apply-on-merge: 'false'
           aws-region: ${{ vars.AWS_REGION }}
           aws-role-to-assume: ${{ vars.TERRAFORM_ROLE_ARN }}
           # Pinned and checksum-verified by the action itself, cached per version pair. This

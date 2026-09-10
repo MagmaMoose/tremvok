@@ -3,7 +3,7 @@
 **Action surface (repo root):**
 ```bash
 shellcheck -S warning scripts/*.sh scripts/lib/*.sh   # lint
-bats tests/bats                                        # 188 shell tests
+bats tests/bats                                        # 314 shell tests
 python3 scripts/gen_input_targets.py                   # REGENERATE after any input change
 python3 scripts/gen_action_reference.py                # REGENERATE after any input change
 uv run pytest tests/test_action_contract.py tests/test_input_targets.py -q
