@@ -298,9 +298,7 @@ STUBEOF
   # They reach this step as environment variables and are inherited by every child process,
   # ansible-playbook included. The block that unsets HashiCorp Vault's token enforced a third
   # of its own stated threat model without this: the two it left were the sensitive ones.
-  SSH_PRIVATE_KEY='-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAAsecretkeymaterial
------END OPENSSH PRIVATE KEY-----' \
+  SSH_PRIVATE_KEY='test-openssh-key-fixture' \
     SSH_KNOWN_HOSTS='host-a ssh-ed25519 AAAAC3Nz' \
     VAULT_PASSWORD='vaultpassphrase' \
     run bash "${SCRIPTS}/deploy-ansible.sh"
@@ -308,7 +306,7 @@ b3BlbnNzaC1rZXktdjEAAAAAsecretkeymaterial
   grep -q 'SSH_PRIVATE_KEY=<unset>' "${STUB_LOG}.env"
   grep -q 'SSH_KNOWN_HOSTS=<unset>' "${STUB_LOG}.env"
   grep -q 'VAULT_PASSWORD=<unset>' "${STUB_LOG}.env"
-  refute grep -q 'secretkeymaterial' "${STUB_LOG}.env"
+  refute grep -q 'test-openssh-key-fixture' "${STUB_LOG}.env"
   refute grep -q 'vaultpassphrase' "${STUB_LOG}.env"
   # The files are what the flags point at, so unsetting the variables costs the run nothing.
   grep -q -- '--private-key' "$STUB_LOG"

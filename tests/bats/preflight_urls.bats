@@ -142,22 +142,24 @@ STUBEOF
 }
 
 @test "the password in a credential-bearing preflight URL never reaches the log or the step summary, because the guard that refuses it must not be the thing that publishes it" {
-  PREFLIGHT_URLS=$'https://state.example.com/ok\nhttps://user:hunter2@state.example.com/' \
+  # secretlint-disable-next-line @secretlint/secretlint-rule-basicauth
+  PREFLIGHT_URLS=$'https://state.example.com/ok\nhttps://user:FAKEPWD123@state.example.com/' \
     run bash "${SCRIPTS}/preflight-urls.sh"
   [ "$status" -ne 0 ]
-  [[ "$output" != *"hunter2"* ]]
-  refute grep -q 'hunter2' "$GITHUB_STEP_SUMMARY"
-  refute grep -q 'hunter2' "$STUB_LOG"
+  [[ "$output" != *"FAKEPWD123"* ]]
+  refute grep -q 'FAKEPWD123' "$GITHUB_STEP_SUMMARY"
+  refute grep -q 'FAKEPWD123' "$STUB_LOG"
   # Still useful: the line index, and the URL with its userinfo replaced.
   [[ "$output" == *"line 2 carries credentials in the URL"* ]]
   [[ "$output" == *"https://<redacted>@state.example.com/"* ]]
 }
 
 @test "a URL carrying userinfo is refused, because a probe URL is printed into a run log that is public on a public repository" {
-  PREFLIGHT_URLS='https://user:t0ken@state.example.com/' run bash "${SCRIPTS}/preflight-urls.sh"
+  # secretlint-disable-next-line @secretlint/secretlint-rule-basicauth
+  PREFLIGHT_URLS='https://user:FAKETKN456@state.example.com/' run bash "${SCRIPTS}/preflight-urls.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"credentials in the URL"* ]]
-  [[ "$output" != *"t0ken"* ]]
+  [[ "$output" != *"FAKETKN456"* ]]
   ! grep -q '^curl' "$STUB_LOG"
 }
 

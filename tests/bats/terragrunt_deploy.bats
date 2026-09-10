@@ -249,12 +249,12 @@ STUBEOF
 @test "a wrapped base64 key alone in the glob slot is not printed, because cutting the slot at its first '=' would print all of it" {
   # The shape a YAML block scalar makes when a long value wraps onto its own line: no
   # whitespace, and no `=` until the padding at the very end.
-  key='y7Kq2mVb8ZpL0nWfR3tXcJ4hA6sD1gE5uT9iO2yB7kN0mQ4vC8xZ1aS3dF6gH9jK2lP5rT8wY1bE4nM7=='
+  key='TestBase64KeyFixtureNoEqualsUntilPaddingAAAAAAAAAAAAAAAAAAAAAAAAAAAABB=='
   STACK_ENV="*/prod/*  ARM_ACCESS_KEY=
 ${key}" run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -ne 0 ]
-  [[ "$output" != *"y7Kq2mVb"* ]]
-  refute grep -q 'y7Kq2mVb' "$GITHUB_STEP_SUMMARY"
+  [[ "$output" != *"TestBase64"* ]]
+  refute grep -q 'TestBase64' "$GITHUB_STEP_SUMMARY"
   [[ "$output" == *"line 2"* ]]
 }
 

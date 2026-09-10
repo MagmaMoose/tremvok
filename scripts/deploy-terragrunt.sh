@@ -460,8 +460,10 @@ if [[ -n "$gate_pr" ]]; then
   elif (( plan_changes == 0 && plan_failures == 0 )); then
     gate_section=$(printf '### Apply\n\n✅ **Nothing to apply.** Every affected stack planned clean.\n')
   elif [[ "$apply_refused" == true ]]; then
+    # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
     gate_section=$(printf '### Apply\n\n❌ **%s.**\n\nNothing was applied. Retry the run, or check the token still has `pull-requests: read`.\n' "$(capitalize "$apply_reason")")
   elif [[ -n "$merged_pr" ]]; then
+    # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
     gate_section=$(printf '### Apply\n\n⚠️ **%s, so the affected stacks were not applied.**\n\nThis is reported rather than failed: an unapproved merge is a branch-protection matter, not a broken build. The stacks stay unapplied until someone applies them, and the scheduled drift run keeps reporting them. Re-run with `terragrunt-apply: force` to apply them by hand.\n' "$(capitalize "$apply_reason")")
   else
     gate_section=$(printf '### Apply\n\n🔒 **%s.**\n\nApproving this pull request applies the stacks above — the run picks up the merge result, exactly what lands on the default branch — and the merge unblocks once it passes.\n' "$(capitalize "$apply_reason")")
