@@ -7,6 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0]
+
+Released as v1.0.26 and retagged: the breaking changes below are v2, and were only ever
+called v1.x because the release pipeline could not see them.
+
+### Fixed — the floating major tag
+
+- **`v1` no longer floats onto a breaking release.** `GitVersion.yml` teaches GitVersion
+  to read Conventional Commits, so a `feat!:` subject or a `BREAKING CHANGE:` footer bumps
+  the major and `feat:` bumps the minor. Until now GitVersion ran on its built-in defaults,
+  which only understand `+semver:` tokens: every release since v1.0.0 was a patch,
+  including the two that deleted the reusable workflows and renamed every docs input. The
+  release job then force-moved `v1` onto them, and nine repositories pinned to `@v1` were
+  handed the v2 contract without a version change to warn them.
+
 ### Changed — BREAKING (v2)
 
 - **The `docs` target is now `github-pages`,** and its inputs are prefixed `pages-` rather
@@ -17,18 +32,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it is publishing. A pull request (`mode: preview`) or a `dry-run` now builds and checks
   without staging an artifact, which is what those already mean everywhere else.
 
-- **One action, five targets.** `target` is now the deployment target
-  (`docs` · `s3-cloudfront` · `lambda-zip` · `terragrunt` · `ansible`) and is the only
-  required input. At v1 `target` meant the docs destination; that is now `docs-target`, and
-  every other docs input gained a `docs-` prefix. Full table in
-  [docs/migration.md](docs/migration.md). **`@v1` is unchanged and keeps working.**
+- **One action, six targets.** `target` is now the deployment target
+  (`github-pages` · `s3-cloudfront` · `lambda-zip` · `terragrunt` · `ansible` ·
+  `cloudflare-workers`) and is the only required input. At v1 `target` meant the docs
+  destination. Full table in [docs/migration.md](docs/migration.md). **`@v1` is frozen at
+  v1.0.18 and keeps working** — it was briefly not, see *Fixed* below.
 - **The `deploy/` entry point is gone.** `MagmaMoose/tremvok/deploy@v1` no longer exists; its
   three targets are targets on the root action, with `aws-`, `s3-`, `cloudfront-` and
   `lambda-` prefixes on its inputs. Its scripts moved from `deploy/scripts/` to `scripts/`.
 - **The reusable workflows are gone.** `.github/workflows/docs.yml` and
   `docs-github-pages.yml` are removed: one action is the whole product, and a second callable
   surface for one target was a place for the two to disagree. The Pages deploy job they
-  carried is ten lines in the caller's own workflow — `examples/docs.yml`.
+  carried is ten lines in the caller's own workflow — `examples/github-pages.yml`.
 - **An inapplicable input now fails the run.** `validate-inputs.sh` checks every input
   against the selected target before the checkout and reports every mistake at once. At v1
   an undeclared input was a warning nothing acted on.
@@ -247,4 +262,5 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   licence is now the one that appears FIRST in the file, since a licence states its own
   terms before its carve-outs.
 
-[Unreleased]: https://github.com/MagmaMoose/tremvok/commits/main
+[Unreleased]: https://github.com/MagmaMoose/tremvok/compare/v2.0.0...main
+[2.0.0]: https://github.com/MagmaMoose/tremvok/releases/tag/v2.0.0
