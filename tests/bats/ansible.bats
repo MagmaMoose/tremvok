@@ -113,6 +113,49 @@ pem_fixture() {
   ! grep -q 'SECRETMATERIAL0000' "$STUB_LOG"
 }
 
+@test "a Vault reference is resolved, masked and written like a literal key" {
+  # The point of the feature: where Vault is already the source of truth, rotating there
+  # keeps rotating here, instead of a copy in a second store going quietly stale.
+  stub_script vault-read.sh <<'STUBEOF'
+#!/usr/bin/env bash
+printf 'vault-read %s\n' "$*" >>"${STUB_LOG}"
+printf -- '-----BEGIN OPENSSH %s-----\n%s\n-----END OPENSSH %s-----\n' 'PRIVATE KEY' 'RkVUQ0hFRA==' 'PRIVATE KEY'
+STUBEOF
+
+  VAULT_READ_BIN="${STUB_BIN}/vault-read.sh" \
+    SSH_PRIVATE_KEY_VAULT='secret/data/team/app#ssh_private_key' \
+    run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'vault-read secret/data/team/app#ssh_private_key' "$STUB_LOG"
+  grep -q -- '--private-key' "$STUB_LOG"
+  # Resolved from Vault, then masked exactly like a literal: same one path, not two.
+  [[ "$output" == *"::add-mask::RkVUQ0hFRA=="* ]]
+}
+
+@test "a Vault read that fails stops the run, rather than proceeding with no key" {
+  # The failure mode this guards: an empty value skips the masking-and-write block entirely,
+  # ansible is handed no --private-key, and it surfaces as an SSH auth error a long way from
+  # the cause.
+  stub_script vault-read.sh <<'STUBEOF'
+#!/usr/bin/env bash
+echo "::error::Vault has nothing at that path (404)." >&2
+exit 1
+STUBEOF
+  VAULT_READ_BIN="${STUB_BIN}/vault-read.sh" \
+    SSH_PRIVATE_KEY_VAULT='secret/data/team/app#ssh_private_key' \
+    run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -ne 0 ]
+  ! grep -q 'ansible-playbook' "$STUB_LOG"
+}
+
+@test "a literal and a Vault reference together is a mistake, not a preference" {
+  SSH_PRIVATE_KEY="$(pem_fixture b3BlbnNzaC1rZXktdjEAAAAA)" \
+    SSH_PRIVATE_KEY_VAULT='secret/data/team/app#ssh_private_key' \
+    run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"both set"* ]]
+}
+
 @test "the vault password is masked and passed as a file" {
   VAULT_PASSWORD=hunter2-hunter2 run bash "${SCRIPTS}/deploy-ansible.sh"
   [[ "$output" == *"::add-mask::hunter2-hunter2"* ]]

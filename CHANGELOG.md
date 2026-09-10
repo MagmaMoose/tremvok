@@ -39,6 +39,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Ansible secrets can be read from HashiCorp Vault.** `vault-addr` + `vault-token`, then
+  name a secret by `<path>#<field>` with `ansible-ssh-private-key-vault`,
+  `ansible-ssh-known-hosts-vault` or `ansible-vault-password-vault`. Copying a secret that
+  already lives in Vault into a GitHub secret means rotating it in Vault silently stops
+  rotating the copy; this removes the copy. Each `-vault` input is the alternative to its
+  literal, never a supplement, and setting both fails. KV v1 and v2 both work without the
+  caller declaring which. The value is masked and written to a `0600` file on the same single
+  path a literal takes, and a failed read fails the run rather than proceeding with no key,
+  which would surface as an SSH auth error a long way from the cause.
+
 - **`target: cloudflare-workers`** — deploy a Worker and its static assets with Wrangler.
   `mode: deploy` runs `wrangler deploy`; `mode: preview` runs
   `wrangler versions upload --preview-alias pr-<N>`, which uploads a version reachable on its

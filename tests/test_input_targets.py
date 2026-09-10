@@ -80,7 +80,12 @@ def test_target_specific_inputs_are_named_for_their_target():
         "s3-cloudfront": ("s3-", "cloudfront-", "artifact-"),
         "lambda-zip": ("lambda-", "s3-", "artifact-"),
         "terragrunt": ("terragrunt-",),
-        "ansible": ("ansible-",),
+        # `vault-` is HashiCorp Vault, and it is deliberately NOT `ansible-vault-`: that
+        # prefix already means ansible-vault, the file-encryption tool, and
+        # `ansible-vault-password` sits three lines away from it in the same input list.
+        # Two different products called Vault in one surface is worth one exception to the
+        # prefix rule; collapsing them into one prefix would be worse than the exception.
+        "ansible": ("ansible-", "vault-"),
         "cloudflare-workers": ("cloudflare-", "artifact-"),
     }
     data = json.loads(MAP.read_text())["inputs"]

@@ -202,6 +202,31 @@ tidy-up ends up planning the whole estate. `terragrunt-scope: all` plans everyth
 
 ## `target: ansible`
 
+### `Vault has nothing at '<path>' (404)`
+
+On a KV v2 mount the read path carries a `/data/` segment that the UI path does not:
+`secret/data/team/app`, not `secret/team/app`. That is the cause almost every time.
+
+### `Vault refused the token for '<path>' (403)`
+
+The token is valid and its policy doesn't grant read on that path. It needs read on the
+paths you reference and nothing else.
+
+### `Vault has '<path>' but no field '<field>' in it. Fields present: ...`
+
+The reference is `<path>#<field>` and the field half doesn't exist. The message lists the
+field names that do, never their values.
+
+### `cannot reach Vault at <addr> (no response)`
+
+From a private network this usually means the runner isn't on it. Check `runs-on` before
+checking the address.
+
+### `ansible-ssh-private-key and ansible-ssh-private-key-vault are both set`
+
+Pick one. A literal secret and a Vault reference to the same thing is a mistake worth failing
+on, rather than one silently winning.
+
 ### `the playbook is not idempotent: a second check-mode run still wants to change <n> task(s) on <hosts>`
 
 The playbook applied cleanly and then, run again in check mode, still reported changes. That

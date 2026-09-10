@@ -385,6 +385,42 @@
       ],
       "default": ""
     },
+    "vault-addr": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "vault-token": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "vault-namespace": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-ssh-private-key-vault": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-ssh-known-hosts-vault": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
+    "ansible-vault-password-vault": {
+      "targets": [
+        "ansible"
+      ],
+      "default": ""
+    },
     "ansible-verify-idempotence": {
       "targets": [
         "ansible"

@@ -36,6 +36,11 @@ SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}"
 SSH_USER="${SSH_USER:-}"
 SSH_KNOWN_HOSTS="${SSH_KNOWN_HOSTS:-}"
 VAULT_PASSWORD="${VAULT_PASSWORD:-}"
+# Vault references, `<path>#<field>`. Each is the alternative to the literal above it, never
+# a supplement: setting both is a mistake worth failing on rather than silently preferring one.
+SSH_PRIVATE_KEY_VAULT="${SSH_PRIVATE_KEY_VAULT:-}"
+SSH_KNOWN_HOSTS_VAULT="${SSH_KNOWN_HOSTS_VAULT:-}"
+VAULT_PASSWORD_VAULT="${VAULT_PASSWORD_VAULT:-}"
 VERIFY_IDEMPOTENCE="${VERIFY_IDEMPOTENCE:-true}"
 EVENT_NAME="${EVENT_NAME:-}"
 DRY_RUN="${DRY_RUN:-false}"
@@ -58,6 +63,33 @@ case "$CHECK" in
   *) tremvok::fail "ansible-check must be auto, true or false (got '${CHECK}')" ;;
 esac
 tremvok::is_true "$DRY_RUN" && check_mode=true
+
+# ── secrets: resolve any that live in Vault ──────────────────────────────────────────────
+# Done before anything is written to disk, so the rest of this script cannot tell where a
+# secret came from and there is exactly one masking and cleanup path rather than two.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Overridable so bats can put a recorder in front of it; production always uses the script
+# next to this one.
+VAULT_READ_BIN="${VAULT_READ_BIN:-${here}/vault-read.sh}"
+
+from_vault() { # literal  reference  input-name
+  local literal="$1" reference="$2" name="$3"
+  if [[ -n "$literal" && -n "$reference" ]]; then
+    tremvok::fail "${name} and ${name}-vault are both set. Pick one: a literal secret, or a Vault reference to it."
+  fi
+  if [[ -z "$reference" ]]; then
+    printf '%s' "$literal"
+    return 0
+  fi
+  # No `|| true`: a Vault read that fails must fail the run. Continuing with an empty value
+  # would skip the masking block below and hand ansible no key, which surfaces as an SSH
+  # auth error a long way from the cause.
+  bash "$VAULT_READ_BIN" "$reference"
+}
+
+SSH_PRIVATE_KEY="$(from_vault "$SSH_PRIVATE_KEY" "$SSH_PRIVATE_KEY_VAULT" ansible-ssh-private-key)"
+SSH_KNOWN_HOSTS="$(from_vault "$SSH_KNOWN_HOSTS" "$SSH_KNOWN_HOSTS_VAULT" ansible-ssh-known-hosts)"
+VAULT_PASSWORD="$(from_vault "$VAULT_PASSWORD" "$VAULT_PASSWORD_VAULT" ansible-vault-password)"
 
 # ── secrets, on disk and nowhere else ────────────────────────────────────────────────────
 work="${RUNNER_TEMP:-/tmp}/tremvok-ansible.$$"
