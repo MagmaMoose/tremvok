@@ -23,6 +23,8 @@ dest=""
 prev=""
 for a in "$@"; do
   [ "$prev" = "-o" ] && dest="$a"
+  # Log config file contents so header assertions still work after the token moved off argv.
+  [ "$prev" = "-K" ] && cat "$a" >>"${STUB_LOG}"
   prev="$a"
 done
 # Two lines, not `${VAULT_BODY:-{...}}`: a brace inside the default closes the parameter

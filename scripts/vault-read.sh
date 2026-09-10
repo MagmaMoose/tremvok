@@ -45,14 +45,17 @@ field="${reference##*#}"
 # that is plainly there, which is a confusing five minutes.
 path="${path#/}"
 
-headers=( -H "X-Vault-Token: ${VAULT_TOKEN}" )
-[[ -n "$VAULT_NAMESPACE" ]] && headers+=( -H "X-Vault-Namespace: ${VAULT_NAMESPACE}" )
-
 body_file="$(mktemp)"
-trap 'rm -f "$body_file"' EXIT
+config_file="$(mktemp)"
+trap 'rm -f "$body_file" "$config_file"' EXIT
+
+# Write headers to a curl config file rather than argv so the token never appears in
+# /proc/PID/cmdline, which is readable by co-located processes on a shared self-hosted runner.
+printf 'header = "X-Vault-Token: %s"\n' "$VAULT_TOKEN" > "$config_file"
+[[ -n "$VAULT_NAMESPACE" ]] && printf 'header = "X-Vault-Namespace: %s"\n' "$VAULT_NAMESPACE" >> "$config_file"
 
 status="$(curl -sS --retry 2 --max-time 30 -o "$body_file" -w '%{http_code}' \
-  "${headers[@]}" "${VAULT_ADDR%/}/v1/${path}" || printf '000')"
+  -K "$config_file" "${VAULT_ADDR%/}/v1/${path}" || printf '000')"
 
 case "$status" in
   200) ;;
