@@ -49,6 +49,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   path a literal takes, and a failed read fails the run rather than proceeding with no key,
   which would surface as an SSH auth error a long way from the cause.
 
+- **`terragrunt-stack-env`**: environment applied per stack, one `<glob> KEY=VALUE` per line,
+  first match wins. For an estate whose production Terraform state lives in a separate
+  storage account from the rest: one credential cannot reach both, so without this the only
+  options are a job per credential class or a pipeline that fails on the first stack of the
+  other kind. Values are passed with `env` rather than exported, so one stack's credential
+  never reaches the next stack's run, and the apply gets the same environment the plan got.
+
 - **`target: cloudflare-workers`** — deploy a Worker and its static assets with Wrangler.
   `mode: deploy` runs `wrangler deploy`; `mode: preview` runs
   `wrangler versions upload --preview-alias pr-<N>`, which uploads a version reachable on its

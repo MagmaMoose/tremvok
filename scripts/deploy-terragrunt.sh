@@ -33,6 +33,12 @@ APPLY="${APPLY:-auto}"                 # auto | never | force
 # Comma-separated GitHub logins allowed to force an apply by hand. Unset means nobody can:
 # the manual path fails closed. The normal path is an independent approval and needs none.
 APPLY_OPERATORS="${APPLY_OPERATORS:-}"
+# Per-stack environment. One `<glob> KEY=VALUE` per line, first match wins, so a specific
+# pattern goes above the catch-all exactly as it would in a `case`. Exists because a state
+# backend credential is per-account, not per-run: an estate whose prd state lives in a
+# different account (a deliberate blast-radius boundary, not an accident) cannot be planned
+# with one credential, and without this the choice is one job per credential class.
+STACK_ENV="${STACK_ENV:-}"
 CHECK_NAME="${CHECK_NAME:-Terragrunt apply}"
 RUN_URL="${RUN_URL:-}"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}/tremvok-terragrunt}"
@@ -41,6 +47,53 @@ MAX_COMMENT_EXCERPT="${MAX_COMMENT_EXCERPT:-6000}"
 
 mkdir -p "$WORK_DIR"
 
+# Emits the KEY=VALUE lines that apply to one stack: every line whose glob matches, first
+# match per KEY winning. Deliberately NOT eval'd, and deliberately not echoed: these values
+# are credentials.
+validate_stack_env() {
+  local line pattern assignment
+  [[ -n "$STACK_ENV" ]] || return 0
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -n "$line" && "$line" != '#'* ]] || continue
+    pattern="${line%%[[:space:]]*}"
+    assignment="${line#"$pattern"}"
+    assignment="${assignment#"${assignment%%[![:space:]]*}"}"
+    [[ -n "$assignment" ]] \
+      || tremvok::fail "terragrunt-stack-env line '${line}' has a pattern but no KEY=VALUE after it"
+    case "$assignment" in
+      [A-Za-z_]*=*) ;;
+      *) tremvok::fail "terragrunt-stack-env line '${line}' does not assign a KEY=VALUE" ;;
+    esac
+  done <<<"$STACK_ENV"
+}
+
+stack_env_for() { # stack
+  local stack="$1" line pattern assignment key
+  local seen=""
+  [[ -n "$STACK_ENV" ]] || return 0
+  while IFS= read -r line; do
+    # Leading and trailing whitespace, and blank or commented lines, are the difference
+    # between a YAML block scalar a human wrote and one a parser likes.
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -n "$line" && "$line" != '#'* ]] || continue
+    pattern="${line%%[[:space:]]*}"
+    assignment="${line#"$pattern"}"
+    assignment="${assignment#"${assignment%%[![:space:]]*}"}"
+    # shellcheck disable=SC2254  # the pattern is data on purpose: it is a glob from input
+    case "$stack" in
+      $pattern) ;;
+      *) continue ;;
+    esac
+    key="${assignment%%=*}"
+    case " ${seen} " in
+      *" ${key} "*) continue ;;   # an earlier line already set it; first match wins
+    esac
+    seen="${seen}${key} "
+    printf '%s\n' "$assignment"
+  done <<<"$STACK_ENV"
+}
+
 sanitize() { printf '%s' "$1" | tr -c 'A-Za-z0-9' '-' | sed -E 's/-+/-/g; s/-$//'; }
 
 # `sed 's/^./\U&/'` is a GNU extension that BSD sed (macOS) silently does not apply, so the
@@ -48,6 +101,8 @@ sanitize() { printf '%s' "$1" | tr -c 'A-Za-z0-9' '-' | sed -E 's/-+/-/g; s/-$//
 capitalize() {
   printf '%s%s' "$(printf '%s' "${1:0:1}" | tr '[:lower:]' '[:upper:]')" "${1:1}"
 }
+
+validate_stack_env
 
 # ── which stacks ─────────────────────────────────────────────────────────────────────────
 scope="$SCOPE"
@@ -109,7 +164,11 @@ for stack in "${stacks[@]}"; do
     # Deliberately not `|| true`: the status file is the result, and the exit code is only
     # used to decide whether to print the tail of the log.
     set +e
-    "${here}/terragrunt-run.sh" plan "$stack" "$out"
+    stack_env=()
+    while IFS= read -r assignment; do
+      [[ -n "$assignment" ]] && stack_env+=( "$assignment" )
+    done < <(stack_env_for "$stack")
+    env ${stack_env[@]+"${stack_env[@]}"} "${here}/terragrunt-run.sh" plan "$stack" "$out"
     code=$?
     set -e
   fi
@@ -261,7 +320,12 @@ if [[ "$may_apply" == true ]]; then
       # The plan run's directory, so apply picks up the plan file it wrote rather than
       # producing a second one. That is the whole return on collapsing this to one job: what
       # is applied is the diff that was reviewed, and when it has gone stale the run says so.
-      PLAN_DIR="${WORK_DIR}/plan/$(sanitize "$stack")" \
+      stack_env=()
+      while IFS= read -r assignment; do
+        [[ -n "$assignment" ]] && stack_env+=( "$assignment" )
+      done < <(stack_env_for "$stack")
+      env ${stack_env[@]+"${stack_env[@]}"} \
+        PLAN_DIR="${WORK_DIR}/plan/$(sanitize "$stack")" \
         "${here}/terragrunt-run.sh" apply "$stack" "$out"
       code=$?
       set -e

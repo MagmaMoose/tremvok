@@ -235,6 +235,12 @@
       ],
       "default": ""
     },
+    "terragrunt-stack-env": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
     "terragrunt-check-name": {
       "targets": [
         "terragrunt"

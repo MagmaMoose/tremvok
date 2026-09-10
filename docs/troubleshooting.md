@@ -166,6 +166,17 @@ domain already claimed by another Worker, which fails at the bind after a succes
 
 ## `target: terragrunt`
 
+### `terragrunt-stack-env line '<line>' has a pattern but no KEY=VALUE after it`
+
+Every non-blank, non-comment line is `<glob>` then whitespace then `KEY=VALUE`. A pattern on
+its own is refused rather than skipped, because a silently dropped line means a stack runs
+with no credential and fails at `init` with something far less specific.
+
+### A stack initialises against the wrong state account
+
+Order decides it: the first matching line wins for a given key, so a `*` catch-all above a
+`*/prod/*` pattern captures everything. Put the specific pattern first.
+
 ### `<n> stack(s) failed to plan`
 
 The pull-request comment carries a redacted excerpt per stack. Nothing applies while any stack

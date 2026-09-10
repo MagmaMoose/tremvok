@@ -235,6 +235,24 @@ inputs:
     required: false
     default: ''
 
+  terragrunt-stack-env:
+    description: |
+      terragrunt: environment applied per stack, one `<glob> KEY=VALUE` per line. The first
+      matching line wins for a given KEY, so a specific pattern goes above the catch-all
+      exactly as it would in a `case`. Blank lines and `#` comments are ignored.
+
+        */prd/*|*/prod/*  ARM_ACCESS_KEY=${{ secrets.PRD_STATE_KEY }}
+        *                 ARM_ACCESS_KEY=${{ secrets.STATE_KEY }}
+
+      For an estate whose production state lives in a separate account from the rest, which
+      is a deliberate blast-radius boundary rather than an accident: one credential cannot
+      reach both, and without this the only options are a job per credential class or a
+      pipeline that fails on the first stack of the other kind. The values are secrets, so
+      they are passed to each run with `env` rather than exported into the shell, and one
+      stack's credential never reaches the next stack's run.
+    required: false
+    default: ''
+
   terragrunt-check-name:
     description: 'terragrunt: name of the check run published against the head commit. Make it a required check to enforce apply-before-merge.'
     required: false
@@ -886,6 +904,7 @@ runs:
         SCOPE: ${{ inputs.terragrunt-scope }}
         APPLY: ${{ inputs.terragrunt-apply }}
         APPLY_OPERATORS: ${{ inputs.terragrunt-apply-operators }}
+        STACK_ENV: ${{ inputs.terragrunt-stack-env }}
         CHECK_NAME: ${{ inputs.terragrunt-check-name }}
         TG_REFRESH: ${{ inputs.terragrunt-refresh }}
         TG_TIMEOUT: ${{ inputs.terragrunt-timeout }}
