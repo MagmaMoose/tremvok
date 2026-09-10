@@ -147,6 +147,13 @@
       ],
       "default": "true"
     },
+    "build-git-credentials": {
+      "targets": [
+        "github-pages",
+        "cloudflare-workers"
+      ],
+      "default": ""
+    },
     "artifact-path": {
       "targets": [
         "s3-cloudfront",

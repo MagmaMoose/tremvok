@@ -16,8 +16,9 @@ branding:
 # with `s3-bucket` set is a mistake, and it is reported as one.
 #
 # Input names carry their target as a prefix (`pages-`, `s3-`, `cloudfront-`,
-# `lambda-`, `terragrunt-`, `ansible-`), with `aws-` for what every AWS target shares
-# and no prefix for what every target shares. The mapping is generated from the
+# `lambda-`, `terragrunt-`, `ansible-`), with `aws-` for what every AWS target shares,
+# `build-` for what the two targets that run a build share, and no prefix for what
+# every target shares. The mapping is generated from the
 # descriptions below into scripts/lib/input-targets.json, which is what the validator
 # reads and what `tests/test_input_targets.py` keeps honest.
 #
@@ -151,6 +152,34 @@ inputs:
       gate on net-new findings anyway.
     required: false
     default: 'true'
+
+  # ── targets that run a build: github-pages, cloudflare-workers ───────────
+  build-git-credentials:
+    description: |
+      github-pages, cloudflare-workers: credentials for the private git hosts the build fetches
+      from, one `<host> <username>:<token>` per line. Empty (default) changes nothing.
+
+        git.example.invalid  x-access-token:<a short-lived token>
+
+      A docs build that installs its theme with `pkg @ git+https://<host>/<org>/<repo>.git@<tag>`
+      needs that clone authenticated, and the clone is git's own, several processes below this
+      action. Each line becomes one `url.<credentialled>.insteadOf` rewrite carried in
+      GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n for the rest of this job, so the
+      requirements file keeps pinning the plain URL and stays reviewable. Never
+      `git config --global`: a self-hosted runner is shared and long-lived, and a global rewrite
+      would leave the token in `~/.gitconfig` for whatever runs on that machine next.
+
+      The username is written out rather than assumed, because the forges disagree about it:
+      `x-access-token` for a GitHub App token, `oauth2` for a GitLab one. The split is at the
+      FIRST `:`, which is the safe way round — the username is the half that cannot contain one,
+      so a token that does survives intact.
+
+      Every token is masked on receipt and never echoed. A malformed line is refused by index
+      and host, and the host is only quoted when it looks like one, because a bare token pasted
+      as a line would otherwise be printed into an annotation as public as the repository. Blank
+      lines and `#` comments are ignored.
+    required: false
+    default: ''
 
   # ── targets: s3-cloudfront, lambda-zip ───────────────────────────────────
   artifact-path:
@@ -791,6 +820,16 @@ runs:
         TARGET: ${{ inputs.target }}
         ALLOW_FORK_PREVIEW: ${{ inputs.allow-fork-preview }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/preflight.sh"
+
+    # Before either build, because both fetch their dependencies before they run. The
+    # rewrites go into this job's environment and nowhere else: `git config --global` would
+    # leave the token in ~/.gitconfig on a runner that may be self-hosted and shared.
+    - name: Authenticate the build against private git hosts
+      if: steps.preflight.outputs.skip != 'true' && inputs.build-git-credentials != ''
+      shell: bash
+      env:
+        BUILD_GIT_CREDENTIALS: ${{ inputs.build-git-credentials }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/build-git-credentials.sh"
 
     # ── target: github-pages ─────────────────────────────────────────────────────────
     # Detection rather than declaration: uv.lock in the tree is the fact, and a caller

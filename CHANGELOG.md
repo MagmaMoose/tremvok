@@ -39,6 +39,30 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`build-git-credentials`** (default empty, so nothing changes for an existing caller): the
+  two targets that run a build, `github-pages` and `cloudflare-workers`, can now fetch a
+  dependency from a private git host. One `<host> <username>:<token>` per line, and the
+  username is written out rather than assumed because the forges disagree about it
+  (`x-access-token` for a GitHub App token, `oauth2` for a GitLab one). The line is split at
+  the FIRST `:`, which is the safe way round: the username is the half that cannot contain
+  one, so a token that does survives intact.
+
+  Each line becomes one `url.<credentialled>.insteadOf` rewrite carried in `GIT_CONFIG_COUNT`
+  / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` for the rest of the job, so a requirements file
+  keeps pinning the plain URL and stays reviewable. Never `git config --global`: a self-hosted
+  runner is a shared, long-lived machine, and a global rewrite would leave the token in
+  `~/.gitconfig` for whatever runs there next. An existing `GIT_CONFIG_COUNT` is extended
+  rather than overwritten, and the count is written last, so a line refused halfway through
+  leaves the configuration the job already had exactly as it was.
+
+  Every token is registered with `::add-mask::` on receipt, before any check can fail, and no
+  message ever carries one: a malformed line is named by its index and its host, and the host
+  is only quoted when it looks like a host — a bare token pasted onto a line would otherwise
+  be printed into an annotation as public as the repository. A token under eight characters is
+  refused rather than masked, because masking a string that short replaces every occurrence of
+  it in every later line of the log. `scripts/build-git-credentials.sh`,
+  `tests/bats/build_git_credentials.bats`.
+
 - **`terragrunt-apply-on-merge`** (default `false`): a push to the default branch can now
   apply what was merged. **The default is unchanged for existing callers.** With it off, which
   is what you get on upgrade, a push plans exactly as it always has: no commit-to-pull-request

@@ -48,6 +48,46 @@ build is the check, and it can't publish by accident.
 
 Set **Settings → Pages → Source = "GitHub Actions"** once per repository.
 
+#### Installing a dependency from a private git repository
+
+A docs build often pins its theme straight to a private repository:
+
+```text
+mkdocs-yourtheme @ git+https://git.example.invalid/your-org/theme.git@v1.1.2#subdirectory=theme
+```
+
+That clone is git's own, several processes below the action, so there is no flag to pass a
+token on. `build-git-credentials` leaves one where git will find it, one
+`<host> <username>:<token>` per line:
+
+```yaml
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: github-pages
+          build-git-credentials: |
+            git.example.invalid  x-access-token:${{ steps.app-token.outputs.token }}
+```
+
+Each line becomes a `url.<credentialled>.insteadOf` rewrite carried in `GIT_CONFIG_COUNT` /
+`GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`, which live in the job's environment and end with
+the job. Requirements files keep pinning the plain URL, so they stay reviewable. Don't reach
+for `git config --global` in a step of your own instead: a self-hosted runner is a shared,
+long-lived machine, and a global rewrite leaves the token in `~/.gitconfig` for whatever runs
+there next.
+
+Write the username out, because the forges disagree about it: `x-access-token` goes with a
+GitHub App installation token, `oauth2` with a GitLab one. Prefer a short-lived App token
+(`actions/create-github-app-token`) over a personal access token — it expires within the hour
+and it only reaches the repositories the installation was given.
+
+`cloudflare-workers` takes the same input for the same reason: its build runs on the runner
+too.
+
+Every token is masked the moment it is read, and none is ever echoed. A line the action
+refuses is named by its index and its host, and the host is only quoted when it looks like
+one, because a bare token pasted onto a line would otherwise be printed into an annotation as
+public as the repository.
+
 ### `cloudflare-workers`
 
 ```yaml
