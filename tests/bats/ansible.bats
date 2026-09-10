@@ -28,6 +28,16 @@ else
   : >"${STUB_LOG}.ran"
   changed="${RECAP_CHANGED:-1}"
 fi
+printf 'VAULT_ADDR=%s VAULT_TOKEN=%s VAULT_NAMESPACE=%s\n' \
+  "${VAULT_ADDR:-<unset>}" "${VAULT_TOKEN:-<unset>}" "${VAULT_NAMESPACE:-<unset>}" >>"${STUB_LOG}.env"
+# The rest of what the step's own env carries. A playbook can read every one of these, so
+# what the process can see is the thing worth asserting on.
+printf 'SSH_PRIVATE_KEY=%s SSH_KNOWN_HOSTS=%s VAULT_PASSWORD=%s\n' \
+  "${SSH_PRIVATE_KEY:-<unset>}" "${SSH_KNOWN_HOSTS:-<unset>}" "${VAULT_PASSWORD:-<unset>}" \
+  >>"${STUB_LOG}.env"
+printf 'SSH_PRIVATE_KEY_VAULT=%s SSH_KNOWN_HOSTS_VAULT=%s VAULT_PASSWORD_VAULT=%s\n' \
+  "${SSH_PRIVATE_KEY_VAULT:-<unset>}" "${SSH_KNOWN_HOSTS_VAULT:-<unset>}" \
+  "${VAULT_PASSWORD_VAULT:-<unset>}" >>"${STUB_LOG}.env"
 printf 'PLAY RECAP ****\n'
 printf 'host-a : ok=3 changed=%s unreachable=0 failed=0\n' "$changed"
 exit "${PLAY_EXIT:-0}"
@@ -242,4 +252,82 @@ printf 'host-b : ok=3 changed=4 unreachable=0 failed=0\n'
 STUBEOF
   VERIFY_IDEMPOTENCE=false run bash "${SCRIPTS}/deploy-ansible.sh"
   [ "$(output_value changed-tasks)" = "4" ]
+}
+
+
+# --- HashiCorp Vault, and what the playbook inherits ----------------------------------------
+
+@test "the playbook does not inherit the Vault token by default, so a token scoped to three fields is not silently handed to every task in the play" {
+  # The step's own env carries VAULT_ADDR and VAULT_TOKEN so vault-read.sh can use them, and
+  # every child process inherits that env. Without the removal below, opting in would be the
+  # default and nobody would have chosen it.
+  VAULT_ADDR=https://vault.example.com VAULT_TOKEN=hvs.tokenvalue VAULT_NAMESPACE=team \
+    run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'VAULT_ADDR=<unset>' "${STUB_LOG}.env"
+  grep -q 'VAULT_TOKEN=<unset>' "${STUB_LOG}.env"
+  grep -q 'VAULT_NAMESPACE=<unset>' "${STUB_LOG}.env"
+  ! grep -q 'hvs.tokenvalue' "${STUB_LOG}.env"
+}
+
+@test "ansible-vault-passthrough hands the playbook the same Vault the action reads, so its secrets need no second copy that stops being rotated" {
+  VAULT_PASSTHROUGH=true VAULT_ADDR=https://vault.example.com VAULT_TOKEN=hvs.tokenvalue \
+    VAULT_NAMESPACE=team run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'VAULT_ADDR=https://vault.example.com' "${STUB_LOG}.env"
+  grep -q 'VAULT_TOKEN=hvs.tokenvalue' "${STUB_LOG}.env"
+  grep -q 'VAULT_NAMESPACE=team' "${STUB_LOG}.env"
+}
+
+@test "the passed-through token is masked, so it cannot reach the log through the playbook's own output" {
+  VAULT_PASSTHROUGH=true VAULT_ADDR=https://vault.example.com VAULT_TOKEN=hvs.tokenvalue \
+    run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::add-mask::hvs.tokenvalue"* ]]
+}
+
+@test "passthrough without both vault-addr and vault-token hands the playbook nothing, rather than half a credential that fails inside a task" {
+  VAULT_PASSTHROUGH=true VAULT_ADDR=https://vault.example.com run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'VAULT_ADDR=<unset>' "${STUB_LOG}.env"
+  [[ "$output" == *"::warning::"* ]]
+  [[ "$output" == *"inherits neither"* ]]
+}
+
+@test "the playbook process sees neither the SSH private key nor the ansible-vault password, so a role or collection in the play cannot read the two most sensitive values this target handles" {
+  # They reach this step as environment variables and are inherited by every child process,
+  # ansible-playbook included. The block that unsets HashiCorp Vault's token enforced a third
+  # of its own stated threat model without this: the two it left were the sensitive ones.
+  SSH_PRIVATE_KEY='-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAAsecretkeymaterial
+-----END OPENSSH PRIVATE KEY-----' \
+    SSH_KNOWN_HOSTS='host-a ssh-ed25519 AAAAC3Nz' \
+    VAULT_PASSWORD='vaultpassphrase' \
+    run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'SSH_PRIVATE_KEY=<unset>' "${STUB_LOG}.env"
+  grep -q 'SSH_KNOWN_HOSTS=<unset>' "${STUB_LOG}.env"
+  grep -q 'VAULT_PASSWORD=<unset>' "${STUB_LOG}.env"
+  refute grep -q 'secretkeymaterial' "${STUB_LOG}.env"
+  refute grep -q 'vaultpassphrase' "${STUB_LOG}.env"
+  # The files are what the flags point at, so unsetting the variables costs the run nothing.
+  grep -q -- '--private-key' "$STUB_LOG"
+  grep -q -- '--vault-password-file' "$STUB_LOG"
+}
+
+@test "the Vault references go too, because <path>#<field> is a map of where a secret lives and the playbook has no use for it" {
+  stub_script vault-read.sh <<'STUBEOF'
+#!/usr/bin/env bash
+printf 'vault-read %s\n' "$*" >>"${STUB_LOG}"
+printf 'resolved-secret-value'
+STUBEOF
+  VAULT_READ_BIN="${STUB_BIN}/vault-read.sh" \
+    SSH_PRIVATE_KEY_VAULT='secret/data/team/app#ssh_private_key' \
+    VAULT_PASSWORD_VAULT='secret/data/team/app#vault_password' \
+    run bash "${SCRIPTS}/deploy-ansible.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'SSH_PRIVATE_KEY_VAULT=<unset>' "${STUB_LOG}.env"
+  grep -q 'VAULT_PASSWORD_VAULT=<unset>' "${STUB_LOG}.env"
+  # And the value it resolved is gone from the playbook's environment as well.
+  ! grep -q 'resolved-secret-value' "${STUB_LOG}.env"
 }

@@ -223,11 +223,23 @@
       ],
       "default": "auto"
     },
+    "terragrunt-pull-request": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
     "terragrunt-apply": {
       "targets": [
         "terragrunt"
       ],
       "default": "auto"
+    },
+    "terragrunt-apply-on-merge": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "false"
     },
     "terragrunt-apply-operators": {
       "targets": [
@@ -282,6 +294,12 @@
         "terragrunt"
       ],
       "default": "900"
+    },
+    "terragrunt-preflight-urls": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
     },
     "terragrunt-log-level": {
       "targets": [
@@ -408,6 +426,12 @@
         "ansible"
       ],
       "default": ""
+    },
+    "ansible-vault-passthrough": {
+      "targets": [
+        "ansible"
+      ],
+      "default": "false"
     },
     "ansible-ssh-private-key-vault": {
       "targets": [

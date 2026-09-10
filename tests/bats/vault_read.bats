@@ -66,7 +66,7 @@ STUBEOF
 
 @test "a namespace is sent only when one is set" {
   run bash "${SCRIPTS}/vault-read.sh" 'secret/data/team/app#ssh_private_key'
-  ! grep -q 'X-Vault-Namespace' "$STUB_LOG"
+  refute grep -q 'X-Vault-Namespace' "$STUB_LOG"
   : >"$STUB_LOG"
   VAULT_NAMESPACE=admin/team run bash "${SCRIPTS}/vault-read.sh" 'secret/data/team/app#ssh_private_key'
   grep -q 'X-Vault-Namespace: admin/team' "$STUB_LOG"

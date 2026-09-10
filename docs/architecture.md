@@ -51,7 +51,7 @@ they are wrong.
 Python is used for the things that never run on a caller's runner in the deploy path: the two
 generators, the repo-shape linter, the Lambda packager, and the pytest contract suite. Adding
 a Python dependency to a target adapter would mean a `setup-python` step on every AWS run, and
-put that code outside the bash contract the other 190 tests enforce.
+put that code outside the bash contract the other 300-odd tests enforce.
 
 ## The one job the action hands back
 
@@ -59,7 +59,9 @@ put that code outside the bash contract the other 190 tests enforce.
 composite action can declare neither. So `target: github-pages` builds and stages the
 artifact and the caller publishes it. That is the only place an `environment:` is
 load-bearing: the Terragrunt apply gate is the action's own logic (`approval-gate.sh` reads
-the pull request's reviews), and needs none.
+the pull request's reviews), and needs none. On a push to the default branch there is no pull
+request in the event, so `resolve-merged-pr.sh` finds the one the commit was merged from
+first, and on a manual run `terragrunt-pull-request` names it outright.
 
 It is also why that target takes no destination input. There is one Pages site and no preview
 destination for it, so a pull request (`mode: preview`) and a dry run build without staging an
@@ -85,6 +87,9 @@ fleet.
 | A pinned, checksum-verified tofu/terragrunt, and a pinned Wrangler | the binary that publishes to production is the one input nobody reviews when it floats |
 | Publish the check run even with **zero** stacks | a required check that never reports blocks the pull request forever |
 | An unreadable review list is an error, not "nobody approved" | the difference between "wait for approval" and "apply without one" |
+| "No merged pull request" and "the API could not be read" are different exit codes | an outage on the push path would otherwise read as an unapproved merge, and be reported as one |
+| Probe the terragrunt endpoints before the first plan | terragrunt buffers plan output to a file, so an unreachable state backend is a silent wait until the timeout, not an error |
+| The playbook does not inherit the action's Vault token unless asked | a token scoped to three fields becomes one every task, role and collection can use, by accident |
 | Honest skips for forks and unwired repositories | an expected policy outcome presenting as a broken credential |
 | Failure-isolated sinks | a chat outage failing a successful deploy, inviting a re-run that deploys again |
 

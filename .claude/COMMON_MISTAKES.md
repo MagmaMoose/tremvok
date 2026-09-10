@@ -102,7 +102,7 @@ the **last** iteration hits an excluded directory. With `pipefail` that fails th
 
 ## `cmd | tee log` reports *tee's* exit code
 
-The bug dunmir documented paying for: a failed deploy "reported success". `pipefail` is set in
+The bug an earlier deploy pipeline paid for: a failed deploy "reported success". `pipefail` is set in
 every script here for this reason, and `terragrunt-run.sh` buffers to a file rather than piping.
 
 ## An empty build directory plus `aws s3 sync --delete` is an outage, and exits 0
@@ -177,3 +177,77 @@ the case that trips it, and the error names the wrong thing:
 On by default in CLI v1 (`cli_follow_urlparam`). Use `--cli-input-json`, which is not subject to
 the expansion on any version — `seed.sh` and the production instructions in
 `terraform/README.md` both do.
+
+## Terragrunt buffers plan output, so an unreachable endpoint is a hang and not an error
+
+`terragrunt-run.sh` sends every invocation's output to a file, which is what keeps a plan
+excerpt redactable. The cost: a state backend or provider API the runner cannot reach produces
+no output and no error, just an idle process until `terragrunt-timeout` (900s) or the job limit.
+The log is empty for fifteen minutes and then says the run was killed, which points at
+terragrunt rather than at the network.
+
+The usual cause is an IP allowlist on the state backend that does not include the runner's
+egress address. `terragrunt-preflight-urls` probes each named endpoint once, bounded at 8
+seconds, before the first plan, and prints the egress IP when one does not answer.
+
+Two rules in that check are the ones most likely to be "fixed" by someone who does not know
+them: **401 and 403 pass** (an unauthenticated probe of a credentialed endpoint is supposed to
+be refused, and being refused is proof of life), and **5xx passes with a warning** (a 502 from
+a load balancer still proves DNS, routing and TLS; failing on it would trade a rare real catch
+for regular flakes, and a flaky guard gets deleted). Only curl code `000` fails.
+
+## An outage on the push path reads as an unapproved merge unless the exit codes differ
+
+A push to the default branch has no pull request in its event, so the approval that authorises
+the apply is found by asking the API which pull request the commit was merged from. Only when
+`terragrunt-apply-on-merge` is on: off (the default) a push does not ask at all, which is what
+keeps an upgrade from turning a merge into an apply. When it does ask, the question has three
+answers, and two of them look identical if only truthiness is checked:
+
+    0   a merged pull request, its number on stdout
+    2   the API answered; this commit came from no merged pull request
+    1   the API could not be read
+
+Collapse 1 into 2 and an outage becomes "nobody approved", which is either a silent skip of
+approved work or, with the branches the other way round, an apply nobody authorised.
+`resolve-merged-pr.sh` keeps them apart, and `tests/bats/resolve_merged_pr.bats` asserts the two
+codes differ on identical (empty) stdout. `curl --fail` is what makes a 4xx or 5xx exit non-zero
+rather than returning an empty list, so removing it silently merges the two answers.
+
+Same shape, one layer up: a script whose stdout the caller captures must put nothing else on
+stdout. `resolve-merged-pr.sh` logs its exit-2 reason to **stderr** for that reason, and
+`terragrunt-pr-head.sh` prints the sha and nothing else, or the check run is published against
+a log line.
+
+## A `! assertion` in the middle of a bats test body cannot fail the test
+
+Bash does not exit on a failing command whose status is being inverted, and bats runs a test
+body under `set -e`. So this passes whatever the file holds:
+
+```bash
+@test "the secret never reaches the log" {
+  run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  ! grep -q 'SUPERSECRET' "$GITHUB_STEP_SUMMARY"   # ← observes nothing
+  [ "$status" -ne 0 ]
+}
+```
+
+It only works as the **last** line of the body, where it is the function's return value — so
+an assertion that was armed gets silently disarmed the day somebody appends a line after it.
+Thirty-two of these were live in `tests/bats`, including every "the credential never reaches
+the log" assertion in `terragrunt_deploy.bats`. One of them was not merely inert but wrong:
+`terragrunt_pr_override.bats` asserted no request to `/pulls/7` on the no-override path, and
+`approval-gate.sh` requests exactly that URL to find the author.
+
+Use `refute <command>` from `tests/bats/helper.bash` (the inversion happens inside the
+function, so the call site is a plain command errexit can act on), and write `[[ a != b ]]`
+rather than `! [[ a == b ]]`.
+
+Related, and the reason both are here: an assertion has to be able to observe the mutation it
+is named for. `tests/bats/preflight_urls.bats` had a test called "the probe does not retry"
+that counted stub invocations — but `curl --retry` retries **inside** one invocation, so the
+count is 1 either way. Assert on the recorded argv when the thing being pinned is a flag, and
+on behaviour when the stub can model it: `resolve_merged_pr.bats` pins `curl --fail` with a
+stub that answers the way curl does (body + exit 0 without the flag, nothing + exit 22 with
+it), so deleting the flag turns "unreadable" into "no merged pull request" and the test goes
+red.

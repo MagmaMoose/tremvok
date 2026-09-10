@@ -79,7 +79,7 @@ STUBEOF
   # is simply "this target does not produce one".
   URL= VERSION= run bash "${SCRIPTS}/record-deployment.sh"
   [ "$status" -eq 0 ]
-  ! grep -q '"url"' "${WORK}/payload.json"
+  refute grep -q '"url"' "${WORK}/payload.json"
   ! grep -q '"version"' "${WORK}/payload.json"
 }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Shared helpers. Sourced, never executed.
 #
-# Every script here runs under `set -euo pipefail`, which is the whole point: dunmir's
-# deploy-frontend.yml documents a run that "reported success" on an auth failure because
+# Every script here runs under `set -euo pipefail`, which is the whole point: an earlier
+# frontend-deploy workflow this action replaces "reported success" on an auth failure, because
 # `wrangler … | tee log` reports *tee's* exit code. The same trap exists verbatim with
 # `aws s3 sync … | tee`, so the rule in this repo is that nothing is piped into `tee` without
 # `pipefail` set — and these helpers assume it.
@@ -45,6 +45,17 @@ tremvok::summary() {
 tremvok::require() {
   local name="$1" hint="${2-}"
   [[ -n "${!name:-}" ]] || tremvok::fail "${name} is required${hint:+ — ${hint}}"
+}
+
+# A pull-request number ends up as a path segment in a GitHub API URL, so it is digits or it
+# is refused. A `case` glob rather than `[[ =~ ]]`, for the same reason `tr` is used instead of
+# bash 4 case modification below: the macOS runners ship bash 3.2.
+tremvok::require_pr_number() { # input-name value
+  case "${2-}" in
+    '' | *[!0-9]*)
+      tremvok::fail "${1}: '${2-}' is not a pull-request number. Digits only, e.g. 1234."
+      ;;
+  esac
 }
 
 # Retries a command with a fixed delay. Deliberately not exponential: the things retried here

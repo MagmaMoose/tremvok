@@ -71,4 +71,14 @@ if [[ -n "$violations" ]]; then
   exit 1
 fi
 
+# Value checks go after the applicability check: an input on the wrong target is the bigger
+# mistake and should be reported first. This is also the only step that runs before the
+# checkout (fetch-depth: 0 for terragrunt, a full clone of an infra monorepo), before the
+# pinned tofu and terragrunt download, and before assume-role. A typo here costs nothing and
+# leaves no assumed-role session in the audit log.
+TG_PULL_REQUEST="${TG_PULL_REQUEST:-}"
+if [[ "$TARGET" == "terragrunt" && -n "$TG_PULL_REQUEST" ]]; then
+  tremvok::require_pr_number terragrunt-pull-request "$TG_PULL_REQUEST"
+fi
+
 tremvok::log "inputs validated for target=${TARGET}"

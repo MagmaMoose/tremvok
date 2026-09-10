@@ -46,6 +46,18 @@ stub_script() {
   chmod +x "${STUB_BIN}/${name}"
 }
 
+# `refute <command>` — a negated assertion that can actually fail.
+#
+# `! cmd` is exempt from errexit: bash does not exit when the failing command's status is
+# being inverted. So a `! grep -q secret "$file"` line anywhere but the LAST line of a test
+# body reads like an assertion, observes nothing, and passes whatever the file holds. Every
+# one of those is a test that cannot fail for the reason it is named after.
+#
+# Here the inversion happens inside the function, so the call site is a plain command with a
+# non-zero status and errexit acts on it. `[[ a == b ]]` negations do not need this: write
+# them as `[[ a != b ]]`, which is a plain command too.
+refute() { ! "$@"; }
+
 # The value of a step output, or empty.
 output_value() {
   local key="$1"

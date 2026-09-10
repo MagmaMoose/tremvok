@@ -217,14 +217,51 @@ inputs:
     default: 'modules _modules'
 
   terragrunt-scope:
-    description: 'terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`, or `changed`.'
+    description: |
+      terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`,
+      or `changed`. With `terragrunt-pull-request` set, `auto` means the stacks that pull
+      request touches even on a manual run; `all` stays legal and means plan the whole estate,
+      gate on that pull request's approval, comment on that pull request.
     required: false
     default: 'auto'
+
+  terragrunt-pull-request:
+    description: |
+      terragrunt: act on this pull request number instead of the one in the event payload.
+      For a manual run that has to plan or apply a named pull request. Its reviews are what
+      the approval gate reads, its thread is where the plan comment goes, and its head commit
+      is what the check run is published against, fetched from the API because a dispatch
+      event carries no pull request. Empty (default) uses the event, which is every automatic
+      run. Digits only.
+
+      Checking out the right tree stays yours: pass `ref: refs/pull/<n>/merge` to your own
+      actions/checkout step and set `checkout: false` here, or the run plans whatever is on
+      disk and says so.
+    required: false
+    default: ''
 
   terragrunt-apply:
     description: 'terragrunt: `auto` (apply when the pull request has an independent approval), `never` (plan only), or `force`.'
     required: false
     default: 'auto'
+
+  terragrunt-apply-on-merge:
+    description: |
+      terragrunt: `true` lets a push to the default branch apply what was merged. `false`
+      (the default) plans on a push and applies nothing, which is what this target has always
+      done.
+
+      A push event carries no pull request, so with this on the run asks the API which pull
+      request the commit was merged from and reads that pull request's reviews: a merge that
+      had an independent approval applies, a merge without one is reported and not applied.
+      Off, none of that happens: no commit-to-pull-request lookup, no approval read, plan
+      only.
+
+      Separate from `terragrunt-apply` on purpose. That input answers "who may authorise an
+      apply?"; this one answers "should a merge commit apply at all?". Stacking the two
+      questions into one enum makes both harder to read.
+    required: false
+    default: 'false'
 
   terragrunt-apply-operators:
     description: |
@@ -249,7 +286,9 @@ inputs:
       reach both, and without this the only options are a job per credential class or a
       pipeline that fails on the first stack of the other kind. The values are secrets, so
       they are passed to each run with `env` rather than exported into the shell, and one
-      stack's credential never reaches the next stack's run.
+      stack's credential never reaches the next stack's run. A malformed line is refused by
+      index, glob and KEY: nothing at or after the first `=` is ever printed, because the
+      annotation it would appear in is as public as the repository.
     required: false
     default: ''
 
@@ -299,6 +338,29 @@ inputs:
     description: 'terragrunt: seconds any one init, plan or apply may take before it is killed. 0 disables the timeout. A stalled provider call otherwise looks like a silent hang until the job limit.'
     required: false
     default: '900'
+
+  terragrunt-preflight-urls:
+    description: |
+      terragrunt: URLs to probe for reachability before the first plan, one per line. Empty
+      (default) probes nothing.
+
+      Terragrunt buffers plan output to a file, so a state backend or provider API the runner
+      cannot reach is a silent wait until `terragrunt-timeout` rather than an error. One
+      8-second request per URL turns that into a red step naming the endpoint.
+
+        https://<your-state-backend-host>/?comp=list
+        https://<your-provider-api-host>/api/versions
+
+      The rules worth knowing before you read a result: a code of 000 (DNS, connect, TLS or
+      timeout) fails the run; any HTTP answer passes, 401 and 403 included, because an
+      unauthenticated probe of a credentialed endpoint is supposed to be refused and being
+      refused proves the endpoint is there. This proves reachability, not authorisation: a
+      403 does not mean the credential works. Blank lines and `#` comments are ignored. Put
+      no credentials in these URLs; they are printed into the run log. A URL carrying
+      userinfo is refused, and the refusal names the line by its index and shows the URL with
+      the userinfo replaced rather than echoing the line.
+    required: false
+    default: ''
 
   terragrunt-log-level:
     description: 'terragrunt: value for TF_LOG when diagnosing a stuck provider call (debug, trace). Empty (default) leaves provider logging off; the log is written next to the plan and redacted before it is shown.'
@@ -418,6 +480,21 @@ inputs:
     description: 'ansible: Vault namespace (Enterprise). Empty is correct for open-source Vault.'
     required: false
     default: ''
+
+  ansible-vault-passthrough:
+    description: |
+      ansible: hand `VAULT_ADDR`, `VAULT_TOKEN` and `VAULT_NAMESPACE` to the ansible-playbook
+      process, so the playbook can read its own secrets from the same HashiCorp Vault rather
+      than having them copied into a second store that quietly stops being rotated. Needs
+      `vault-addr` and `vault-token`; without both, nothing is passed.
+
+      `false` by default, and the default removes them from the playbook's environment. A
+      token scoped to the fields this action reads becomes a token every task, role and
+      collection in the play can use, and widening a credential's blast radius should be a
+      decision rather than something inherited by accident. Nothing to do with ansible-vault,
+      the file-encryption tool; that is `ansible-vault-password`.
+    required: false
+    default: 'false'
 
   ansible-ssh-private-key-vault:
     description: |
@@ -676,6 +753,9 @@ runs:
       env:
         TARGET: ${{ inputs.target }}
         INPUTS_JSON: ${{ toJSON(inputs) }}
+        # Checked here, before the fetch-depth-0 checkout, the pinned tool download and
+        # assume-role, so a typo costs nothing and leaves no role session in the audit log.
+        TG_PULL_REQUEST: ${{ inputs.terragrunt-pull-request }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/validate-inputs.sh"
 
     - name: Checkout
@@ -893,6 +973,18 @@ runs:
         PLUGIN_CACHE: ${{ inputs.terragrunt-plugin-cache }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/terragrunt-bootstrap.sh"
 
+    # Terragrunt buffers plan output to a file, so an unreachable state backend or provider
+    # API is a silent wait until terragrunt-timeout rather than an error. Probe first: a red
+    # step in eight seconds instead of 900 seconds of nothing. After the tool install, whose
+    # own download proves general egress works, so a 000 here means these endpoints and not a
+    # runner with no network.
+    - name: Preflight, are the terragrunt endpoints reachable?
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'terragrunt' && inputs.terragrunt-preflight-urls != ''
+      shell: bash
+      env:
+        PREFLIGHT_URLS: ${{ inputs.terragrunt-preflight-urls }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/preflight-urls.sh"
+
     - name: Deploy, Terragrunt
       id: deploy-terragrunt
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 'terragrunt'
@@ -903,6 +995,7 @@ runs:
         EXCLUDE_SEGMENTS: ${{ inputs.terragrunt-exclude }}
         SCOPE: ${{ inputs.terragrunt-scope }}
         APPLY: ${{ inputs.terragrunt-apply }}
+        APPLY_ON_MERGE: ${{ inputs.terragrunt-apply-on-merge }}
         APPLY_OPERATORS: ${{ inputs.terragrunt-apply-operators }}
         STACK_ENV: ${{ inputs.terragrunt-stack-env }}
         CHECK_NAME: ${{ inputs.terragrunt-check-name }}
@@ -913,6 +1006,9 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        # The override, resolved in terragrunt-changed-files.sh rather than by a `||` here:
+        # the choice between the event and the input is logic, and logic lives in a script.
+        TG_PULL_REQUEST: ${{ inputs.terragrunt-pull-request }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         AUTH_TOKEN: ${{ inputs.auth-token }}
         DRY_RUN: ${{ inputs.dry-run }}
@@ -954,6 +1050,7 @@ runs:
         VAULT_ADDR: ${{ inputs.vault-addr }}
         VAULT_TOKEN: ${{ inputs.vault-token }}
         VAULT_NAMESPACE: ${{ inputs.vault-namespace }}
+        VAULT_PASSTHROUGH: ${{ inputs.ansible-vault-passthrough }}
         VERIFY_IDEMPOTENCE: ${{ inputs.ansible-verify-idempotence }}
         EVENT_NAME: ${{ github.event_name }}
         DRY_RUN: ${{ inputs.dry-run }}

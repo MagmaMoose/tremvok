@@ -39,6 +39,91 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`terragrunt-apply-on-merge`** (default `false`): a push to the default branch can now
+  apply what was merged. **The default is unchanged for existing callers.** With it off, which
+  is what you get on upgrade, a push plans exactly as it always has: no commit-to-pull-request
+  lookup, no approval read, nothing applied. Turning it on is the decision to let a merge
+  apply.
+
+  A push event carries no pull request, and the approval that authorises the apply belongs to
+  the pull request the commit was merged from, so with this on the run resolves it from the
+  commit (`scripts/resolve-merged-pr.sh`, `GET /repos/{repo}/commits/{sha}/pulls`) and feeds it
+  to the existing approval gate. Which pull request wins is stated rather than inherited from
+  the API's ordering: one whose `base.ref` is the pushed branch, else the oldest `merged_at`.
+  Three outcomes stay distinct: merged with an independent approval applies; merged without
+  one, or pushed directly, plans and reports with a `neutral` check run rather than failing,
+  because an unapproved merge is a branch-protection matter; and an API that cannot be read
+  fails the run *after* the check run and the step outputs are published, because an outage
+  must never read as "nobody approved" and a required check that never reports blocks a pull
+  request for ever. (Not after the plan comment: an unreadable lookup is the case where there
+  is no thread to comment on, which is why the failure is reported on the check run.) Neither
+  refusal fires on a merge whose stacks all plan clean — an unreadable review list and an
+  unreadable lookup are guarded the same way, because refusing to apply nothing is not a
+  refusal and a transient API blip should not turn the default branch red while the same run
+  reports "No changes to apply". Both still warn, so a token missing `pull-requests: read`
+  is visible rather than silent. The plan comment on the merged pull request is rewritten
+  in place to the apply result instead of being left on "applying now".
+
+  It is a separate input from `terragrunt-apply` on purpose: that one answers "who may
+  authorise an apply?", this one answers "should a merge commit apply at all?". The path needs
+  `pull-requests: read`, which the `pull-requests: write` the docs already ask for covers.
+
+- **With `terragrunt-apply-on-merge` on**, a run with pending changes and no open pull request
+  (a merge, a direct push, or the scheduled drift run) publishes a `neutral` check run rather
+  than `action_required`: that check lands on a commit already on the branch, where there is no
+  merge left to block, and turning the default branch red is not what fixes an unapproved
+  merge. **With the input off, which is the default, the conclusion is `action_required`
+  exactly as before.** It is the better answer either way, but it is still a different
+  conclusion from the one a caller sees today and somebody may be watching for it on a drift
+  cron, so it arrives with the input rather than with the tag.
+
+- **`terragrunt-preflight-urls`**: URLs probed once each, with an 8-second timeout, before the
+  first plan. Terragrunt buffers plan output to a file, so a state backend or provider API the
+  runner cannot reach is a silent wait until `terragrunt-timeout` rather than an error. Any
+  HTTP answer passes, `401` and `403` included, because an unauthenticated probe of a
+  credentialed endpoint is supposed to be refused; only a curl code of `000` fails, and a `5xx`
+  warns and passes so a transient `503` cannot make this a flake. The runner's egress IP is
+  printed on the failure path only. Empty (the default) probes nothing, so nothing changes for
+  existing callers. This proves reachability, not authorisation. Nothing from this input is
+  echoed raw: a refusal names the line by index and shows the URL with any userinfo replaced,
+  because a guard that refuses a credential-bearing URL by printing the credential is worse
+  than no guard.
+
+- **`terragrunt-pull-request`**: act on a named pull request instead of the one in the event
+  payload, for a manual run. One override drives all three consumers: the approval gate reads
+  that pull request's reviews, the plan comment goes to its thread, and the check run is
+  published against its head commit, fetched from the API because a dispatch event carries no
+  pull request. Digits only, checked in the action's first step before the checkout, the tool
+  install and the assume-role. A fork pull request is refused, as the automatic path already
+  refuses fork code. `terragrunt-scope: auto` now means "the stacks that pull request touches"
+  whenever a pull request is in scope, however it got there. Checking out
+  `refs/pull/<n>/merge` stays the caller's `actions/checkout` config; the run warns, and never
+  fails, when the tree does not contain the named head commit.
+
+- **`ansible-vault-passthrough`** (default `false`): hand `VAULT_ADDR`, `VAULT_TOKEN` and
+  `VAULT_NAMESPACE` to the `ansible-playbook` process, so a playbook can read its own secrets
+  from the same HashiCorp Vault rather than having them copied into a second store that stops
+  being rotated. Off by default, and the default now **removes** them from the playbook's
+  environment: they were inherited by accident, and widening a credential's blast radius should
+  be a decision. Needs both `vault-addr` and `vault-token`; with only one, nothing is passed and
+  the run says so.
+
+  The default has to be the one that unsets, and this was argued the other way. Defaulting to
+  `true` would make the input a no-op with a name that claims otherwise, and the option to turn
+  passthrough *off* would be the thing nobody knew to reach for. The `vault-*` inputs shipped
+  one day before this, so the window in which anything can depend on the accidental inheritance
+  is a day wide.
+
+- **The playbook no longer inherits the SSH private key or the ansible-vault password
+  either.** Same argument, applied to the rest of the credentials rather than a third of them:
+  `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`, `VAULT_PASSWORD` and their `*_VAULT` partners reach the
+  step as environment variables, and every child process inherits them, so a role or collection
+  in the play could read the two most sensitive values this target handles. They are unset once
+  their values are on disk at `0600`, which is what the `--private-key` and
+  `--vault-password-file` flags point at, so the run itself needs nothing from the variables.
+  There is no opt-out and no passthrough input for these: unlike a Vault token, they have no
+  use inside a playbook that the file does not already serve.
+
 - **Ansible secrets can be read from HashiCorp Vault.** `vault-addr` + `vault-token`, then
   name a secret by `<path>#<field>` with `ansible-ssh-private-key-vault`,
   `ansible-ssh-known-hosts-vault` or `ansible-vault-password-vault`. Copying a secret that
@@ -99,6 +184,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `terragrunt-bootstrap.sh`'s checksum lookup runs with `|| true`: with `pipefail` on, a
   `grep` that matched nothing made the assignment non-zero and `set -e` exited the script
   silently, exactly where the loudest possible failure is wanted.
+- **A malformed `terragrunt-stack-env` line no longer prints its VALUE.** The refusal
+  interpolated the whole line into its `::error::` annotation, and that input exists to carry
+  per-stack state-backend credentials, so a typo in a line holding a storage-account key
+  published the key to a log as public as the repository. The message now names the line
+  index, the glob and the KEY, and nothing at or after the first `=` — including when the glob
+  itself was forgotten and the assignment landed in the glob slot.
 
 ### Added (previously unreleased, carried into v2)
 

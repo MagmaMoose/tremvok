@@ -41,6 +41,13 @@ VAULT_PASSWORD="${VAULT_PASSWORD:-}"
 SSH_PRIVATE_KEY_VAULT="${SSH_PRIVATE_KEY_VAULT:-}"
 SSH_KNOWN_HOSTS_VAULT="${SSH_KNOWN_HOSTS_VAULT:-}"
 VAULT_PASSWORD_VAULT="${VAULT_PASSWORD_VAULT:-}"
+# HashiCorp Vault, not ansible-vault. The step's own env already carries these, so the
+# playbook would inherit them by accident; VAULT_PASSTHROUGH is what turns that accident into
+# a decision. See the block below the secret resolution.
+VAULT_ADDR="${VAULT_ADDR:-}"
+VAULT_TOKEN="${VAULT_TOKEN:-}"
+VAULT_NAMESPACE="${VAULT_NAMESPACE:-}"
+VAULT_PASSTHROUGH="${VAULT_PASSTHROUGH:-false}"
 VERIFY_IDEMPOTENCE="${VERIFY_IDEMPOTENCE:-true}"
 EVENT_NAME="${EVENT_NAME:-}"
 DRY_RUN="${DRY_RUN:-false}"
@@ -91,6 +98,33 @@ SSH_PRIVATE_KEY="$(from_vault "$SSH_PRIVATE_KEY" "$SSH_PRIVATE_KEY_VAULT" ansibl
 SSH_KNOWN_HOSTS="$(from_vault "$SSH_KNOWN_HOSTS" "$SSH_KNOWN_HOSTS_VAULT" ansible-ssh-known-hosts)"
 VAULT_PASSWORD="$(from_vault "$VAULT_PASSWORD" "$VAULT_PASSWORD_VAULT" ansible-vault-password)"
 
+# ── HashiCorp Vault, for the playbook itself ─────────────────────────────────────────────
+# The step sets VAULT_ADDR, VAULT_TOKEN and VAULT_NAMESPACE in its own environment so
+# vault-read.sh can resolve the `-vault` references above. Every child process inherits that
+# environment, ansible-playbook included. Without this block a token scoped to three fields
+# is handed to every task, role and collection in the play, and nobody chose that.
+#
+# Opt-in, because widening a credential's blast radius should be a decision. On it is the
+# useful shape: the playbook reads its own secrets from the same Vault, so they are not
+# copied into a second store that quietly stops being rotated.
+if tremvok::is_true "$VAULT_PASSTHROUGH" && [[ -n "$VAULT_ADDR" && -n "$VAULT_TOKEN" ]]; then
+  printf '::add-mask::%s\n' "$VAULT_TOKEN"
+  export VAULT_ADDR VAULT_TOKEN
+  if [[ -n "$VAULT_NAMESPACE" ]]; then
+    export VAULT_NAMESPACE
+  else
+    unset VAULT_NAMESPACE
+  fi
+  tremvok::log "ansible-vault-passthrough is on: the playbook inherits VAULT_ADDR, VAULT_TOKEN and VAULT_NAMESPACE"
+else
+  if tremvok::is_true "$VAULT_PASSTHROUGH"; then
+    # Half a credential is worse than none: the playbook would fail somewhere inside a task
+    # rather than here, where the reason is one line.
+    tremvok::warn "ansible-vault-passthrough is on, but vault-addr and vault-token are not both set, so the playbook inherits neither."
+  fi
+  unset VAULT_ADDR VAULT_TOKEN VAULT_NAMESPACE
+fi
+
 # ── secrets, on disk and nowhere else ────────────────────────────────────────────────────
 work="${RUNNER_TEMP:-/tmp}/tremvok-ansible.$$"
 mkdir -p "$work"
@@ -135,6 +169,21 @@ else
   tremvok::warn "no ansible-ssh-known-hosts supplied, so host-key checking is off for this run. Supply it for anything reachable from a network you do not control."
   export ANSIBLE_HOST_KEY_CHECKING=False
 fi
+
+# ── the playbook's environment stops here ────────────────────────────────────────────────
+# Everything above has taken what it needs from these three and put it in a 0600 file under
+# $work; the flags below point at the files. The step's own `env:` exported them, so without
+# this every task, every role and every collection in the play inherits the SSH private key
+# and the ansible-vault password as plain environment variables: the two most sensitive
+# values this target handles, and the two nobody chose to share.
+#
+# Same argument as the HashiCorp Vault block above, applied to the rest of the credentials
+# rather than a third of them. Nothing below reads these names; `grep` after this line is the
+# check that keeps it true.
+unset SSH_PRIVATE_KEY SSH_KNOWN_HOSTS VAULT_PASSWORD
+# The references too. `<path>#<field>` names where a secret lives, which is not a secret but
+# is a map of one, and the playbook has no use for it either.
+unset SSH_PRIVATE_KEY_VAULT SSH_KNOWN_HOSTS_VAULT VAULT_PASSWORD_VAULT
 
 # Ansible's own output is the thing most likely to carry a secret into a log. `no_log:` in
 # the playbook is the primary protection; this is the belt.

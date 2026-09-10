@@ -47,7 +47,7 @@ STUBEOF
   FUNCTION_NAME=fn ARTIFACT_PATH="$ZIP" ARTIFACT_BUCKET=artifacts VERSION_LABEL=1.2.3 \
     MODE=preview run bash "${SCRIPTS}/deploy-lambda-zip.sh"
   [ "$status" -eq 0 ]
-  ! grep -q "alias" "$STUB_LOG"
+  refute grep -q "alias" "$STUB_LOG"
   [ "$(output_value alias-moved)" = "false" ]
 }
 
@@ -67,7 +67,7 @@ STUBEOF
     FUNCTION_NAME=fn ARTIFACT_PATH="$ZIP" ARTIFACT_BUCKET=artifacts VERSION_LABEL=1.2.3 \
     run bash "${SCRIPTS}/deploy-lambda-zip.sh"
   [ "$status" -eq 0 ]
-  ! grep -q "put-object" "$STUB_LOG"
+  refute grep -q "put-object" "$STUB_LOG"
   grep -q "update-function-code" "$STUB_LOG"
 }
 
