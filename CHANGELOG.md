@@ -18,8 +18,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   survives a redirect (`--post301/302/303`), because curl otherwise downgrades a redirected
   POST to a GET and quietly changes the assertion.
 
-### Added
-
 - **`target: azure-functions-zip`** — publish a zip to an Azure Function App and prove the app
   serves it. Signs in with `azure-client-id`/`azure-tenant-id`/`azure-subscription-id` over
   this run's GitHub OIDC token against an Entra ID federated credential, so no publish profile
