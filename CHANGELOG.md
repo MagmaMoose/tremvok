@@ -9,6 +9,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`verify-method`** — the HTTP method `verify-url` is requested with, `GET` by default.
+  A GET cannot verify a POST-only endpoint at all: a webhook receiver binds POST and nothing
+  else, so a GET reaches no function and the platform answers 404 — which is also what a
+  package containing no functions returns, leaving the check unable to tell a working deploy
+  from a broken one. `verify-method: POST` with `verify-status: 401` asserts instead that the
+  function is bound and that its signature check refuses an unsigned request. The method
+  survives a redirect (`--post301/302/303`), because curl otherwise downgrades a redirected
+  POST to a GET and quietly changes the assertion.
+
+### Added
+
 - **`target: azure-functions-zip`** — publish a zip to an Azure Function App and prove the app
   serves it. Signs in with `azure-client-id`/`azure-tenant-id`/`azure-subscription-id` over
   this run's GitHub OIDC token against an Entra ID federated credential, so no publish profile

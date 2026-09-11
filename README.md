@@ -88,7 +88,7 @@ Swap `target:` and its inputs for another target. Ready-to-copy workflows for ea
 | `functions-app-name` | azure-functions-zip | The Function App. `azure-client-id` signs in by OIDC. |
 | `ansible-playbook` | ansible | Playbook to run. `ansible-inventory` goes with it. |
 
-All 107 inputs, and the permissions each target needs →
+All 108 inputs, and the permissions each target needs →
 **[Action reference](https://magmamoose.github.io/tremvok/action-reference/)**
 
 ## The one job Tremvok hands back
