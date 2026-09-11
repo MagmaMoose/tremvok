@@ -142,6 +142,78 @@ publishes to production isn't a floating dependency. The action installs Node 24
 Wrangler 4 declares `engines.node >= 22`, and on 20 it installs cleanly and then refuses to
 run.
 
+### `azure-functions-zip`
+
+```yaml
+permissions: { contents: read, id-token: write, pull-requests: write }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v6
+        with: { dotnet-version: '9.0.x' }
+      - run: dotnet publish -c Release -f net9.0 -o publish
+      - run: cd publish && zip -r -q ../package.zip .   # the CONTENTS, dotfiles included
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: azure-functions-zip
+          artifact-path: package.zip
+          azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          functions-app-name: ${{ vars.FUNCTIONS_APP_NAME }}
+          functions-resource-group: ${{ vars.FUNCTIONS_RESOURCE_GROUP }}
+```
+
+**No publish profile.** The Azure quickstarts hand you one, and it is a long-lived file
+carrying the deployment rights of the whole site with nothing tying it to a repository.
+`azure-client-id` is the alternative and the same argument as `aws-role-to-assume`: an Entra
+ID app registration with a **federated credential** naming this repository and ref, a session
+minted per run from the run's own OIDC token, and nothing at rest. That is what
+`id-token: write` is for. Create the credential against
+`repo:<owner>/<repo>:ref:refs/heads/main` (or an environment), and give the service principal
+`Contributor` on the Function App's resource group — or `Website Contributor`, which is
+narrower and enough.
+
+A caller who would rather run `azure/login` in an earlier step can: leave `azure-client-id`
+empty and the action uses the session already on the runner.
+
+**Zip the contents of the publish directory, not the directory.** `cd publish && zip -r -q
+../package.zip .` — because `zip -r package.zip publish` nests everything one level down and
+`zip -r ../package.zip *` silently skips dotfiles. The worker reads `functions.metadata` and
+loads its extensions from `.azurefunctions/`, both of which must be at the archive root. Get
+this wrong and the package deploys perfectly cleanly and then serves nothing: no error, no log
+line, a 404 on every route. Tremvok refuses such a package rather than letting you discover it
+in production.
+
+**Pin the runtime to `net9.0`.** `DOTNET-ISOLATED|10.0` is offered by the platform and
+accepted by `az functionapp create`, and a Linux Consumption app on it never starts — the site
+and its SCM endpoint both return 503, with no log output at all. 9.0 started first try with an
+identical package.
+
+**The exit code is not evidence, and neither is platform state.** `az functionapp deployment
+source config-zip` has been observed printing `ERROR: Operation returned an invalid status
+'Bad Request'` and exiting non-zero over a deploy that *succeeded*. So a non-zero exit is not
+taken at face value: Tremvok asks the platform whether `WEBSITE_RUN_FROM_PACKAGE` actually
+moved, and fails only if it did not. Nor does it trust the resource: an
+`azurerm_linux_function_app` reports `state: Running` and `availabilityState: Normal` while
+returning 503. After publishing, the app has to **answer**, and the run fails if it never
+does. Any HTTP status counts, including the 404 a Function App returns at its root when its
+only trigger is at `/api/<name>`; a connection failure and a 503 do not. A freshly created
+Consumption app 503s from both the site and its SCM endpoint until content is first published,
+so a first deploy retries through that rather than failing on it —
+`functions-ready-attempts` × `functions-ready-delay` is the ceiling, five minutes by default.
+
+`verify-url` sits on top of that and is where you assert what a particular route *does*: for a
+webhook receiver, an unsigned request getting `401` is the check worth having.
+
+**A pull request publishes nothing,** unless `functions-slot` is set. A slot is Azure's only
+destination that does not take production traffic, and a Linux Consumption plan has no slots,
+so on Consumption a preview validates the package and stops, saying why. On Premium or
+Dedicated, set `functions-slot` and previews go to the slot.
+
 ### `s3-cloudfront` and `lambda-zip`
 
 See [`examples/`](https://github.com/MagmaMoose/tremvok/tree/main/examples). Both need

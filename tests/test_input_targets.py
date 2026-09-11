@@ -61,7 +61,15 @@ def test_defaults_in_the_map_match_the_action():
 
 @pytest.mark.parametrize(
     "target",
-    ["github-pages", "s3-cloudfront", "lambda-zip", "terragrunt", "ansible", "cloudflare-workers"],
+    [
+        "github-pages",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible",
+        "cloudflare-workers",
+        "azure-functions-zip",
+    ],
 )
 def test_every_target_owns_at_least_one_input(target):
     data = json.loads(MAP.read_text())["inputs"]
@@ -87,6 +95,10 @@ def test_target_specific_inputs_are_named_for_their_target():
         # prefix rule; collapsing them into one prefix would be worse than the exception.
         "ansible": ("ansible-", "vault-"),
         "cloudflare-workers": ("cloudflare-", "artifact-"),
+        # `azure-` is the cloud prefix, exactly as `aws-` is: the credential trio belongs to
+        # the cloud rather than to this one target, and a second Azure target would share it
+        # unchanged. `functions-` is the target's own.
+        "azure-functions-zip": ("functions-", "azure-", "artifact-"),
     }
     data = json.loads(MAP.read_text())["inputs"]
     wrong = []

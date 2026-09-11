@@ -7,6 +7,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`target: azure-functions-zip`** — publish a zip to an Azure Function App and prove the app
+  serves it. Signs in with `azure-client-id`/`azure-tenant-id`/`azure-subscription-id` over
+  this run's GitHub OIDC token against an Entra ID federated credential, so no publish profile
+  is stored anywhere, then deploys with `az functionapp deployment source config-zip` and
+  polls the app until it answers.
+  - The CLI's exit code is **not** treated as the outcome. `config-zip` prints
+    `Operation returned an invalid status 'Bad Request'` and exits non-zero over deploys that
+    succeeded, so a non-zero exit is corroborated against `WEBSITE_RUN_FROM_PACKAGE` and only
+    then called a failure.
+  - Platform state is not treated as evidence either: a Function App reports `state: Running`
+    and `availabilityState: Normal` while returning 503. An HTTP answer from the app is what
+    ends the run, and a first deploy retries through the 503 a freshly created Consumption app
+    returns until content is first published.
+  - A package whose `functions.metadata` and `.azurefunctions/` are not at the archive root is
+    refused, because that package deploys cleanly and then 404s on every route.
+  - A pull request publishes nothing unless `functions-slot` is set: a Linux Consumption plan
+    has no deployment slots, so there is no destination that does not take production traffic.
+
 ## [2.0.0]
 
 Released as v1.0.26 and retagged: the breaking changes below are v2, and were only ever
