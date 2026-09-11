@@ -729,6 +729,22 @@ inputs:
     required: false
     default: ''
 
+  verify-method:
+    description: |
+      Post-deploy: HTTP method used to request `verify-url`. `GET` by default.
+
+      Set it where a GET cannot verify the endpoint at all. A webhook receiver binds POST and
+      nothing else, so a GET reaches no function and the platform answers 404 — which is also
+      what an empty package returns, leaving the check unable to tell a working deploy from a
+      broken one. `verify-method: POST` with `verify-status: 401` asserts that the function is
+      bound and that its signature check refuses an unsigned request, which is the thing worth
+      knowing.
+
+      The method survives a redirect: curl otherwise downgrades a redirected POST to a GET,
+      which would quietly turn the assertion into a different one.
+    required: false
+    default: 'GET'
+
   verify-status:
     description: 'Post-deploy: expected HTTP status from `verify-url`.'
     required: false
@@ -1246,6 +1262,7 @@ runs:
         VERIFY_URL: ${{ inputs.verify-url }}
         VERIFY_HEADER: ${{ inputs.verify-header }}
         VERIFY_HEADER_MATCH: ${{ inputs.verify-header-match }}
+        VERIFY_METHOD: ${{ inputs.verify-method }}
         EXPECT_STATUS: ${{ inputs.verify-status }}
         ATTEMPTS: ${{ inputs.verify-attempts }}
         DELAY: ${{ inputs.verify-delay }}

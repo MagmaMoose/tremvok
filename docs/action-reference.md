@@ -23,7 +23,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 107 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 108 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -123,6 +123,7 @@ is required.
 | `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green. |
 | `verify-header` | all | not set | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
 | `verify-header-match` | all | not set | Post-deploy: an extended regex the `verify-header` value must match. |
+| `verify-method` | all | `GET` | Post-deploy: HTTP method used to request `verify-url`. `GET` by default. Set it where a GET cannot verify the endpoint at all. A webhook receiver binds POST and nothing else, so a GET reaches no function and the platform answers 404 — which is also what an empty package returns, leaving the check unable to tell a working deploy from a broken one. `verify-method: POST` with `verify-status: 401` asserts that the function is bound and that its signature check refuses an unsigned request, which is the thing worth knowing. The method survives a redirect: curl otherwise downgrades a redirected POST to a GET, which would quietly turn the assertion into a different one. |
 | `verify-status` | all | `200` | Post-deploy: expected HTTP status from `verify-url`. |
 | `verify-attempts` | all | `6` | Post-deploy: how many times to try `verify-url` before failing. |
 | `verify-delay` | all | `10` | Post-deploy: seconds between verification attempts. |

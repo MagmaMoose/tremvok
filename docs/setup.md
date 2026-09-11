@@ -207,7 +207,11 @@ so a first deploy retries through that rather than failing on it —
 `functions-ready-attempts` × `functions-ready-delay` is the ceiling, five minutes by default.
 
 `verify-url` sits on top of that and is where you assert what a particular route *does*: for a
-webhook receiver, an unsigned request getting `401` is the check worth having.
+webhook receiver, an unsigned request getting `401` is the check worth having — and it needs
+`verify-method: POST`. The trigger binds POST and nothing else, so a GET reaches no function
+and Azure answers `404`, which is also what a package containing no functions returns. Asserting
+`POST` → `401` is what distinguishes a working deploy from a broken one; a GET against such a
+route cannot.
 
 **A pull request publishes nothing,** unless `functions-slot` is set. A slot is Azure's only
 destination that does not take production traffic, and a Linux Consumption plan has no slots,

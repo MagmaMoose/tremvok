@@ -633,6 +633,18 @@
       ],
       "default": ""
     },
+    "verify-method": {
+      "targets": [
+        "github-pages",
+        "s3-cloudfront",
+        "lambda-zip",
+        "terragrunt",
+        "ansible",
+        "cloudflare-workers",
+        "azure-functions-zip"
+      ],
+      "default": "GET"
+    },
     "verify-status": {
       "targets": [
         "github-pages",

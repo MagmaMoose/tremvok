@@ -51,7 +51,14 @@ jobs:
           functions-resource-group: ${{ vars.FUNCTIONS_RESOURCE_GROUP }}
           # What the app has to DO, on top of the app answering at all, which this target
           # always checks. An unsigned request to a GitHub webhook receiver must be refused.
+          #
+          # POST, and that is load-bearing rather than tidy. The trigger binds POST and nothing
+          # else, so a GET reaches no function and Azure answers 404 — the same answer a package
+          # containing no functions gives, which would make this check unable to tell a working
+          # deploy from a broken one. `POST -> 401` proves the function is bound AND that its
+          # signature check runs.
           verify-url: https://${{ vars.FUNCTIONS_APP_NAME }}.azurewebsites.net/api/webhook
+          verify-method: POST
           verify-status: '401'
           slack-webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK }}
         # On a pull request this validates the package and publishes nothing, because a
