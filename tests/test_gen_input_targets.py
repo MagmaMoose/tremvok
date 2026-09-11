@@ -33,6 +33,7 @@ ALL_TARGETS = [
     "terragrunt",
     "ansible",
     "cloudflare-workers",
+    "azure-functions-zip",
 ]
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ACTION = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))

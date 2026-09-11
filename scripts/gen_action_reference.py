@@ -37,6 +37,7 @@ TARGET_SUMMARY = {
     "terragrunt": "Discover, plan and (on an approval) apply Terragrunt stacks",
     "ansible": "Run a playbook over SSH, then prove it is idempotent",
     "cloudflare-workers": "Deploy a Worker and its static assets with Wrangler",
+    "azure-functions-zip": "Publish a zip to an Azure Function App, then wait for it to answer",
 }
 
 _missing = set(TARGETS) - set(TARGET_SUMMARY)
@@ -75,6 +76,11 @@ PERMISSIONS = {
     ],
     "cloudflare-workers": [
         ("contents: read", "checkout"),
+        ("pull-requests: write", "the sticky preview comment"),
+    ],
+    "azure-functions-zip": [
+        ("contents: read", "checkout"),
+        ("id-token: write", "sign in to Azure by OIDC"),
         ("pull-requests: write", "the sticky preview comment"),
     ],
 }

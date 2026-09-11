@@ -1,5 +1,5 @@
 name: 'Tremvok'
-description: 'Deploy anything: GitHub Pages, Cloudflare Workers, AWS S3/CloudFront & Lambda, Terragrunt, and Ansible.'
+description: 'Deploy anything: GitHub Pages, Cloudflare Workers, Azure Functions, AWS S3/CloudFront & Lambda, Terragrunt, and Ansible.'
 author: 'MagmaMoose'
 
 branding:
@@ -16,9 +16,9 @@ branding:
 # with `s3-bucket` set is a mistake, and it is reported as one.
 #
 # Input names carry their target as a prefix (`pages-`, `s3-`, `cloudfront-`,
-# `lambda-`, `terragrunt-`, `ansible-`), with `aws-` for what every AWS target shares,
-# `build-` for what the two targets that run a build share, and no prefix for what
-# every target shares. The mapping is generated from the
+# `lambda-`, `terragrunt-`, `ansible-`, `functions-`), with `aws-` and `azure-` for what
+# each cloud's targets share, `build-` for what the two targets that run a build share,
+# and no prefix for what every target shares. The mapping is generated from the
 # descriptions below into scripts/lib/input-targets.json, which is what the validator
 # reads and what `tests/test_input_targets.py` keeps honest.
 #
@@ -36,6 +36,7 @@ inputs:
         terragrunt     Discover, plan and (on an approval) apply Terragrunt stacks.
         ansible        Run an Ansible playbook over SSH, then prove it is idempotent.
         cloudflare-workers  Deploy a Worker and its static assets with Wrangler.
+        azure-functions-zip  Publish a zip to an Azure Function App, then wait for it to answer.
     required: true
 
   mode:
@@ -89,6 +90,29 @@ inputs:
     description: 's3-cloudfront, lambda-zip, terragrunt: lifetime of the assumed-role session.'
     required: false
     default: '3600'
+
+  # ── Azure (every target that talks to Azure) ─────────────────────────────────
+  azure-client-id:
+    description: |
+      azure-functions-zip: client id of the Entra ID app registration this run signs in as,
+      using the run's GitHub OIDC token. The Azure counterpart of `aws-role-to-assume`, and
+      preferred over a stored publish profile for the same reasons: the session is minted per
+      run and expires, and the app registration's federated credential decides which
+      repository and which ref may mint one. A publish profile is a long-lived file carrying
+      the deployment rights of the whole site, tied to nothing. Requires
+      `permissions: id-token: write`. Leave empty to use a session an earlier step created.
+    required: false
+    default: ''
+
+  azure-tenant-id:
+    description: 'azure-functions-zip: Entra ID tenant the app registration lives in. Required whenever `azure-client-id` is set.'
+    required: false
+    default: ''
+
+  azure-subscription-id:
+    description: 'azure-functions-zip: subscription the Function App lives in, selected after login. Required whenever `azure-client-id` is set.'
+    required: false
+    default: ''
 
   # ── target: github-pages ─────────────────────────────────────────────────────────
   pages-toolchain:
@@ -183,7 +207,7 @@ inputs:
 
   # ── targets: s3-cloudfront, lambda-zip ───────────────────────────────────
   artifact-path:
-    description: 's3-cloudfront, lambda-zip, cloudflare-workers: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip.'
+    description: 's3-cloudfront, lambda-zip, cloudflare-workers, azure-functions-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip and azure-functions-zip.'
     required: false
     default: ''
 
@@ -647,6 +671,48 @@ inputs:
     required: false
     default: ''
 
+  # ── target: azure-functions-zip ──────────────────────────────────────────
+  functions-app-name:
+    description: 'azure-functions-zip: the Function App to publish to. Required for this target.'
+    required: false
+    default: ''
+
+  functions-resource-group:
+    description: 'azure-functions-zip: resource group the Function App lives in. Required for this target.'
+    required: false
+    default: ''
+
+  functions-slot:
+    description: |
+      azure-functions-zip: deployment slot to publish to instead of production. Empty
+      (default) publishes to the app itself.
+
+      This is also what a preview has to use. A pull request must not publish onto the
+      routes production serves, and a slot is Azure's only destination that does not —
+      but a Linux Consumption plan HAS NO SLOTS. So on Consumption a preview is refused
+      and says why, rather than quietly shipping a branch to production. On Premium or
+      Dedicated, set this and previews go to the slot.
+    required: false
+    default: ''
+
+  functions-ready-attempts:
+    description: |
+      azure-functions-zip: how many times to ask the app for an answer after publishing,
+      before calling the deploy dead. Any HTTP status passes, including a 404 at the root,
+      which is what a Function App whose only trigger is at `/api/<name>` normally returns.
+      Only a connection failure and a 503 count as "not yet".
+
+      The default is generous on purpose: a freshly created Consumption app 503s from both
+      the site and its SCM endpoint until content is first published, so a FIRST deploy has
+      to retry through that rather than fail on it.
+    required: false
+    default: '30'
+
+  functions-ready-delay:
+    description: 'azure-functions-zip: seconds between readiness attempts. With the default attempts, that is a five-minute ceiling on a cold first publish.'
+    required: false
+    default: '10'
+
   # ── Verification ─────────────────────────────────────────────────────────
   verify-url:
     description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green.'
@@ -737,7 +803,7 @@ outputs:
     value: ${{ steps.resolve.outputs.environment }}
   url:
     description: 'URL of what was deployed, when the target produces one.'
-    value: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
+    value: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
   deployed:
     description: 'true when something was actually deployed (false for a skip).'
     value: ${{ steps.outcome.outputs.deployed }}
@@ -760,8 +826,8 @@ outputs:
     description: 'github-pages: the toolchain actually used, uv or pip.'
     value: ${{ steps.pages-detect.outputs.toolchain }}
   version-id:
-    description: 'lambda-zip, cloudflare-workers: the published version. A Lambda version number, or a Worker Version ID.'
-    value: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id }}
+    description: 'lambda-zip, cloudflare-workers, azure-functions-zip: the published version. A Lambda version number, a Worker Version ID, or the package sha256 — Azure exposes no per-deploy content hash of its own.'
+    value: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
   stacks:
     description: 'terragrunt: how many stacks this run discovered.'
     value: ${{ steps.deploy-terragrunt.outputs.stacks }}
@@ -824,6 +890,8 @@ runs:
       env:
         IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         ROLE_TO_ASSUME: ${{ inputs.aws-role-to-assume }}
+        AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
         TARGET: ${{ inputs.target }}
         ALLOW_FORK_PREVIEW: ${{ inputs.allow-fork-preview }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/preflight.sh"
@@ -1139,6 +1207,36 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-cloudflare-workers.sh"
 
+    # ── target: azure-functions-zip ──────────────────────────────────────────
+    # The Azure counterpart of the assume-role step, and a script for the same reason: a
+    # third-party action inside the step that holds production credentials, for an exchange
+    # that is one `az login` call. A caller who prefers `azure/login` runs it earlier and
+    # leaves azure-client-id empty.
+    - name: Sign in to Azure
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'azure-functions-zip' && inputs.azure-client-id != ''
+      shell: bash
+      env:
+        AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+        AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/azure-login.sh"
+
+    - name: Deploy, Azure Functions package
+      id: deploy-azure-functions
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'azure-functions-zip'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        APP_NAME: ${{ inputs.functions-app-name }}
+        RESOURCE_GROUP: ${{ inputs.functions-resource-group }}
+        SLOT: ${{ inputs.functions-slot }}
+        ARTIFACT_PATH: ${{ inputs.artifact-path }}
+        READY_ATTEMPTS: ${{ inputs.functions-ready-attempts }}
+        READY_DELAY: ${{ inputs.functions-ready-delay }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-azure-functions-zip.sh"
+
     # ── Verify, then tell the humans ─────────────────────────────────────────
     - name: Verify it actually went live
       id: verify
@@ -1164,6 +1262,7 @@ runs:
         LAMBDA_DEPLOYED: ${{ steps.deploy-lambda.outputs.deployed }}
         TG_DEPLOYED: ${{ steps.deploy-terragrunt.outputs.deployed }}
         CF_DEPLOYED: ${{ steps.deploy-cloudflare.outputs.deployed }}
+        AZ_DEPLOYED: ${{ steps.deploy-azure-functions.outputs.deployed }}
         ANSIBLE_DEPLOYED: ${{ steps.deploy-ansible.outputs.deployed }}
         JOB_STATUS: ${{ job.status }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/collect-outcome.sh"
@@ -1180,8 +1279,8 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         COMMENT_KEY: ${{ inputs.target }}-${{ steps.resolve.outputs.environment }}
         STATUS: ${{ steps.outcome.outputs.status }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
-        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         MODE: ${{ steps.resolve.outputs.mode }}
         TARGET: ${{ inputs.target }}
@@ -1200,8 +1299,8 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
-        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/notify-webhook.sh"
@@ -1217,8 +1316,8 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url }}
-        VERSION: ${{ steps.deploy-lambda.outputs.version-id }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/record-deployment.sh"

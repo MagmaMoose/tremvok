@@ -5,7 +5,8 @@
     "lambda-zip",
     "terragrunt",
     "ansible",
-    "cloudflare-workers"
+    "cloudflare-workers",
+    "azure-functions-zip"
   ],
   "inputs": {
     "mode": {
@@ -15,7 +16,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "auto"
     },
@@ -26,7 +28,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -37,7 +40,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "."
     },
@@ -48,7 +52,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "true"
     },
@@ -59,7 +64,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "false"
     },
@@ -86,6 +92,24 @@
         "terragrunt"
       ],
       "default": "3600"
+    },
+    "azure-client-id": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": ""
+    },
+    "azure-tenant-id": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": ""
+    },
+    "azure-subscription-id": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": ""
     },
     "pages-toolchain": {
       "targets": [
@@ -158,7 +182,8 @@
       "targets": [
         "s3-cloudfront",
         "lambda-zip",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -542,6 +567,36 @@
       ],
       "default": ""
     },
+    "functions-app-name": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": ""
+    },
+    "functions-resource-group": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": ""
+    },
+    "functions-slot": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": ""
+    },
+    "functions-ready-attempts": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": "30"
+    },
+    "functions-ready-delay": {
+      "targets": [
+        "azure-functions-zip"
+      ],
+      "default": "10"
+    },
     "verify-url": {
       "targets": [
         "github-pages",
@@ -549,7 +604,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -560,7 +616,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -571,7 +628,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -582,7 +640,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "200"
     },
@@ -593,7 +652,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "6"
     },
@@ -604,7 +664,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "10"
     },
@@ -615,7 +676,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "always"
     },
@@ -626,7 +688,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "auto"
     },
@@ -637,7 +700,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -648,7 +712,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -659,7 +724,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": ""
     },
@@ -670,7 +736,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "tremvok"
     },
@@ -681,7 +748,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "${{ github.token }}"
     },
@@ -692,7 +760,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "false"
     },
@@ -703,7 +772,8 @@
         "lambda-zip",
         "terragrunt",
         "ansible",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "azure-functions-zip"
       ],
       "default": "false"
     }

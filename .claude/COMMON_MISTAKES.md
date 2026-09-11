@@ -290,3 +290,51 @@ no check run, an `::notice::` and a green job. Terragrunt is provider-agnostic a
 `terragrunt-stack-env` exists to carry an Azure or other backend credential, so the only
 targets that belong in that list are the ones whose own scripts call `aws`.
 
+
+## `az functionapp deployment source config-zip` exits non-zero over a deploy that worked
+
+Observed, repeatedly:
+
+```text
+ERROR: Operation returned an invalid status 'Bad Request'
+```
+
+with an exit status to match — and `WEBSITE_RUN_FROM_PACKAGE` pointing at the newly uploaded
+blob, and the app serving the new code. The CLI is reporting a poll of its own status
+endpoint, not the outcome of the deploy.
+
+Both obvious fixes are wrong. Failing on the exit code fails green deploys; appending
+`|| true` hides the real failures, which look identical from outside. So
+`deploy-azure-functions-zip.sh` does neither: on a non-zero exit it asks the platform whether
+`WEBSITE_RUN_FROM_PACKAGE` actually moved, warns and continues if it did, fails if it did not
+— and then, either way, the app has to answer before the run is called a success.
+
+Do not "simplify" this into a plain `||`. `tests/bats/azure_functions.bats` pins both
+directions.
+
+## A Functions zip built the obvious way deploys cleanly and serves nothing
+
+The worker discovers functions from `functions.metadata` and loads the host extensions from
+the dotfile directory `.azurefunctions/`. Both must be at the **archive root**. Two ordinary
+ways of building the zip put them somewhere else:
+
+```bash
+zip -r package.zip publish        # nests everything under publish/
+cd publish && zip -r ../x.zip *   # the glob skips dotfiles: no .azurefunctions/
+cd publish && zip -r -q ../x.zip . # correct
+```
+
+Neither broken package errors. The deploy succeeds, the app starts, and every route 404s with
+no log line saying why. That is why the guard reads entry *names* rather than grepping the
+archive's bytes: a nested package contains the literal text `publish/functions.metadata`, so a
+substring match passes the exact mistake it exists to catch.
+
+## A Linux Consumption Function App on `DOTNET-ISOLATED|10.0` never starts
+
+The platform offers it and `az functionapp create` accepts it. The app then returns 503 from
+the site **and** from its SCM endpoint, with no log output at all, so there is nothing to
+diagnose. `9.0` started first try with a byte-identical package. Verified 2026-09-11.
+
+Related, and the reason this target verifies by HTTP rather than by asking Azure: an
+`azurerm_linux_function_app` in that state reports `state: Running` and
+`availabilityState: Normal`. Platform state is not evidence that anything is being served.

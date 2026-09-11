@@ -59,3 +59,43 @@ setup() { setup_common; unset AWS_ACCESS_KEY_ID AWS_WEB_IDENTITY_TOKEN_FILE; }
   [ "$status" -eq 0 ]
   [ "$(output_value skip)" = "false" ]
 }
+
+@test "an azure-functions-zip run with no Azure credential skips with a reason" {
+  # HOME is redirected at a scratch directory on purpose: the ambient check below looks for
+  # ~/.azure, and a developer machine that has ever run `az login` has one. Without this the
+  # test passes locally for the wrong reason and fails on a runner.
+  HOME="$WORK" IS_FORK=false TARGET=azure-functions-zip AZURE_CLIENT_ID= AZURE_SUBSCRIPTION_ID= \
+    run bash "${SCRIPTS}/preflight.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value skip)" = "true" ]
+  [[ "$(output_value skip-reason)" == *"no Azure credential"* ]]
+  [[ "$(output_value skip-reason)" == *"azure-client-id"* ]]
+}
+
+@test "an azure-functions-zip run with a client id proceeds" {
+  HOME="$WORK" IS_FORK=false TARGET=azure-functions-zip \
+    AZURE_CLIENT_ID=11111111-2222-3333-4444-555555555555 \
+    run bash "${SCRIPTS}/preflight.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value skip)" = "false" ]
+}
+
+@test "an azure session an earlier step created is accepted" {
+  # The ambient case for Azure is a directory, not a variable: `az login` writes ~/.azure.
+  # Without this branch, running `azure/login` yourself and leaving azure-client-id empty —
+  # which the input documents as supported — would skip the deploy for no visible reason.
+  mkdir -p "${WORK}/.azure"
+  HOME="$WORK" IS_FORK=false TARGET=azure-functions-zip AZURE_CLIENT_ID= AZURE_SUBSCRIPTION_ID= \
+    run bash "${SCRIPTS}/preflight.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value skip)" = "false" ]
+}
+
+@test "an azure-functions-zip run is not skipped for want of an AWS credential" {
+  HOME="$WORK" IS_FORK=false TARGET=azure-functions-zip ROLE_TO_ASSUME= \
+    AZURE_CLIENT_ID=11111111-2222-3333-4444-555555555555 \
+    run bash "${SCRIPTS}/preflight.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value skip)" = "false" ]
+  refute grep -q "no AWS credential" "$GITHUB_STEP_SUMMARY"
+}

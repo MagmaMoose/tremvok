@@ -19,15 +19,16 @@ that belongs to another target is a hard error naming both, before the checkout.
 | `terragrunt` | Discover, plan and (on an approval) apply Terragrunt stacks |
 | `ansible` | Run a playbook over SSH, then prove it is idempotent |
 | `cloudflare-workers` | Deploy a Worker and its static assets with Wrangler |
+| `azure-functions-zip` | Publish a zip to an Azure Function App, then wait for it to answer |
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 99 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 107 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
 | --- | --- | --- | --- |
-| `target` | the selector | not set | The deployment target. One of: github-pages Build an MkDocs site strictly and publish it to GitHub Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. cloudflare-workers Deploy a Worker and its static assets with Wrangler. |
+| `target` | the selector | not set | The deployment target. One of: github-pages Build an MkDocs site strictly and publish it to GitHub Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. cloudflare-workers Deploy a Worker and its static assets with Wrangler. azure-functions-zip Publish a zip to an Azure Function App, then wait for it to answer. |
 | `mode` | all | `auto` | What this run should do. One of: auto (default) push to the default branch = deploy, pull\_request = preview, workflow\_dispatch = deploy (pinned to the default branch). deploy Publish to the environment. preview Publish somewhere disposable; production is untouched. rollback Re-publish a previously published version. |
 | `environment` | all | not set | Logical environment name, surfaced in notifications and the deployment record. Defaults to "production" (deploy) or "preview". |
 | `working-directory` | all | `.` | Directory to run in. Paths in the other inputs are relative to it. |
@@ -36,6 +37,9 @@ is required.
 | `aws-region` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: AWS region. Falls back to the AWS\_REGION environment variable. |
 | `aws-role-to-assume` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | not set | s3-cloudfront, lambda-zip, terragrunt: IAM role ARN to assume with this run's GitHub OIDC token. Strongly preferred over stored keys: the credential expires in an hour and the role's trust policy decides which repository and ref may use it. Requires `permissions: id-token: write`. Leave empty to use credentials an earlier step already configured. |
 | `aws-role-duration-seconds` | `s3-cloudfront`, `lambda-zip`, `terragrunt` | `3600` | s3-cloudfront, lambda-zip, terragrunt: lifetime of the assumed-role session. |
+| `azure-client-id` | `azure-functions-zip` | not set | azure-functions-zip: client id of the Entra ID app registration this run signs in as, using the run's GitHub OIDC token. The Azure counterpart of `aws-role-to-assume`, and preferred over a stored publish profile for the same reasons: the session is minted per run and expires, and the app registration's federated credential decides which repository and which ref may mint one. A publish profile is a long-lived file carrying the deployment rights of the whole site, tied to nothing. Requires `permissions: id-token: write`. Leave empty to use a session an earlier step created. |
+| `azure-tenant-id` | `azure-functions-zip` | not set | azure-functions-zip: Entra ID tenant the app registration lives in. Required whenever `azure-client-id` is set. |
+| `azure-subscription-id` | `azure-functions-zip` | not set | azure-functions-zip: subscription the Function App lives in, selected after login. Required whenever `azure-client-id` is set. |
 | `pages-toolchain` | `github-pages` | `auto` | github-pages: how to install MkDocs, auto (default) \| uv \| pip. `auto` picks uv when a uv.lock is present, otherwise pip against `pages-requirements`. Detection exists so a caller does not have to declare per-repo what is already visible in the repo. |
 | `pages-dependency-group` | `github-pages` | `docs` | github-pages: uv dependency-group holding the docs tooling (uv toolchain only). |
 | `pages-requirements` | `github-pages` | `docs/requirements.txt` | github-pages: requirements file pinning the docs build (pip toolchain only). |
@@ -47,7 +51,7 @@ is required.
 | `pages-readme-budget` | `github-pages` | `0` | github-pages: override the README line budget. 0 uses the profile default. |
 | `pages-markdownlint` | `github-pages` | `true` | github-pages: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor carries no markdown linter, and MARKDOWN\_MARKDOWNLINT emits no SARIF, so it could never gate on net-new findings anyway. |
 | `build-git-credentials` | `github-pages`, `cloudflare-workers` | not set | github-pages, cloudflare-workers: credentials for the private git hosts the build fetches from, one `<host> <username>:<token>` per line. Empty (default) changes nothing. git.example.invalid x-access-token:&lt;a short-lived token&gt; A docs build that installs its theme with `pkg @ git+https://<host>/<org>/<repo>.git@<tag>` needs that clone authenticated, and the clone is git's own, several processes below this action. Each line becomes one `url.<credentialled>.insteadOf` rewrite carried in GIT\_CONFIG\_COUNT / GIT\_CONFIG\_KEY\_n / GIT\_CONFIG\_VALUE\_n for the rest of this job, so the requirements file keeps pinning the plain URL and stays reviewable. Never `git config --global`: a self-hosted runner is shared and long-lived, and a global rewrite would leave the token in `~/.gitconfig` for whatever runs on that machine next. The username is written out rather than assumed, because the forges disagree about it: `x-access-token` for a GitHub App token, `oauth2` for a GitLab one. The split is at the FIRST `:`, which is the safe way round — the username is the half that cannot contain one, so a token that does survives intact. Every token is masked on receipt and never echoed. A malformed line is refused by index and host, and the host is only quoted when it looks like one, because a bare token pasted as a line would otherwise be printed into an annotation as public as the repository. Blank lines and `#` comments are ignored. |
-| `artifact-path` | `s3-cloudfront`, `lambda-zip`, `cloudflare-workers` | not set | s3-cloudfront, lambda-zip, cloudflare-workers: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip. |
+| `artifact-path` | `s3-cloudfront`, `lambda-zip`, `cloudflare-workers`, `azure-functions-zip` | not set | s3-cloudfront, lambda-zip, cloudflare-workers, azure-functions-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip and azure-functions-zip. |
 | `s3-bucket` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: the bucket. For s3-cloudfront it serves the site; for lambda-zip it holds published artifacts. |
 | `s3-key-prefix` | `s3-cloudfront`, `lambda-zip` | not set | s3-cloudfront, lambda-zip: key prefix within the bucket. Previews are placed under `<s3-key-prefix>/previews/<alias>/`. |
 | `s3-delete-orphans` | `s3-cloudfront` | `auto` | s3-cloudfront: pass --delete to `aws s3 sync`, removing bucket objects with no local counterpart. `auto` (default) means yes. |
@@ -111,6 +115,11 @@ is required.
 | `cloudflare-wrangler-version` | `cloudflare-workers` | `4.114.0` | cloudflare-workers: exact Wrangler version to run. Pinned, because the tool that publishes to production is not a floating dependency. |
 | `cloudflare-node-version` | `cloudflare-workers` | `24` | cloudflare-workers: Node version Wrangler runs on. Wrangler 4 declares `engines.node >= 22`, and on 20 it installs cleanly and then refuses to run, so this does not default to whatever the runner happens to ship. |
 | `cloudflare-extra-args` | `cloudflare-workers` | not set | cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace. |
+| `functions-app-name` | `azure-functions-zip` | not set | azure-functions-zip: the Function App to publish to. Required for this target. |
+| `functions-resource-group` | `azure-functions-zip` | not set | azure-functions-zip: resource group the Function App lives in. Required for this target. |
+| `functions-slot` | `azure-functions-zip` | not set | azure-functions-zip: deployment slot to publish to instead of production. Empty (default) publishes to the app itself. This is also what a preview has to use. A pull request must not publish onto the routes production serves, and a slot is Azure's only destination that does not — but a Linux Consumption plan HAS NO SLOTS. So on Consumption a preview is refused and says why, rather than quietly shipping a branch to production. On Premium or Dedicated, set this and previews go to the slot. |
+| `functions-ready-attempts` | `azure-functions-zip` | `30` | azure-functions-zip: how many times to ask the app for an answer after publishing, before calling the deploy dead. Any HTTP status passes, including a 404 at the root, which is what a Function App whose only trigger is at `/api/<name>` normally returns. Only a connection failure and a 503 count as "not yet". The default is generous on purpose: a freshly created Consumption app 503s from both the site and its SCM endpoint until content is first published, so a FIRST deploy has to retry through that rather than fail on it. |
+| `functions-ready-delay` | `azure-functions-zip` | `10` | azure-functions-zip: seconds between readiness attempts. With the default attempts, that is a five-minute ceiling on a cold first publish. |
 | `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green. |
 | `verify-header` | all | not set | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
 | `verify-header-match` | all | not set | Post-deploy: an extended regex the `verify-header` value must match. |
@@ -142,7 +151,7 @@ is required.
 | `record-id` | Identifier returned by the Tremvok API, when api-url is set. |
 | `site-dir` | github-pages: absolute path to the built site. |
 | `pages-toolchain` | github-pages: the toolchain actually used, uv or pip. |
-| `version-id` | lambda-zip, cloudflare-workers: the published version. A Lambda version number, or a Worker Version ID. |
+| `version-id` | lambda-zip, cloudflare-workers, azure-functions-zip: the published version. A Lambda version number, a Worker Version ID, or the package sha256 — Azure exposes no per-deploy content hash of its own. |
 | `stacks` | terragrunt: how many stacks this run discovered. |
 | `plan-changes` | terragrunt: how many of those stacks planned with a diff. |
 | `applied` | terragrunt: true when this run applied, false when it only planned. |
@@ -204,6 +213,15 @@ permissions:
 ```yaml
 permissions:
   contents: read        # checkout
+  pull-requests: write  # the sticky preview comment
+```
+
+### `target: azure-functions-zip`
+
+```yaml
+permissions:
+  contents: read        # checkout
+  id-token: write       # sign in to Azure by OIDC
   pull-requests: write  # the sticky preview comment
 ```
 

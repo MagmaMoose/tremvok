@@ -20,6 +20,8 @@ IS_FORK="${IS_FORK:-false}"
 ROLE_TO_ASSUME="${ROLE_TO_ASSUME:-}"
 AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
 AWS_WEB_IDENTITY_TOKEN_FILE="${AWS_WEB_IDENTITY_TOKEN_FILE:-}"
+AZURE_CLIENT_ID="${AZURE_CLIENT_ID:-}"
+AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-}"
 TARGET="${TARGET:-}"
 ALLOW_FORK_PREVIEW="${ALLOW_FORK_PREVIEW:-false}"
 
@@ -42,6 +44,14 @@ elif [[ "$TARGET" == "s3-cloudfront" || "$TARGET" == "lambda-zip" ]] \
   # with a message naming the provider, and that is the better message of the two.
   skip=true
   reason="no AWS credential is available for target: ${TARGET}. Set aws-role-to-assume (OIDC, preferred) or configure credentials in an earlier step. Nothing was deployed."
+elif [[ "$TARGET" == "azure-functions-zip" ]] \
+  && [[ -z "$AZURE_CLIENT_ID" && -z "$AZURE_SUBSCRIPTION_ID" && ! -d "${HOME:-/nonexistent}/.azure" ]]; then
+  # The Azure equivalent, and the ambient case is a directory rather than a variable: a
+  # session `az login` created in an earlier step lives in ~/.azure, not in the environment.
+  # Checking for it is what keeps "run azure/login yourself first" a supported way to use
+  # this target rather than a configuration that skips for no visible reason.
+  skip=true
+  reason="no Azure credential is available for target: ${TARGET}. Set azure-client-id, azure-tenant-id and azure-subscription-id (OIDC, preferred) or sign in during an earlier step. Nothing was deployed."
 fi
 
 if [[ "$skip" == true ]]; then

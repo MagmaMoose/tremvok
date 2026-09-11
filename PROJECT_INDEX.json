@@ -1,18 +1,20 @@
 {
   "name": "tremvok",
-  "description": "One composite GitHub action with six deployment targets (github-pages, cloudflare-workers, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
+  "description": "One composite GitHub action with seven deployment targets (github-pages, cloudflare-workers, azure-functions-zip, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
   "generated": "2026-09-09",
   "generated_for": "agents \u2014 read this before grepping the tree",
   "surfaces": {
     "action": {
       "entrypoint": "action.yml",
-      "note": "Glue only. One action, six targets selected by `target`; every decision lives in scripts/, which is bats-tested and bash 3.2-compatible. An input belonging to another target is a hard error, checked first, before the checkout.",
+      "note": "Glue only. One action, seven targets selected by `target`; every decision lives in scripts/, which is bats-tested and bash 3.2-compatible. An input belonging to another target is a hard error, checked first, before the checkout.",
       "scripts": {
         "scripts/approval-gate.sh": "independent approvers; exits non-zero rather than reporting 'nobody'",
         "scripts/assume-role.sh": "GitHub OIDC -> STS -> masked short-lived credentials",
+        "scripts/azure-login.sh": "GitHub OIDC -> Entra ID federated credential -> an az session; masked, no publish profile",
         "scripts/build-git-credentials.sh": "targets that build: private-git-host rewrites into GIT_CONFIG_COUNT/KEY_n/VALUE_n for this job only, never ~/.gitconfig; tokens masked on receipt, bad lines named by index and host",
         "scripts/collect-outcome.sh": "one status every sink shares; a plan-only run is a success, a skip is a skip",
         "scripts/deploy-ansible.sh": "pinned ansible over SSH; secrets to 0600 files under RUNNER_TEMP; second check-mode run proves idempotence",
+        "scripts/deploy-azure-functions-zip.sh": "target: azure-functions-zip. config-zip, then poll the app until it answers; the az exit code is corroborated against WEBSITE_RUN_FROM_PACKAGE because it lies; refuses a package whose functions.metadata/.azurefunctions are not at the root",
         "scripts/deploy-cloudflare-workers.sh": "target: cloudflare-workers. wrangler deploy, or versions upload --preview-alias for a PR; the preview takes no production traffic",
         "scripts/deploy-lambda-zip.sh": "immutable S3 key, publish version, verify CodeSha256, move alias (deploy only)",
         "scripts/deploy-s3-cloudfront.sh": "static site to S3 + CloudFront invalidation; refuses an empty artifact dir",
@@ -24,7 +26,7 @@
         "scripts/notify-webhook.sh": "Slack + Teams cards, jq-built, failure-isolated",
         "scripts/pages-detect.sh": "target: github-pages. uv vs pip, and whether to stage a Pages artifact at all (a preview or dry run does not)",
         "scripts/preflight-urls.sh": "one bounded probe per URL before the first plan; only curl 000 fails, 401/403 pass",
-        "scripts/preflight.sh": "fork / no-credential -> honest skip with a reason; AWS targets only",
+        "scripts/preflight.sh": "fork / no-credential -> honest skip with a reason; the AWS targets and azure-functions-zip",
         "scripts/publish-check.sh": "the check run that makes apply-before-merge enforceable",
         "scripts/record-deployment.sh": "OIDC-authenticated POST to the Tremvok API, failure-isolated",
         "scripts/resolve-merged-pr.sh": "commit -> the merged pull request it came from; 0 found, 2 none, 1 unreadable, never collapsed",
