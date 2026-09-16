@@ -73,7 +73,7 @@ approved() {
   [ "$status" -eq 0 ]
   [ "$(output_value plan-changes)" = "1" ]
   [ "$(output_value applied)" = "false" ]
-  ! grep -q 'terragrunt apply' "$STUB_LOG"
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
 }
 
 @test "an approval event authorises the apply" {
@@ -92,14 +92,14 @@ approved() {
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -ne 0 ]
   [ "$(output_value plan-failures)" = "1" ]
-  ! grep -q 'terragrunt apply' "$STUB_LOG"
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
 }
 
 @test "a clean plan needs no approval and applies nothing" {
   PLAN_EXIT=0 PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value plan-changes)" = "0" ]
-  ! grep -q 'terragrunt apply' "$STUB_LOG"
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
 }
 
 @test "apply=never plans and stops, approval or not" {
@@ -147,7 +147,7 @@ STUBEOF
   DRY_RUN=true PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
-  ! grep -q '^terragrunt' "$STUB_LOG"
+  refute grep -q '^terragrunt' "$STUB_LOG"
 }
 
 
@@ -160,7 +160,7 @@ STUBEOF
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   grep -q '^plan ARM_ACCESS_KEY=PRDKEY' "${STUB_LOG}.env"
-  ! grep -q 'ARM_ACCESS_KEY=DEVKEY' "${STUB_LOG}.env"
+  refute grep -q 'ARM_ACCESS_KEY=DEVKEY' "${STUB_LOG}.env"
 }
 
 @test "a stack matching only the catch-all gets the catch-all's credential" {
@@ -171,7 +171,7 @@ STUBEOF
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   grep -q '^plan ARM_ACCESS_KEY=DEVKEY' "${STUB_LOG}.env"
-  ! grep -q 'ARM_ACCESS_KEY=PRDKEY' "${STUB_LOG}.env"
+  refute grep -q 'ARM_ACCESS_KEY=PRDKEY' "${STUB_LOG}.env"
 }
 
 @test "first match wins, so order is the contract and not an accident" {
@@ -285,14 +285,14 @@ ${key}" run bash "${SCRIPTS}/deploy-terragrunt.sh"
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"line 3"* ]]
-  ! [[ "$output" == *"SUPERSECRETKEY"* ]]
+  [[ "$output" != *"SUPERSECRETKEY"* ]]
 }
 
 @test "the credential never reaches the log or the pull-request comment" {
   STACK_ENV=$'*  ARM_ACCESS_KEY=SUPERSECRETKEY' run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [[ "$output" != *"SUPERSECRETKEY"* ]]
-  ! grep -rq 'SUPERSECRETKEY' "${WORK}/tg" 2>/dev/null
+  refute grep -rq 'SUPERSECRETKEY' "${WORK}/tg" 2>/dev/null
 }
 
 
