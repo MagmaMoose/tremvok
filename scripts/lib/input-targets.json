@@ -1,6 +1,7 @@
 {
   "targets": [
     "github-pages",
+    "cloudflare-docs",
     "s3-cloudfront",
     "lambda-zip",
     "terragrunt",
@@ -12,6 +13,7 @@
     "mode": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -24,6 +26,7 @@
     "environment": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -36,6 +39,7 @@
     "working-directory": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -48,6 +52,7 @@
     "checkout": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -60,6 +65,7 @@
     "dry-run": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -113,68 +119,79 @@
     },
     "pages-toolchain": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "auto"
     },
     "pages-dependency-group": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "docs"
     },
     "pages-requirements": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "docs/requirements.txt"
     },
     "pages-python-version": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "3.12"
     },
     "pages-strict": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "true"
     },
     "pages-site-dir": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "site"
     },
     "pages-lint": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "true"
     },
     "pages-profile": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "auto"
     },
     "pages-readme-budget": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "0"
     },
     "pages-markdownlint": {
       "targets": [
-        "github-pages"
+        "github-pages",
+        "cloudflare-docs"
       ],
       "default": "true"
     },
     "build-git-credentials": {
       "targets": [
         "github-pages",
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "cloudflare-docs"
       ],
       "default": ""
     },
@@ -491,25 +508,29 @@
     },
     "cloudflare-api-token": {
       "targets": [
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "cloudflare-docs"
       ],
       "default": ""
     },
     "cloudflare-account-id": {
       "targets": [
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "cloudflare-docs"
       ],
       "default": ""
     },
     "cloudflare-config": {
       "targets": [
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "cloudflare-docs"
       ],
       "default": ""
     },
     "cloudflare-worker-name": {
       "targets": [
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "cloudflare-docs"
       ],
       "default": ""
     },
@@ -551,15 +572,47 @@
     },
     "cloudflare-wrangler-version": {
       "targets": [
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "cloudflare-docs"
       ],
       "default": "4.114.0"
     },
     "cloudflare-node-version": {
       "targets": [
-        "cloudflare-workers"
+        "cloudflare-workers",
+        "cloudflare-docs"
       ],
       "default": "24"
+    },
+    "cloudflare-docs-host": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": ""
+    },
+    "cloudflare-docs-path": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": ""
+    },
+    "cloudflare-docs-require-access": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": "false"
+    },
+    "cloudflare-docs-index": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": "true"
+    },
+    "cloudflare-docs-index-bucket": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": ""
     },
     "cloudflare-extra-args": {
       "targets": [
@@ -606,6 +659,7 @@
     "verify-url": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -618,6 +672,7 @@
     "verify-header": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -630,6 +685,7 @@
     "verify-header-match": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -642,6 +698,7 @@
     "verify-method": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -654,6 +711,7 @@
     "verify-status": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -666,6 +724,7 @@
     "verify-attempts": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -678,6 +737,7 @@
     "verify-delay": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -690,6 +750,7 @@
     "notify": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -702,6 +763,7 @@
     "pr-comment": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -714,6 +776,7 @@
     "slack-webhook": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -726,6 +789,7 @@
     "teams-webhook": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -738,6 +802,7 @@
     "api-url": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -750,6 +815,7 @@
     "api-audience": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -762,6 +828,7 @@
     "auth-token": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -774,6 +841,7 @@
     "allow-fork-preview": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",
@@ -786,6 +854,7 @@
     "allow-dispatch-from-any-ref": {
       "targets": [
         "github-pages",
+        "cloudflare-docs",
         "s3-cloudfront",
         "lambda-zip",
         "terragrunt",

@@ -88,6 +88,94 @@ refuses is named by its index and its host, and the host is only quoted when it 
 one, because a bare token pasted onto a line would otherwise be printed into an annotation as
 public as the repository.
 
+### `cloudflare-docs`
+
+The same strict MkDocs build as `github-pages`, published to Cloudflare Workers Static Assets
+instead of GitHub Pages. The canonical address is `https://<host>/<repo>/`, and one hostname
+serves every repository by path:
+
+```yaml
+permissions: { contents: read, pull-requests: write }
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: cloudflare-docs
+          cloudflare-docs-host: docs.magmamoose.com
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+```
+
+One job, where `github-pages` needs two. That second job exists only because
+`actions/deploy-pages` requires `pages: write` and the `github-pages` environment, which a
+composite action cannot declare. Wrangler requires neither.
+
+Three things have to exist before the first run:
+
+1. **`site_url` is the canonical address.** Set it to `https://<host>/<repo>/`. MkDocs emits
+   `<link rel="canonical">` and its sitemap from it, so leaving it pointed at the old host
+   publishes absolute links to somewhere that is no longer the address.
+2. **A `wrangler.toml` at your repository root.** Copy `workers/docs-site/wrangler.toml` and
+   set `name` to `docs-<repo>`. It declares `[assets]` and, deliberately, no route and no
+   `workers_dev` URL.
+3. **A `[[services]]` block in the router's config**, binding `<REPO>` to `docs-<repo>`.
+   Without it the router 404s your path — a quiet omission, since your own build stays green.
+
+A pull request publishes nothing. These Workers carry no route and `workers_dev = false`, so
+there is no disposable address a preview could be served from; the strict build is the check.
+That is the same position `github-pages` is in, arrived at differently.
+
+#### Why the router uses a service binding
+
+The site Workers are unreachable over HTTP. The router on `<host>` calls them through a
+**service binding**, which is an in-process dispatch on Cloudflare's network rather than a
+request on the wire. An HTTP proxy would need a public origin hostname for each site —
+exactly what `workers_dev = false` exists to prevent — and proxying an Access-gated origin
+would need the router to hold a service token, at which point Access is gating the router
+rather than the person visiting.
+
+#### Keeping a private site private
+
+`cloudflare-docs-require-access: true` makes the deploy ask Cloudflare which Access
+applications exist and refuse to publish unless one actually covers `<host>/<repo>`:
+
+```yaml
+          cloudflare-docs-require-access: 'true'
+```
+
+"The site is behind Access" is otherwise a belief that nothing checks, falsified silently the
+day an application is renamed or its domain edited. This is the one moment something can ask.
+
+The API token needs the **`Access: Apps` read** permission for this. Cloudflare's "Edit
+Cloudflare Workers" template does not include it, and a `403` is reported as *could not tell*
+rather than as "nothing covers it" — the two look alike in the response and collapsing them
+would publish a private site while reporting that it checked.
+
+#### The docs corpus
+
+The build already holds every page it just rendered, so it emits a machine-readable copy of
+the site at no extra cost: `llms.txt` (a link index) and `llms-full.txt` (every page's text)
+are written into the site before it is published, and a search index of every page is
+generated beside it. On by default (`cloudflare-docs-index`), with no credentials and no
+network.
+
+Name a bucket and a deploy also publishes that index to R2 as `index/<repo>.json`, which is
+the corpus the documentation MCP servers read:
+
+```yaml
+          cloudflare-docs-index-bucket: magmamoose-docs-index
+```
+
+Only a deploy writes it, and only after the site itself deployed: there is one key per
+repository, so a pull request would otherwise overwrite the shared corpus with an unmerged
+branch, and an index published ahead of a failed deploy would cite pages nobody serves. The
+token needs **R2 object write** on top of the Workers permissions. The upload is not
+failure-isolated: a run that deployed the site and quietly failed to publish the index would
+be green while every agent read the previous commit's documentation.
+
 ### `cloudflare-workers`
 
 ```yaml

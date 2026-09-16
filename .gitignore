@@ -21,6 +21,8 @@ terraform/localstack/_validate_provider.tf
 
 # Docs
 site/
+# gen_docs_index.py's default output when --index-out is not passed
+.docs-index/
 
 # Agent scratch
 .claude/last_output.txt

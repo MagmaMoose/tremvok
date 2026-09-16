@@ -36,6 +36,8 @@ inputs:
         terragrunt     Discover, plan and (on an approval) apply Terragrunt stacks.
         ansible        Run an Ansible playbook over SSH, then prove it is idempotent.
         cloudflare-workers  Deploy a Worker and its static assets with Wrangler.
+        cloudflare-docs     Build an MkDocs site strictly and publish it to Cloudflare
+                            Workers Static Assets, behind the docs router.
         azure-functions-zip  Publish a zip to an Azure Function App, then wait for it to answer.
     required: true
 
@@ -117,60 +119,60 @@ inputs:
   # ── target: github-pages ─────────────────────────────────────────────────────────
   pages-toolchain:
     description: |
-      github-pages: how to install MkDocs, auto (default) | uv | pip. `auto` picks uv when a uv.lock
+      github-pages, cloudflare-docs: how to install MkDocs, auto (default) | uv | pip. `auto` picks uv when a uv.lock
       is present, otherwise pip against `pages-requirements`. Detection exists so a caller does
       not have to declare per-repo what is already visible in the repo.
     required: false
     default: 'auto'
 
   pages-dependency-group:
-    description: 'github-pages: uv dependency-group holding the docs tooling (uv toolchain only).'
+    description: 'github-pages, cloudflare-docs: uv dependency-group holding the docs tooling (uv toolchain only).'
     required: false
     default: 'docs'
 
   pages-requirements:
-    description: 'github-pages: requirements file pinning the docs build (pip toolchain only).'
+    description: 'github-pages, cloudflare-docs: requirements file pinning the docs build (pip toolchain only).'
     required: false
     default: 'docs/requirements.txt'
 
   pages-python-version:
-    description: 'github-pages: Python version used to build the site.'
+    description: 'github-pages, cloudflare-docs: Python version used to build the site.'
     required: false
     default: '3.12'
 
   pages-strict:
     description: |
-      github-pages: build with `--strict`, so a broken internal link or a nav entry pointing at a
+      github-pages, cloudflare-docs: build with `--strict`, so a broken internal link or a nav entry pointing at a
       missing file fails rather than publishing a site with holes in it.
     required: false
     default: 'true'
 
   pages-site-dir:
-    description: 'github-pages: directory the built site is written to.'
+    description: 'github-pages, cloudflare-docs: directory the built site is written to.'
     required: false
     default: 'site'
 
   pages-lint:
     description: |
-      github-pages: run the repo-shape checks (README budget and section order, licence agreement,
+      github-pages, cloudflare-docs: run the repo-shape checks (README budget and section order, licence agreement,
       link targets, Marketplace preflight, INHERIT clobber) before building. These are the
       rules nothing else covers; --strict already catches broken internal links.
     required: false
     default: 'true'
 
   pages-profile:
-    description: 'github-pages: repo profile for the shape checks, auto | action | service | spec.'
+    description: 'github-pages, cloudflare-docs: repo profile for the shape checks, auto | action | service | spec.'
     required: false
     default: 'auto'
 
   pages-readme-budget:
-    description: 'github-pages: override the README line budget. 0 uses the profile default.'
+    description: 'github-pages, cloudflare-docs: override the README line budget. 0 uses the profile default.'
     required: false
     default: '0'
 
   pages-markdownlint:
     description: |
-      github-pages: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is
+      github-pages, cloudflare-docs: run markdownlint-cli2 over docs/ and README.md when a markdownlint config is
       present. Runs here rather than under MegaLinter because MegaLinter's `security` flavor
       carries no markdown linter, and MARKDOWN_MARKDOWNLINT emits no SARIF, so it could never
       gate on net-new findings anyway.
@@ -180,7 +182,7 @@ inputs:
   # ── targets that run a build: github-pages, cloudflare-workers ───────────
   build-git-credentials:
     description: |
-      github-pages, cloudflare-workers: credentials for the private git hosts the build fetches
+      github-pages, cloudflare-workers, cloudflare-docs: credentials for the private git hosts the build fetches
       from, one `<host> <username>:<token>` per line. Empty (default) changes nothing.
 
         git.example.invalid  x-access-token:<a short-lived token>
@@ -587,7 +589,7 @@ inputs:
   # ── target: cloudflare-workers ───────────────────────────────────────────
   cloudflare-api-token:
     description: |
-      cloudflare-workers: API token Wrangler authenticates with. Pass a secret, never a
+      cloudflare-workers, cloudflare-docs: API token Wrangler authenticates with. Pass a secret, never a
       literal. Mint it from Cloudflare's "Edit Cloudflare Workers" template rather than a
       hand-picked permission list, or the first deploy of a custom domain fails on a
       permission nobody thought to grant.
@@ -595,13 +597,13 @@ inputs:
     default: ''
 
   cloudflare-account-id:
-    description: 'cloudflare-workers: Cloudflare account id. Pass a secret.'
+    description: 'cloudflare-workers, cloudflare-docs: Cloudflare account id. Pass a secret.'
     required: false
     default: ''
 
   cloudflare-config:
     description: |
-      cloudflare-workers: path to the Wrangler config (wrangler.toml or wrangler.jsonc),
+      cloudflare-workers, cloudflare-docs: path to the Wrangler config (wrangler.toml or wrangler.jsonc),
       passed as `--config`. Empty lets Wrangler find it, which is the normal case. The
       config owns the asset directory, routes, custom domains and 404 handling; the inputs
       here are overrides for the few things a workflow legitimately varies.
@@ -609,7 +611,7 @@ inputs:
     default: ''
 
   cloudflare-worker-name:
-    description: 'cloudflare-workers: overrides the `name` in the Wrangler config, passed as `--name`.'
+    description: 'cloudflare-workers, cloudflare-docs: overrides the `name` in the Wrangler config, passed as `--name`.'
     required: false
     default: ''
 
@@ -654,17 +656,67 @@ inputs:
     default: ''
 
   cloudflare-wrangler-version:
-    description: 'cloudflare-workers: exact Wrangler version to run. Pinned, because the tool that publishes to production is not a floating dependency.'
+    description: 'cloudflare-workers, cloudflare-docs: exact Wrangler version to run. Pinned, because the tool that publishes to production is not a floating dependency.'
     required: false
     default: '4.114.0'
 
   cloudflare-node-version:
     description: |
-      cloudflare-workers: Node version Wrangler runs on. Wrangler 4 declares
+      cloudflare-workers, cloudflare-docs: Node version Wrangler runs on. Wrangler 4 declares
       `engines.node >= 22`, and on 20 it installs cleanly and then refuses to run, so this
       does not default to whatever the runner happens to ship.
     required: false
     default: '24'
+
+  # ── target: cloudflare-docs ──────────────────────────────────────────────────
+  cloudflare-docs-host:
+    description: |
+      cloudflare-docs: hostname the docs router serves, e.g. `docs.magmamoose.com`. The site
+      Worker itself has no hostname — it is reachable only through the router's service
+      binding — so this is the address the Access check and the reported URL are about.
+      Required when `cloudflare-docs-require-access` is on.
+    required: false
+    default: ''
+
+  cloudflare-docs-path:
+    description: |
+      cloudflare-docs: path segment this repository's site is served under on
+      `cloudflare-docs-host`. Empty (default) uses the repository name, which is what the
+      router dispatches on, so overriding it is for a repo whose site is mounted elsewhere.
+    required: false
+    default: ''
+
+  cloudflare-docs-require-access:
+    description: |
+      cloudflare-docs: refuse to publish unless a Cloudflare Access application actually
+      covers `<cloudflare-docs-host>/<cloudflare-docs-path>`. This is enforcement, not
+      convention: "the site is behind Access" is otherwise a belief nothing checks, and the
+      deploy is the one moment something can ask Cloudflare and refuse. Needs the
+      `Access: Apps` READ permission on `cloudflare-api-token` — the "Edit Cloudflare
+      Workers" template does not include it, and a 403 is treated as "could not tell", never
+      as "nothing covers it".
+    required: false
+    default: 'false'
+
+  cloudflare-docs-index:
+    description: |
+      cloudflare-docs: emit the docs corpus from the build: `llms.txt` and `llms-full.txt`
+      written into the site before it is published, and a search index of every page for
+      the documentation MCP servers. One pass over the markdown that was just rendered; no
+      credentials and no network. Publishing the index is a separate opt-in,
+      `cloudflare-docs-index-bucket`.
+    required: false
+    default: 'true'
+
+  cloudflare-docs-index-bucket:
+    description: |
+      cloudflare-docs: R2 bucket the index is published to, as `index/<repo>.json`. Empty
+      (default) writes llms.txt into the site and uploads no index. Only a deploy writes it,
+      and only after the site itself deployed: a pull request would otherwise overwrite the
+      shared corpus with an unmerged branch. Needs R2 object write on `cloudflare-api-token`,
+      which the "Edit Cloudflare Workers" template does not include.
+    required: false
+    default: ''
 
   cloudflare-extra-args:
     description: 'cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace.'
@@ -937,7 +989,7 @@ runs:
     # restating it in config is one more thing that can disagree with the repo.
     - name: Detect the docs toolchain
       id: pages-detect
-      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'github-pages'
+      if: steps.preflight.outputs.skip != 'true' && (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs')
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -965,7 +1017,7 @@ runs:
     # transitively with MkDocs. Hand-rolling a YAML parser to avoid this would be a
     # worse trade than one extra step.
     - name: Install the docs toolchain
-      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.toolchain != ''
+      if: (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs') && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -981,7 +1033,7 @@ runs:
         fi
 
     - name: Lint repo shape
-      if: inputs.target == 'github-pages' && inputs.pages-lint == 'true' && steps.pages-detect.outputs.toolchain != ''
+      if: (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs') && inputs.pages-lint == 'true' && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -1001,13 +1053,13 @@ runs:
     # Only when the runner has no Node. A GitHub-hosted runner already does, so this
     # step is skipped there and costs nothing.
     - name: Set up Node for markdownlint
-      if: inputs.target == 'github-pages' && inputs.pages-markdownlint == 'true' && steps.pages-detect.outputs.has-node == 'false'
+      if: (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs') && inputs.pages-markdownlint == 'true' && steps.pages-detect.outputs.has-node == 'false'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: '22'
 
     - name: Lint markdown
-      if: inputs.target == 'github-pages' && inputs.pages-markdownlint == 'true' && steps.pages-detect.outputs.toolchain != ''
+      if: (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs') && inputs.pages-markdownlint == 'true' && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -1026,7 +1078,7 @@ runs:
 
     - name: Build the site
       id: pages-build
-      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.toolchain != ''
+      if: (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs') && steps.pages-detect.outputs.toolchain != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -1045,14 +1097,121 @@ runs:
         echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
 
     - name: Configure Pages
-      if: steps.pages-detect.outputs.stage-pages == 'true'
+      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.stage-pages == 'true'
       uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
     - name: Stage the Pages artifact
-      if: steps.pages-detect.outputs.stage-pages == 'true'
+      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.stage-pages == 'true'
       uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
       with:
         path: ${{ inputs.working-directory }}/${{ inputs.pages-site-dir }}
+
+    # ── target: cloudflare-docs ──────────────────────────────────────────────
+    #
+    # The build above is shared with github-pages; only the publish differs. What is published
+    # is a Worker with static assets and no route of its own — the docs router on
+    # `cloudflare-docs-host` reaches it over a service binding. See workers/docs-router/.
+    # Before the deploy, not after: llms.txt and llms-full.txt are written INTO the built site,
+    # so they have to exist by the time it is uploaded.
+    #
+    # A step rather than a MkDocs plugin. A plugin has to be named in `plugins:`, and a repo
+    # that declares `plugins:` in its own mkdocs.yml silently discards every entry in the
+    # shared mkdocs.base.yml, because MkDocs REPLACES lists rather than merging them.
+    # `pages-lint` fails the build on exactly that, so the corpus must not be what forces
+    # every repo to trip it.
+    #
+    # When `cloudflare-docs-host` is set, citations are built from the address the router
+    # actually serves this site at rather than from `site_url` in mkdocs.yml. A stale
+    # `site_url` would otherwise put a wrong link into every answer an agent gives.
+    - name: Emit the docs corpus
+      id: docs-index
+      if: inputs.target == 'cloudflare-docs' && inputs.cloudflare-docs-index == 'true' && steps.pages-detect.outputs.toolchain != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLCHAIN: ${{ steps.pages-detect.outputs.toolchain }}
+        SCRIPT: ${{ github.action_path }}/scripts/gen_docs_index.py
+        SITE_DIR: ${{ inputs.pages-site-dir }}
+        REPO_NAME: ${{ github.event.repository.name }}
+        DOCS_HOST: ${{ inputs.cloudflare-docs-host }}
+        DOCS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
+        INDEX_DIR: ${{ runner.temp }}/tremvok-docs-index
+        COMMIT: ${{ github.sha }}
+        # Decides whether a public docs surface may show this repository at all. Taken from
+        # GitHub rather than an input, so it cannot drift from the truth, and read as private
+        # unless it is exactly `public`: `internal`, or an event that carries no repository
+        # object, must never mark an index public.
+        VISIBILITY: ${{ github.event.repository.visibility }}
+      run: |
+        set -euo pipefail
+        args=(--root . --site-dir "$SITE_DIR" --repo "$REPO_NAME" \
+              --index-out "$INDEX_DIR" --commit "$COMMIT" --visibility "$VISIBILITY")
+        if [ -n "$DOCS_HOST" ]; then
+          args+=(--site-url "https://${DOCS_HOST}/${DOCS_PATH}/")
+        fi
+        if [ "$TOOLCHAIN" = "uv" ]; then
+          uv run --no-sync python "$SCRIPT" "${args[@]}"
+        else
+          python "$SCRIPT" "${args[@]}"
+        fi
+        echo "index-file=${INDEX_DIR}/index/${REPO_NAME}.json" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Node for Wrangler
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: ${{ inputs.cloudflare-node-version }}
+
+    # Before the publish, not after. A site that went out uncovered is already public, and
+    # "we noticed afterwards" is what this check exists to prevent.
+    - name: Is the docs site actually behind Access?
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        REQUIRE_ACCESS: ${{ inputs.cloudflare-docs-require-access }}
+        ACCESS_HOST: ${{ inputs.cloudflare-docs-host }}
+        ACCESS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/access-covers.sh"
+
+    - name: Deploy — Cloudflare docs
+      id: deploy-cloudflare-docs
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        SITE_DIR: ${{ inputs.pages-site-dir }}
+        CONFIG: ${{ inputs.cloudflare-config }}
+        WORKER_NAME: ${{ inputs.cloudflare-worker-name }}
+        CF_ENV: ${{ inputs.cloudflare-env }}
+        DOCS_HOST: ${{ inputs.cloudflare-docs-host }}
+        DOCS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
+        WRANGLER_VERSION: ${{ inputs.cloudflare-wrangler-version }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-cloudflare-docs.sh"
+
+    # After the site deployed, never before. The index is what every agent-facing surface
+    # reads, so it has to describe a site that exists: published ahead of a deploy that then
+    # failed, agents would cite pages the router does not serve.
+    - name: Publish the docs corpus
+      if: inputs.target == 'cloudflare-docs' && inputs.cloudflare-docs-index-bucket != '' && steps.docs-index.outputs.index-file != '' && steps.deploy-cloudflare-docs.outcome == 'success'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INDEX_FILE: ${{ steps.docs-index.outputs.index-file }}
+        BUCKET: ${{ inputs.cloudflare-docs-index-bucket }}
+        REPO: ${{ github.event.repository.name }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        WRANGLER_VERSION: ${{ inputs.cloudflare-wrangler-version }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/publish-docs-index.sh"
 
     # ── targets: s3-cloudfront, lambda-zip, terragrunt ───────────────────────
     - name: Assume the deployment role

@@ -1,0 +1,49 @@
+# docs.magmamoose.com — the router Worker.
+#
+# One Worker owns the hostname and dispatches /<repo> to that repository's docs Worker over a
+# SERVICE BINDING. See src/index.js for why a binding and not an HTTP proxy; the short version
+# is that a proxy needs a public origin hostname per site (which `workers_dev = false` exists
+# to prevent) and proxying an Access-gated origin moves the gate off the user onto the router.
+#
+# ADDING A REPOSITORY IS ADDING A [[services]] BLOCK HERE. The router reads its route table
+# off `env` at runtime, so this file is the only list — there is no second table in the code
+# to forget.
+#
+# A BINDING IS ONLY REAL IF IT APPEARS IN `wrangler deploy --dry-run`. The rate-limit block
+# takes `name` where every other binding takes `binding`, and an older wrangler pin turns that
+# mistake into a warning nobody reads. `tests/test_workers_bindings.py` asserts every binding
+# in this file shows up in the dry-run output.
+
+name = "docs-router"
+main = "src/index.js"
+compatibility_date = "2026-09-15"
+
+# No workers.dev URL. The whole point of routing over service bindings is that no docs Worker
+# has a public origin; a router that had one would be the hole in that.
+workers_dev = false
+
+routes = [
+  { pattern = "docs.magmamoose.com", custom_domain = true },
+]
+
+# ── The fleet's docs sites ───────────────────────────────────────────────────
+#
+# `binding` is the repository name upper-snaked, because a binding name is a JavaScript
+# identifier on `env` and a hyphen is not one. `service` is the name of that repository's own
+# docs Worker, which is `docs-<repo>` by convention — see workers/docs-site/wrangler.toml.
+
+[[services]]
+binding = "TREMVOK"
+service = "docs-tremvok"
+
+[[services]]
+binding = "NIEVAH"
+service = "docs-nievah"
+
+[[services]]
+binding = "CHARGATE"
+service = "docs-chargate"
+
+[[services]]
+binding = "NOCTYR"
+service = "docs-noctyr"
