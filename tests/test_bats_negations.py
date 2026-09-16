@@ -26,12 +26,6 @@ BATS = pathlib.Path(__file__).resolve().parents[1] / "tests" / "bats"
 #: the function name, and inside the function the inversion is exactly what is wanted.
 BARE_NEGATION = re.compile(r"^\s+!\s")
 
-#: Negations that exist on the base branch in a file this change deliberately does not touch.
-#: `cloudflare_workers.bats` is converted on feat/cloudflare-workers/verify-config
-#: (MagmaMoose/tremvok#35); DELETE this entry once that is on main. A ratchet, not an exemption:
-#: the count may fall to zero and may never rise.
-ALLOWED = {"cloudflare_workers.bats": 5}
-
 
 def bare_negations(path: pathlib.Path) -> list[str]:
     return [
@@ -47,11 +41,9 @@ def test_the_suite_exists() -> None:
 
 
 def test_no_bats_assertion_is_a_bare_negation() -> None:
-    offenders: list[str] = []
-    for path in sorted(BATS.glob("*.bats")):
-        found = bare_negations(path)
-        if len(found) > ALLOWED.get(path.name, 0):
-            offenders += found
+    offenders = [
+        finding for path in sorted(BATS.glob("*.bats")) for finding in bare_negations(path)
+    ]
     assert not offenders, (
         "A bare `!` only fails a bats test on the last line of its body; anywhere else errexit "
         "ignores it, so the assertion can never fail. Write `refute <command>` (tests/bats/"
