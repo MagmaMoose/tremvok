@@ -25,7 +25,6 @@ SITE_DIR="${SITE_DIR:-site}"
 CONFIG="${CONFIG:-}"
 WORKER_NAME="${WORKER_NAME:-}"
 CF_ENV="${CF_ENV:-}"
-EXTRA_ARGS="${EXTRA_ARGS:-}"
 DOCS_HOST="${DOCS_HOST:-}"
 DOCS_PATH="${DOCS_PATH:-}"
 WRANGLER_VERSION="${WRANGLER_VERSION:-}"
@@ -73,12 +72,6 @@ args=(deploy)
 [[ -n "$CONFIG" ]] && args+=(--config "$CONFIG")
 [[ -n "$WORKER_NAME" ]] && args+=(--name "$WORKER_NAME")
 [[ -n "$CF_ENV" ]] && args+=(--env "$CF_ENV")
-if [[ -n "$EXTRA_ARGS" ]]; then
-  # Deliberately word-split: this is a flag list supplied by the caller.
-  # shellcheck disable=SC2206
-  args+=($EXTRA_ARGS)
-fi
-
 tremvok::log "publishing ${SITE_DIR} as a Worker with static assets"
 # shellcheck disable=SC2086
 $WRANGLER_BIN "${args[@]}"

@@ -1113,7 +1113,6 @@ runs:
         CONFIG: ${{ inputs.cloudflare-config }}
         WORKER_NAME: ${{ inputs.cloudflare-worker-name }}
         CF_ENV: ${{ inputs.cloudflare-env }}
-        EXTRA_ARGS: ${{ inputs.cloudflare-extra-args }}
         DOCS_HOST: ${{ inputs.cloudflare-docs-host }}
         DOCS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
         WRANGLER_VERSION: ${{ inputs.cloudflare-wrangler-version }}

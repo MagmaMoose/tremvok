@@ -35,7 +35,9 @@ Fifteen incidents, each with symptom, cause and fix. The clusters:
   always-free allowances; new spend needs a recorded decision, not a default. A caller's deploy
   *target* is a different thing: it runs on their account at their cost, so any supported
   provider is fine, `cloudflare-workers` included. See
-  `.claude/decisions/0003-cloudflare-workers-target.md`.
+  `.claude/decisions/0003-cloudflare-workers-target.md`. Exception: `workers/docs-router/` is
+  MagmaMoose org infrastructure (fleet-wide, not Tremvok's backend), sourced here because this
+  is the docs toolchain. See `.claude/decisions/0004-docs-on-workers-static-assets.md`.
 - **Bash 3.2.** GitHub's macOS runners ship it. No `${x,,}`, `${x^}`, `mapfile`, `declare -A`.
   `tests/bats/portability.bats` enforces this.
 - **Secrets are SSM `SecureString`.** Never Lambda environment variables, never Terraform

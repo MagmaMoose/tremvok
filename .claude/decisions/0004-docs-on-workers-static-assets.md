@@ -1,12 +1,12 @@
 # 4. Docs sites move to Workers Static Assets behind a service-bound router
 
-**Status:** proposed · **Date:** 2026-09-16 ·
+**Status:** accepted · **Date:** 2026-09-16 ·
 **Implements:** [nievah ADR-0005 — One docs corpus, three MCP surfaces](https://github.com/MagmaMoose/nievah/blob/main/docs/adr/0005-docs-sites-and-mcp-surfaces.md) ·
 **Relates to:** [0003 — Cloudflare Workers is a deployment target](0003-cloudflare-workers-target.md)
 
-**Proposed, not accepted.** Two things below need a maintainer's decision rather than an
-implementer's, and both are named as open questions in Consequences. Everything else is
-mechanical.
+**Accepted.** The router Worker is classified as MagmaMoose org infrastructure rather than a
+Tremvok hosted component; CLAUDE.md and AGENTS.md have been updated accordingly. The routing
+table (open question 2) remains a starting set and grows as other repos are onboarded.
 
 ## Context
 

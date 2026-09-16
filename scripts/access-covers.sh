@@ -60,7 +60,7 @@ status="$(curl -sS \
   --write-out '%{http_code}' \
   -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
   -H 'Content-Type: application/json' \
-  "${CF_API}/accounts/${CLOUDFLARE_ACCOUNT_ID}/access/apps?per_page=200" || true)"
+  "${CF_API}/accounts/${CLOUDFLARE_ACCOUNT_ID}/access/apps?per_page=1000" || true)"
 
 case "$status" in
   200) ;;
