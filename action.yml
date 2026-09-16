@@ -698,6 +698,26 @@ inputs:
     required: false
     default: 'false'
 
+  cloudflare-docs-index:
+    description: |
+      cloudflare-docs: emit the docs corpus from the build: `llms.txt` and `llms-full.txt`
+      written into the site before it is published, and a search index of every page for
+      the documentation MCP servers. One pass over the markdown that was just rendered; no
+      credentials and no network. Publishing the index is a separate opt-in,
+      `cloudflare-docs-index-bucket`.
+    required: false
+    default: 'true'
+
+  cloudflare-docs-index-bucket:
+    description: |
+      cloudflare-docs: R2 bucket the index is published to, as `index/<repo>.json`. Empty
+      (default) writes llms.txt into the site and uploads no index. Only a deploy writes it,
+      and only after the site itself deployed: a pull request would otherwise overwrite the
+      shared corpus with an unmerged branch. Needs R2 object write on `cloudflare-api-token`,
+      which the "Edit Cloudflare Workers" template does not include.
+    required: false
+    default: ''
+
   cloudflare-extra-args:
     description: 'cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace.'
     required: false
@@ -1081,6 +1101,46 @@ runs:
     # The build above is shared with github-pages; only the publish differs. What is published
     # is a Worker with static assets and no route of its own — the docs router on
     # `cloudflare-docs-host` reaches it over a service binding. See workers/docs-router/.
+    # Before the deploy, not after: llms.txt and llms-full.txt are written INTO the built site,
+    # so they have to exist by the time it is uploaded.
+    #
+    # A step rather than a MkDocs plugin. A plugin has to be named in `plugins:`, and a repo
+    # that declares `plugins:` in its own mkdocs.yml silently discards every entry in the
+    # shared mkdocs.base.yml, because MkDocs REPLACES lists rather than merging them.
+    # `pages-lint` fails the build on exactly that, so the corpus must not be what forces
+    # every repo to trip it.
+    #
+    # When `cloudflare-docs-host` is set, citations are built from the address the router
+    # actually serves this site at rather than from `site_url` in mkdocs.yml. A stale
+    # `site_url` would otherwise put a wrong link into every answer an agent gives.
+    - name: Emit the docs corpus
+      id: docs-index
+      if: inputs.target == 'cloudflare-docs' && inputs.cloudflare-docs-index == 'true' && steps.pages-detect.outputs.toolchain != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLCHAIN: ${{ steps.pages-detect.outputs.toolchain }}
+        SCRIPT: ${{ github.action_path }}/scripts/gen_docs_index.py
+        SITE_DIR: ${{ inputs.pages-site-dir }}
+        REPO_NAME: ${{ github.event.repository.name }}
+        DOCS_HOST: ${{ inputs.cloudflare-docs-host }}
+        DOCS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
+        INDEX_DIR: ${{ runner.temp }}/tremvok-docs-index
+        COMMIT: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        args=(--root . --site-dir "$SITE_DIR" --repo "$REPO_NAME" \
+              --index-out "$INDEX_DIR" --commit "$COMMIT")
+        if [ -n "$DOCS_HOST" ]; then
+          args+=(--site-url "https://${DOCS_HOST}/${DOCS_PATH}/")
+        fi
+        if [ "$TOOLCHAIN" = "uv" ]; then
+          uv run --no-sync python "$SCRIPT" "${args[@]}"
+        else
+          python "$SCRIPT" "${args[@]}"
+        fi
+        echo "index-file=${INDEX_DIR}/index/${REPO_NAME}.json" >> "$GITHUB_OUTPUT"
+
     - name: Set up Node for Wrangler
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -1119,6 +1179,24 @@ runs:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-cloudflare-docs.sh"
+
+    # After the site deployed, never before. The index is what every agent-facing surface
+    # reads, so it has to describe a site that exists: published ahead of a deploy that then
+    # failed, agents would cite pages the router does not serve.
+    - name: Publish the docs corpus
+      if: inputs.target == 'cloudflare-docs' && inputs.cloudflare-docs-index-bucket != '' && steps.docs-index.outputs.index-file != '' && steps.deploy-cloudflare-docs.outcome == 'success'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INDEX_FILE: ${{ steps.docs-index.outputs.index-file }}
+        BUCKET: ${{ inputs.cloudflare-docs-index-bucket }}
+        REPO: ${{ github.event.repository.name }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        WRANGLER_VERSION: ${{ inputs.cloudflare-wrangler-version }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/publish-docs-index.sh"
 
     # ── targets: s3-cloudfront, lambda-zip, terragrunt ───────────────────────
     - name: Assume the deployment role

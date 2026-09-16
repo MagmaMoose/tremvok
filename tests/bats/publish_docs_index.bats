@@ -7,8 +7,8 @@
 # symptom is an MCP search returning last week's docs, days later, in someone else's agent.
 #
 # The mode gate: there is one bucket and one key per repository, so a preview that published
-# would overwrite the shared corpus with an unmerged branch. Same shape as `github-pages`
-# staging nothing on a preview — the corpus has no preview destination either.
+# would overwrite the shared corpus with an unmerged branch. Same shape as `cloudflare-docs`
+# publishing no site on a preview: the corpus has no preview destination either.
 
 load helper
 
@@ -87,7 +87,7 @@ run_publish() { run bash "${SCRIPTS}/publish-docs-index.sh"; }
   export BUCKET=""
   run_publish
   [ "$status" -ne 0 ]
-  printf '%s\n' "$output" | grep -Fq 'pages-index-bucket'
+  printf '%s\n' "$output" | grep -Fq 'cloudflare-docs-index-bucket'
 }
 
 @test "a missing API token is named, not guessed" {

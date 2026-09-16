@@ -28,7 +28,7 @@ WRANGLER_BIN="${WRANGLER_BIN:-}"
 
 # A pull request must not overwrite the shared corpus: there is one bucket and one key per
 # repository, so publishing from a preview would make every agent read an unmerged branch.
-# Same reasoning as `github-pages` staging nothing on a preview — the corpus has no preview
+# Same reasoning as `cloudflare-docs` publishing no site on a preview: the corpus has no preview
 # destination either.
 if tremvok::is_true "$DRY_RUN" || [[ "$MODE" != "deploy" ]]; then
   tremvok::notice "docs index: not published (mode=${MODE}, dry-run=${DRY_RUN}). The shared corpus is written only by a deploy."
@@ -37,7 +37,7 @@ if tremvok::is_true "$DRY_RUN" || [[ "$MODE" != "deploy" ]]; then
 fi
 
 tremvok::require INDEX_FILE "the generated corpus"
-tremvok::require BUCKET "pages-index-bucket"
+tremvok::require BUCKET "cloudflare-docs-index-bucket"
 tremvok::require REPO "the repository name"
 tremvok::require CLOUDFLARE_API_TOKEN "cloudflare-api-token"
 tremvok::require CLOUDFLARE_ACCOUNT_ID "cloudflare-account-id"

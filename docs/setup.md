@@ -154,6 +154,28 @@ Cloudflare Workers" template does not include it, and a `403` is reported as *co
 rather than as "nothing covers it" — the two look alike in the response and collapsing them
 would publish a private site while reporting that it checked.
 
+#### The docs corpus
+
+The build already holds every page it just rendered, so it emits a machine-readable copy of
+the site at no extra cost: `llms.txt` (a link index) and `llms-full.txt` (every page's text)
+are written into the site before it is published, and a search index of every page is
+generated beside it. On by default (`cloudflare-docs-index`), with no credentials and no
+network.
+
+Name a bucket and a deploy also publishes that index to R2 as `index/<repo>.json`, which is
+the corpus the documentation MCP servers read:
+
+```yaml
+          cloudflare-docs-index-bucket: magmamoose-docs-index
+```
+
+Only a deploy writes it, and only after the site itself deployed: there is one key per
+repository, so a pull request would otherwise overwrite the shared corpus with an unmerged
+branch, and an index published ahead of a failed deploy would cite pages nobody serves. The
+token needs **R2 object write** on top of the Workers permissions. The upload is not
+failure-isolated: a run that deployed the site and quietly failed to publish the index would
+be green while every agent read the previous commit's documentation.
+
 ### `cloudflare-workers`
 
 ```yaml
