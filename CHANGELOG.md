@@ -9,6 +9,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`cloudflare-verify-config`** (on by default): before any `cloudflare-workers` publish, run
+  `wrangler deploy --dry-run` and refuse to publish when Wrangler reports configuration it will
+  not apply. A misspelled `[[r2_bucket]]` is only an "Unexpected fields" warning, Wrangler exits
+  0, and the Worker deploys with no bucket; a top-level binding an `--env` deploy does not
+  inherit is also only a warning. Verified against Wrangler 4.114.0 and 4.127.1. Costs one extra
+  bundle per run.
+
+### Changed
+
+- **`dry-run` on `cloudflare-workers` now runs Wrangler's own `wrangler deploy --dry-run`**
+  instead of logging the command. It bundles and validates the Worker, uploads nothing, and
+  calls no API, so it no longer requires `cloudflare-api-token` or `cloudflare-account-id`. A
+  dry run that does not bundle now fails the job. This makes a pull request validatable without
+  a preview upload, which matters for a Worker whose bindings reach private data.
+
 - **`verify-method`** — the HTTP method `verify-url` is requested with, `GET` by default.
   A GET cannot verify a POST-only endpoint at all: a webhook receiver binds POST and nothing
   else, so a GET reaches no function and the platform answers 404 — which is also what a
