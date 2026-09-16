@@ -24,12 +24,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dry run that does not bundle now fails the job. This makes a pull request validatable without
   a preview upload, which matters for a Worker whose bindings reach private data.
 
-### Fixed
-
-- **Nine `cloudflare_workers.bats` assertions could never fail.** Written as `! grep ...`, which
-  bats' errexit ignores. Converted to `refute`, and each new guard in this change was checked by
-  breaking it and watching its test fail.
-
 - **`verify-method`** — the HTTP method `verify-url` is requested with, `GET` by default.
   A GET cannot verify a POST-only endpoint at all: a webhook receiver binds POST and nothing
   else, so a GET reaches no function and the platform answers 404 — which is also what a
