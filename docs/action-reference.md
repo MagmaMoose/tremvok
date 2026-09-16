@@ -24,7 +24,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 111 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 113 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -118,6 +118,8 @@ is required.
 | `cloudflare-docs-host` | `cloudflare-docs` | not set | cloudflare-docs: hostname the docs router serves, e.g. `docs.magmamoose.com`. The site Worker itself has no hostname — it is reachable only through the router's service binding — so this is the address the Access check and the reported URL are about. Required when `cloudflare-docs-require-access` is on. |
 | `cloudflare-docs-path` | `cloudflare-docs` | not set | cloudflare-docs: path segment this repository's site is served under on `cloudflare-docs-host`. Empty (default) uses the repository name, which is what the router dispatches on, so overriding it is for a repo whose site is mounted elsewhere. |
 | `cloudflare-docs-require-access` | `cloudflare-docs` | `false` | cloudflare-docs: refuse to publish unless a Cloudflare Access application actually covers `<cloudflare-docs-host>/<cloudflare-docs-path>`. This is enforcement, not convention: "the site is behind Access" is otherwise a belief nothing checks, and the deploy is the one moment something can ask Cloudflare and refuse. Needs the `Access: Apps` READ permission on `cloudflare-api-token` — the "Edit Cloudflare Workers" template does not include it, and a 403 is treated as "could not tell", never as "nothing covers it". |
+| `cloudflare-docs-index` | `cloudflare-docs` | `true` | cloudflare-docs: emit the docs corpus from the build: `llms.txt` and `llms-full.txt` written into the site before it is published, and a search index of every page for the documentation MCP servers. One pass over the markdown that was just rendered; no credentials and no network. Publishing the index is a separate opt-in, `cloudflare-docs-index-bucket`. |
+| `cloudflare-docs-index-bucket` | `cloudflare-docs` | not set | cloudflare-docs: R2 bucket the index is published to, as `index/<repo>.json`. Empty (default) writes llms.txt into the site and uploads no index. Only a deploy writes it, and only after the site itself deployed: a pull request would otherwise overwrite the shared corpus with an unmerged branch. Needs R2 object write on `cloudflare-api-token`, which the "Edit Cloudflare Workers" template does not include. |
 | `cloudflare-extra-args` | `cloudflare-workers` | not set | cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace. |
 | `functions-app-name` | `azure-functions-zip` | not set | azure-functions-zip: the Function App to publish to. Required for this target. |
 | `functions-resource-group` | `azure-functions-zip` | not set | azure-functions-zip: resource group the Function App lives in. Required for this target. |

@@ -602,6 +602,18 @@
       ],
       "default": "false"
     },
+    "cloudflare-docs-index": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": "true"
+    },
+    "cloudflare-docs-index-bucket": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": ""
+    },
     "cloudflare-extra-args": {
       "targets": [
         "cloudflare-workers"

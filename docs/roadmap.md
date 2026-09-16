@@ -20,7 +20,10 @@ repo, it is wrong.
   URL; a router Worker on `docs.magmamoose.com` reaches it over a service binding, so one
   hostname serves every repository by path and Cloudflare Access gates the person visiting
   rather than the router. `cloudflare-docs-require-access` refuses to publish a private site
-  that no Access application covers, and treats "could not tell" as a refusal.
+  that no Access application covers, and treats "could not tell" as a refusal. The same build
+  emits the **docs corpus** (`llms.txt`, `llms-full.txt` and a search index) and, with a
+  bucket named, publishes the index to R2 as `index/<repo>.json` after the site deploys, so a
+  fleet of docs sites is one corpus written at build time rather than crawled afterwards.
 - **`target: s3-cloudfront`**: sync a built static site with per-class cache headers,
   invalidate CloudFront, previews under their own key prefix. Refuses to sync an empty
   artifact directory.

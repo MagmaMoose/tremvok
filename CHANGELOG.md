@@ -9,6 +9,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The docs corpus, on `target: cloudflare-docs`.** The build writes `llms.txt` and
+  `llms-full.txt` into the site before publishing it, and generates a search index of every
+  page (`cloudflare-docs-index`, on by default, no credentials). With
+  `cloudflare-docs-index-bucket` set, a deploy publishes that index to R2 as
+  `index/<repo>.json`, the corpus the documentation MCP servers read (ADR-0005).
+  - **Published after the site deployed, never before**, and never from a pull request: one
+    key per repository, so a preview would overwrite the shared corpus with an unmerged branch.
+  - **Citations use the router's address** (`https://<cloudflare-docs-host>/<path>/`) when a
+    host is set, rather than `site_url`, so a stale `mkdocs.yml` cannot put a wrong link into
+    every answer an agent gives.
+  - **Not failure-isolated.** A deploy that silently failed to publish the index would be green
+    while agents read the previous commit's documentation.
+  - A build step rather than a MkDocs plugin: a repo that declares `plugins:` in its own
+    `mkdocs.yml` silently discards every entry in the shared `mkdocs.base.yml`.
+
 - **`target: cloudflare-docs`** — the same strict MkDocs build as `github-pages`, published to
   Cloudflare Workers Static Assets. The canonical address becomes `https://<host>/<repo>/`,
   and one hostname serves every repository by path. Implements the hosting half of
