@@ -52,10 +52,7 @@ jobs:
     name: Build and publish
     runs-on: ubuntu-latest
     steps:
-      # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag
-      # This is an example showing canonical usage — users copy this and pin to @v2
-      # by design. A SHA here would be misleading and would break when v2 advances.
-      - uses: MagmaMoose/tremvok@v2
+      - uses: MagmaMoose/tremvok@v2  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
         with:
           target: cloudflare-docs
           cloudflare-docs-host: docs.magmamoose.com
