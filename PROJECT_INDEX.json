@@ -39,7 +39,8 @@
         "scripts/terragrunt-pr-head.sh": "terragrunt-pull-request -> that pull request's head sha; refuses a fork; prints the sha and nothing else",
         "scripts/terragrunt-run.sh": "plan|apply|redact one stack; plan -out is SAVED and apply uses it, re-planning only when stale",
         "scripts/validate-inputs.sh": "inputs vs target; every violation named at once, before the checkout",
-        "scripts/verify-live.sh": "curl status + header with retries; catches uploaded-but-unbound"
+        "scripts/vault-read.sh": "read one secret from HashiCorp Vault by <path>#<field> reference; KV v1 and v2; token never in argv",
+        "scripts/verify-live.sh": "curl status + header with retries; `verify-method` overrides GET for POST-only endpoints; catches uploaded-but-unbound"
       }
     },
     "python_tooling": {
@@ -101,8 +102,12 @@
     "tests/test_lint_docs.py": "scripts/lint_docs.py MagmaMoose documentation-shape rules",
     "tests/test_api.py": "FastAPI routes: request/response shapes, auth enforcement, error codes",
     "tests/": "122 pytest cases covering the API, script utilities, and tooling; no network, no AWS (moto + a generated RSA key)",
-    "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack — the only thing that proves the wiring",
+"terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring",
     "tests/test_input_targets.py": "the applicability map is generated, complete, and matches action.yml's defaults; every target-only input carries its target's prefix",
-    "tests/test_workers_bindings.py": "every wrangler.toml binding appears in `wrangler deploy --dry-run`; fails rather than skips under TREMVOK_REQUIRE_WRANGLER=1"
+    "tests/test_workers_bindings.py": "every wrangler.toml binding appears in `wrangler deploy --dry-run`; fails rather than skips under TREMVOK_REQUIRE_WRANGLER=1",
+    "tests/test_notify.py": "notify.py unit tests: Slack payload shape, Teams adaptive card, non-HTTPS refusal, fanout, notify policy matrix",
+    "tests/test_oidc.py": "RS256 verification: valid token, tampered payload, wrong audience/issuer, expiry, leeway, pinned JWKS, authorize deny-by-default",
+    "tests/test_store.py": "DynamoDB store: record/read, idempotency token dedup and compensation, per-repository isolation, history ordering and TTL",
+    "tests/test_gen_input_targets.py": "gen_input_targets.py: marker parsing, target scoping, round-trip, check mode, stale detection"
   }
 }
