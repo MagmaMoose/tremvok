@@ -23,7 +23,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 108 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 109 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -115,6 +115,7 @@ is required.
 | `cloudflare-wrangler-version` | `cloudflare-workers` | `4.114.0` | cloudflare-workers: exact Wrangler version to run. Pinned, because the tool that publishes to production is not a floating dependency. |
 | `cloudflare-node-version` | `cloudflare-workers` | `24` | cloudflare-workers: Node version Wrangler runs on. Wrangler 4 declares `engines.node >= 22`, and on 20 it installs cleanly and then refuses to run, so this does not default to whatever the runner happens to ship. |
 | `cloudflare-extra-args` | `cloudflare-workers` | not set | cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace. |
+| `cloudflare-verify-config` | `cloudflare-workers` | `true` | cloudflare-workers: before publishing, run `wrangler deploy --dry-run` and refuse to publish if Wrangler reports configuration it will not apply: an unexpected field (a misspelled `[[r2_bucket]]` is only a warning, and the Worker deploys with no bucket), or a top-level binding an `--env` deploy does not inherit. A binding is only real if Wrangler prints it. Costs one extra bundle per run. |
 | `functions-app-name` | `azure-functions-zip` | not set | azure-functions-zip: the Function App to publish to. Required for this target. |
 | `functions-resource-group` | `azure-functions-zip` | not set | azure-functions-zip: resource group the Function App lives in. Required for this target. |
 | `functions-slot` | `azure-functions-zip` | not set | azure-functions-zip: deployment slot to publish to instead of production. Empty (default) publishes to the app itself. This is also what a preview has to use. A pull request must not publish onto the routes production serves, and a slot is Azure's only destination that does not — but a Linux Consumption plan HAS NO SLOTS. So on Consumption a preview is refused and says why, rather than quietly shipping a branch to production. On Premium or Dedicated, set this and previews go to the slot. |

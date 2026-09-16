@@ -132,6 +132,33 @@ its own URL; it never moves the live routes, which a plain `deploy` would. The a
 pull request number, so the link in the comment is stable across pushes. A branch name isn't:
 it changes, and it isn't always URL-safe.
 
+#### Validating a pull request without publishing it
+
+A preview still runs the pull request's code with the Worker's real bindings. For a Worker
+whose bindings reach data an unreviewed branch shouldn't run against (a private R2 bucket, a
+production database), don't preview: dry-run the pull request instead.
+
+```yaml
+          dry-run: ${{ github.event_name == 'pull_request' }}
+```
+
+On this target a dry run is Wrangler's own `wrangler deploy --dry-run`: it bundles the Worker
+and validates its configuration, uploads nothing, and calls no API, so it needs **no
+credentials**. A fork's pull request, or a repository whose deploy token doesn't exist yet,
+can still prove the Worker builds. A dry run that doesn't bundle fails the job.
+
+#### A binding is only real if Wrangler prints it
+
+`cloudflare-verify-config` (on by default) runs that same dry run before every publish and
+refuses to publish when Wrangler reports configuration it won't apply:
+
+- **an unexpected field.** A misspelled `[[r2_bucket]]` is only a *warning*: Wrangler exits 0
+  and deploys a Worker with no bucket, and nothing fails until a request needs it;
+- **a binding an `--env` deploy doesn't inherit**, which Wrangler also only warns about.
+
+The offending lines are printed. It costs one extra bundle per run; set
+`cloudflare-verify-config: false` to publish anyway.
+
 Leave `cloudflare-main` empty for an assets-only Worker, which is the shape that serves files
 straight from the edge with no cold start, no code in the request path, and asset requests
 that aren't billed as invocations. Set it to your entry point for a Worker that runs code, and

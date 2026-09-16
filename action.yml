@@ -671,6 +671,16 @@ inputs:
     required: false
     default: ''
 
+  cloudflare-verify-config:
+    description: |
+      cloudflare-workers: before publishing, run `wrangler deploy --dry-run` and refuse to
+      publish if Wrangler reports configuration it will not apply: an unexpected field (a
+      misspelled `[[r2_bucket]]` is only a warning, and the Worker deploys with no bucket), or
+      a top-level binding an `--env` deploy does not inherit. A binding is only real if
+      Wrangler prints it. Costs one extra bundle per run.
+    required: false
+    default: 'true'
+
   # ── target: azure-functions-zip ──────────────────────────────────────────
   functions-app-name:
     description: 'azure-functions-zip: the Function App to publish to. Required for this target.'
@@ -1221,6 +1231,7 @@ runs:
         EXTRA_ARGS: ${{ inputs.cloudflare-extra-args }}
         WRANGLER_VERSION: ${{ inputs.cloudflare-wrangler-version }}
         DRY_RUN: ${{ inputs.dry-run }}
+        VERIFY_CONFIG: ${{ inputs.cloudflare-verify-config }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-cloudflare-workers.sh"
 
     # ── target: azure-functions-zip ──────────────────────────────────────────
