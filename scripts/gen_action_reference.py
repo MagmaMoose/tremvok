@@ -32,6 +32,7 @@ OUT = ROOT / "docs" / "action-reference.md"
 # by a whole branch, and `--check` reported the page as up to date the entire time.
 TARGET_SUMMARY = {
     "github-pages": "Build an MkDocs site strictly and publish it to GitHub Pages",
+    "cloudflare-docs": "Build an MkDocs site strictly and publish it to Workers Static Assets",
     "s3-cloudfront": "Sync a built static site to S3, invalidate CloudFront",
     "lambda-zip": "Publish a Lambda package to S3, update the function, move an alias",
     "terragrunt": "Discover, plan and (on an approval) apply Terragrunt stacks",
@@ -75,6 +76,10 @@ PERMISSIONS = {
         ("pull-requests: write", "the sticky run comment"),
     ],
     "cloudflare-workers": [
+        ("contents: read", "checkout"),
+        ("pull-requests: write", "the sticky preview comment"),
+    ],
+    "cloudflare-docs": [
         ("contents: read", "checkout"),
         ("pull-requests: write", "the sticky preview comment"),
     ],

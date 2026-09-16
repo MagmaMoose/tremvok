@@ -28,6 +28,7 @@ import yaml
 
 ALL_TARGETS = [
     "github-pages",
+    "cloudflare-docs",
     "s3-cloudfront",
     "lambda-zip",
     "terragrunt",

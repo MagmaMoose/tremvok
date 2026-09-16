@@ -7,6 +7,7 @@ reaches you through `@v2` rather than through nine copy-paste edits.
 | File | Target | For |
 |---|---|---|
 | [`github-pages.yml`](github-pages.yml) | `github-pages` | an MkDocs site on GitHub Pages |
+| [`cloudflare-docs.yml`](cloudflare-docs.yml) | `cloudflare-docs` | an MkDocs site on Workers Static Assets, behind the docs router |
 | [`deploy-s3-cloudfront.yml`](deploy-s3-cloudfront.yml) | `s3-cloudfront` | a built static site on S3 + CloudFront |
 | [`deploy-lambda.yml`](deploy-lambda.yml) | `lambda-zip` | a Lambda package |
 | [`terragrunt.yml`](terragrunt.yml) | `terragrunt` | Terraform/Terragrunt stacks, the Atlantis replacement |
@@ -34,6 +35,11 @@ Four conventions they inherit, so they leave the per-repo file:
 `github-pages.yml` is the only one with a second job, and only because `actions/deploy-pages`
 requires `pages: write` and the `github-pages` environment, which a composite action cannot
 declare. Every other target completes inside the action.
+
+`cloudflare-docs.yml` publishes the same MkDocs build as `github-pages.yml` but needs no
+second job, because Wrangler requires neither `pages: write` nor an environment. It publishes
+nothing on a pull request for a third reason again: its Workers set `workers_dev = false` and
+carry no route, so there is no address a preview could be served from.
 
 `azure-functions.yml` is the one whose pull-request path publishes nothing at all: a Linux
 Consumption plan has no deployment slots, so there is no preview destination that does not

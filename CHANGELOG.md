@@ -9,6 +9,41 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`target: cloudflare-docs`** — the same strict MkDocs build as `github-pages`, published to
+  Cloudflare Workers Static Assets. The canonical address becomes `https://<host>/<repo>/`,
+  and one hostname serves every repository by path. Implements the hosting half of
+  [ADR-0005](https://github.com/MagmaMoose/nievah/blob/main/docs/adr/0005-docs-sites-and-mcp-surfaces.md);
+  the local decision record is `.claude/decisions/0004-docs-on-workers-static-assets.md`.
+  - **Dispatch is over a service binding, never an HTTP proxy.** A proxy needs a public origin
+    hostname per site, which `workers_dev = false` exists to prevent, and proxying an
+    Access-gated origin moves the gate off the user and onto the router.
+  - **One job, not two.** The `github-pages` shape needs a second job only because
+    `actions/deploy-pages` requires `pages: write` and the `github-pages` environment, which a
+    composite action cannot declare. Wrangler requires neither.
+  - **A pull request publishes nothing.** These Workers carry no route and no workers.dev URL,
+    so there is no address a preview could be served from. The strict build is the check.
+  - **An empty site directory is refused**, because publishing nothing over a site that is
+    currently serving succeeds.
+  - New inputs: `cloudflare-docs-host`, `cloudflare-docs-path` (defaults to the repository
+    name), `cloudflare-docs-require-access`. The `pages-` build inputs and the `cloudflare-`
+    credential inputs are now shared with this target.
+
+- **`cloudflare-docs-require-access`** — refuse to publish unless a Cloudflare Access
+  application actually covers `<cloudflare-docs-host>/<cloudflare-docs-path>`. This restores
+  the `require-access` enforcement removed in `83ebc48` and deferred by ADR-0003.
+  - Its three outcomes are never collapsed: covered, not covered, and **could not tell**. A
+    403 from a token lacking `Access: Apps` read looks very like an account with no
+    applications, and reading the first as the second publishes a private site to the open
+    internet while reporting that it checked.
+  - Needs the `Access: Apps` READ permission, which Cloudflare's "Edit Cloudflare Workers"
+    token template does not include. The failure message says so.
+
+- **CI verifies every Wrangler binding with `wrangler deploy --dry-run`.** A binding is only
+  real if Wrangler prints it: the rate-limit block takes `name` where every other binding takes
+  `binding`, and a config that gets it wrong deploys a Worker that throws on its first request.
+  The check fails rather than skips when Node is absent, so it cannot become a required check
+  that never reports.
+
 - **`verify-method`** — the HTTP method `verify-url` is requested with, `GET` by default.
   A GET cannot verify a POST-only endpoint at all: a webhook receiver binds POST and nothing
   else, so a GET reaches no function and the platform answers 404 — which is also what a

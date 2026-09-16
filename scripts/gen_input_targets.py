@@ -31,6 +31,7 @@ OUT = ROOT / "scripts" / "lib" / "input-targets.json"
 
 TARGETS = [
     "github-pages",
+    "cloudflare-docs",
     "s3-cloudfront",
     "lambda-zip",
     "terragrunt",
