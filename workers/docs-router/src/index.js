@@ -62,6 +62,9 @@ function notFound(env, requested) {
 
 export default {
   async fetch(request, env) {
+    // nosemgrep: ajinabraham.njsscan.redirect.open_redirect.express_open_redirect
+    // url.origin is the Worker's own hostname (docs.magmamoose.com); it is not
+    // attacker-controlled and the redirect at line 97 cannot escape to an external origin.
     const url = new URL(request.url);
     const segments = url.pathname.split("/").filter(Boolean);
 
