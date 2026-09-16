@@ -24,7 +24,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 113 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 114 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
