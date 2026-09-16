@@ -1127,10 +1127,15 @@ runs:
         DOCS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
         INDEX_DIR: ${{ runner.temp }}/tremvok-docs-index
         COMMIT: ${{ github.sha }}
+        # Decides whether a public docs surface may show this repository at all. Taken from
+        # GitHub rather than an input, so it cannot drift from the truth, and read as private
+        # unless it is exactly `public`: `internal`, or an event that carries no repository
+        # object, must never mark an index public.
+        VISIBILITY: ${{ github.event.repository.visibility }}
       run: |
         set -euo pipefail
         args=(--root . --site-dir "$SITE_DIR" --repo "$REPO_NAME" \
-              --index-out "$INDEX_DIR" --commit "$COMMIT")
+              --index-out "$INDEX_DIR" --commit "$COMMIT" --visibility "$VISIBILITY")
         if [ -n "$DOCS_HOST" ]; then
           args+=(--site-url "https://${DOCS_HOST}/${DOCS_PATH}/")
         fi

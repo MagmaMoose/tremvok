@@ -12,6 +12,18 @@ Three artefacts, one pass:
 ``llms.txt``            the link index, served from the site root
 ``llms-full.txt``       every page's markdown, concatenated, served from the site root
 
+THE INDEX IS A CONTRACT WITH ITS READER, NOT A FORMAT OF OUR CHOOSING. The consumer is the
+documentation MCP Worker in ``MagmaMoose/mcp``, and its ``schema/index.schema.json`` is the
+contract: ``schema``, ``repo``, ``private`` and ``docs``, each document carrying its
+repository-relative ``path`` and its markdown ``text``. An index that drifted from it would
+not fail anywhere. The reader treats a missing ``docs`` as no documents and a missing
+``private`` as private, so every surface would quietly serve nothing, which is the failure
+this module is written against. ``test_the_index_meets_the_readers_contract`` pins it.
+
+``private`` comes from the repository's visibility and fails closed: only an explicit
+``public`` makes an index public. ``internal``, an empty value and anything unrecognised
+are all private, because the other direction publishes a runbook on a typo.
+
 WHY THIS IS NOT A MKDOCS PLUGIN. A plugin has to be named in ``plugins:``, and a repo
 that declares ``plugins:`` in its own ``mkdocs.yml`` silently discards every entry in the
 shared ``mkdocs.base.yml`` — MkDocs REPLACES lists rather than merging them, with nothing
@@ -43,6 +55,9 @@ from typing import Any
 
 import yaml
 
+#: The index schema version the reader in MagmaMoose/mcp understands.
+INDEX_SCHEMA_VERSION = 1
+
 # How much of a page's opening prose to carry as the snippet. Long enough to disambiguate
 # two pages with similar titles, short enough that a search result set stays readable in
 # an agent's context window.
@@ -62,11 +77,17 @@ class Entry:
     """
 
     repo: str
+    #: Repository-relative, e.g. ``docs/setup.md``. The reader's ``read_doc`` takes this and
+    #: its ranking boosts on the filename in it, so it is the real source path, not a slug.
     path: str
     title: str
     headings: list[str] = field(default_factory=list)
     snippet: str = ""
     url: str = ""
+    #: The page's markdown as authored, front matter removed. Not rendered HTML: the reader
+    #: scores ``#`` headings above prose, and ``read_doc`` returns the page itself.
+    text: str = ""
+    bytes: int = 0
 
 
 # --------------------------------------------------------------------------- parsing
@@ -226,21 +247,30 @@ def collect(
     site_dir: Path,
     repo: str,
     site_url: str,
+    source_prefix: str = "docs",
 ) -> tuple[list[Entry], dict[str, str]]:
-    """Walk the docs tree once, returning entries and each entry's raw markdown body."""
+    """Walk the docs tree once, returning entries and each entry's raw markdown body.
+
+    ``source_prefix`` is the docs directory as the repository names it, so an entry's
+    ``path`` is repository-relative while its URL is still resolved from the path inside
+    the docs tree, which is what MkDocs renders from.
+    """
     entries: list[Entry] = []
     bodies: dict[str, str] = {}
+    prefix = source_prefix.strip("/")
 
     for path in sorted(docs_dir.rglob("*.md")):
         rel = path.relative_to(docs_dir)
         meta, body = strip_front_matter(path.read_text(encoding="utf-8"))
         entry = Entry(
             repo=repo,
-            path=rel.as_posix(),
+            path=f"{prefix}/{rel.as_posix()}" if prefix else rel.as_posix(),
             title=extract_title(meta, body, path),
             headings=extract_headings(body),
             snippet=extract_snippet(body),
             url=canonical_url(site_url, url_path_for(rel, site_dir)),
+            text=body,
+            bytes=len(body.encode("utf-8")),
         )
         entries.append(entry)
         bodies[entry.path] = body
@@ -248,13 +278,27 @@ def collect(
     return entries, bodies
 
 
-def render_index(repo: str, site_url: str, entries: list[Entry], commit: str) -> str:
+def is_private(visibility: str) -> bool:
+    """Only an explicit ``public`` is public. See the module docstring for why."""
+    return visibility.strip().lower() != "public"
+
+
+def render_index(
+    repo: str,
+    site_url: str,
+    entries: list[Entry],
+    commit: str,
+    *,
+    private: bool = True,
+) -> str:
     document = {
+        "schema": INDEX_SCHEMA_VERSION,
         "repo": repo,
+        "private": private,
         "site_url": site_url,
         "generated": datetime.now(UTC).isoformat(timespec="seconds"),
         "commit": commit,
-        "entries": [asdict(entry) for entry in entries],
+        "docs": [asdict(entry) for entry in entries],
     }
     # sort_keys so a rebuild of unchanged docs produces a byte-identical file, which is
     # what lets the publish step skip an upload that would change nothing.
@@ -338,6 +382,12 @@ def main(argv: list[str] | None = None) -> int:
         help="where index/<repo>.json is written (default: <site-dir>/../.docs-index)",
     )
     parser.add_argument("--commit", default="", help="commit sha recorded in the index")
+    parser.add_argument(
+        "--visibility",
+        default="",
+        help="the repository's visibility. Only `public` marks the index public; anything "
+        "else, including nothing, marks it private.",
+    )
     args = parser.parse_args(argv)
 
     root: Path = args.root
@@ -368,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     if not site_url.endswith("/"):
         site_url += "/"
 
-    entries, bodies = collect(docs_dir, site_dir, args.repo, site_url)
+    entries, bodies = collect(docs_dir, site_dir, args.repo, site_url, args.docs_dir)
     if not entries:
         print(f"::error::gen-docs-index: no markdown under {docs_dir}", file=sys.stderr)
         return 1
@@ -376,7 +426,11 @@ def main(argv: list[str] | None = None) -> int:
     index_out: Path = args.index_out or (root / ".docs-index")
     (index_out / "index").mkdir(parents=True, exist_ok=True)
     index_path = index_out / "index" / f"{args.repo}.json"
-    index_path.write_text(render_index(args.repo, site_url, entries, args.commit), encoding="utf-8")
+    private = is_private(args.visibility)
+    index_path.write_text(
+        render_index(args.repo, site_url, entries, args.commit, private=private),
+        encoding="utf-8",
+    )
 
     # llms.txt and llms-full.txt go into the built site so they are served from the docs
     # host alongside the pages they describe. They are emitted only when the site exists;

@@ -186,15 +186,21 @@ def test_main_emits_index_llms_and_llms_full(repo: Path, tmp_path: Path) -> None
     assert document["commit"] == "abc123"
     assert document["site_url"] == SITE_URL
 
-    by_path = {entry["path"]: entry for entry in document["entries"]}
-    assert set(by_path) == {"index.md", "setup.md"}
+    by_path = {entry["path"]: entry for entry in document["docs"]}
+    # Repository-relative, because that is what the reader's read_doc takes.
+    assert set(by_path) == {"docs/index.md", "docs/setup.md"}
 
-    setup = by_path["setup.md"]
+    setup = by_path["docs/setup.md"]
     assert setup["repo"] == "tremvok"
     assert setup["title"] == "Setting Tremvok up"
     assert setup["headings"] == ["Permissions", "github-pages"]
     assert setup["url"] == "https://docs.magmamoose.com/tremvok/setup/"
     assert "gen_action_reference.py" in setup["snippet"]
+    # The markdown as authored, H1 and headings included: the reader returns it from
+    # read_doc and scores headings above prose.
+    assert setup["text"].startswith("# Setting Tremvok up")
+    assert "## Permissions" in setup["text"]
+    assert setup["bytes"] == len(setup["text"].encode("utf-8"))
 
     llms = (repo / "site" / "llms.txt").read_text(encoding="utf-8")
     assert llms.startswith("# Tremvok")
@@ -202,7 +208,7 @@ def test_main_emits_index_llms_and_llms_full(repo: Path, tmp_path: Path) -> None
     assert "[Setting Tremvok up](https://docs.magmamoose.com/tremvok/setup/)" in llms
 
     full = (repo / "site" / "llms-full.txt").read_text(encoding="utf-8")
-    assert "Source: setup.md" in full
+    assert "Source: docs/setup.md" in full
     assert "Grant what the target needs." in full
     # The page's own H1 is dropped in favour of the emitted one, so it appears once.
     assert full.count("# Setting Tremvok up") == 1
@@ -257,7 +263,7 @@ def test_site_url_override_wins_over_mkdocs(repo: Path, tmp_path: Path) -> None:
     document = json.loads((out / "index" / "tremvok.json").read_text(encoding="utf-8"))
     # The trailing slash is added, so the router prefix and MkDocs' links agree.
     assert document["site_url"] == "https://example.test/tremvok/"
-    assert document["entries"][0]["url"].startswith("https://example.test/tremvok/")
+    assert document["docs"][0]["url"].startswith("https://example.test/tremvok/")
 
 
 def test_no_markdown_is_a_hard_error(tmp_path: Path, capsys) -> None:
@@ -266,3 +272,70 @@ def test_no_markdown_is_a_hard_error(tmp_path: Path, capsys) -> None:
     rc = main(["--root", str(tmp_path), "--repo", "tremvok", "--index-out", str(tmp_path / "o")])
     assert rc == 1
     assert "no markdown" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- the reader's contract
+
+
+def _index(repo: Path, tmp_path: Path, *extra: str) -> dict:
+    build_site(repo)
+    out = tmp_path / "contract"
+    rc = main(
+        [
+            "--root",
+            str(repo),
+            "--repo",
+            "tremvok",
+            "--site-dir",
+            "site",
+            "--index-out",
+            str(out),
+            *extra,
+        ]
+    )
+    assert rc == 0
+    return json.loads((out / "index" / "tremvok.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("visibility", "private"),
+    [
+        ("public", False),
+        ("PUBLIC", False),
+        ("private", True),
+        ("internal", True),
+        ("", True),
+        ("publik", True),
+    ],
+)
+def test_only_an_explicit_public_marks_the_index_public(
+    repo: Path, tmp_path: Path, visibility: str, private: bool
+) -> None:
+    """`private` decides whether a public docs surface may show this repository at all.
+
+    So it fails closed: `internal`, an event with no repository object, and a typo are all
+    private. The other direction publishes an internal runbook on a typo.
+    """
+    document = _index(repo, tmp_path, "--visibility", visibility)
+    assert document["private"] is private
+
+
+def test_the_index_meets_the_readers_contract(repo: Path, tmp_path: Path) -> None:
+    """The fields the MagmaMoose/mcp reader requires, with the types it requires.
+
+    Mirrors that repository's schema/index.schema.json rather than vendoring it, and exists
+    because drift here fails nowhere: the reader treats a missing `docs` as no documents and
+    a missing `private` as private, so every surface would quietly serve nothing.
+    """
+    document = _index(repo, tmp_path, "--visibility", "public")
+    assert document["schema"] == 1
+    assert isinstance(document["repo"], str) and document["repo"] == "tremvok"
+    assert document["private"] is False
+    assert isinstance(document["docs"], list) and document["docs"]
+    for doc in document["docs"]:
+        assert isinstance(doc["path"], str) and doc["path"] and not doc["path"].startswith("/")
+        assert isinstance(doc["text"], str) and doc["text"]
+        assert isinstance(doc["title"], str)
+        assert isinstance(doc["bytes"], int) and doc["bytes"] >= 0
+        assert doc["url"].startswith("https://")
+        assert "github.com" not in doc["url"]
