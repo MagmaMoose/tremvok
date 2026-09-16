@@ -89,7 +89,7 @@ STUBEOF
   PR_NUMBER=42 BODY="hello" run bash "${SCRIPTS}/notify-pr.sh"
   [ "$status" -eq 0 ]
   grep -q -- "--request POST" "$STUB_LOG"
-  ! grep -q -- "--request PATCH" "$STUB_LOG"
+  refute grep -q -- "--request PATCH" "$STUB_LOG"
 }
 
 @test "a second run edits the existing comment in place" {
@@ -104,7 +104,7 @@ STUBEOF
   PR_NUMBER=42 BODY="new" run bash "${SCRIPTS}/notify-pr.sh"
   [ "$status" -eq 0 ]
   grep -q "issues/comments/99" "$STUB_LOG"
-  ! grep -q -- "--request POST" "$STUB_LOG"
+  refute grep -q -- "--request POST" "$STUB_LOG"
 }
 
 @test "different comment keys do not collide" {

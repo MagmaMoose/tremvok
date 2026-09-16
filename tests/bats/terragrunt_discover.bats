@@ -20,12 +20,12 @@ setup() {
   [[ "$output" == *"terraform/aws/prod/eu-west-1/api"* ]]
   [[ "$output" == *"terraform/oci/prod/network"* ]]
   # `terraform/` itself holds the shared include, not a stack.
-  ! grep -qx "terraform" <<<"$output"
+  refute grep -qx "terraform" <<<"$output"
 }
 
 @test "modules are excluded: a module has no state of its own" {
   run bash "${SCRIPTS}/terragrunt-discover.sh" all
-  ! [[ "$output" == *"modules/tremvok-api"* ]]
+  [[ "$output" != *"modules/tremvok-api"* ]]
 }
 
 @test "a changed file maps to its enclosing stack" {
