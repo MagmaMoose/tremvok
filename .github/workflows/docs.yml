@@ -69,7 +69,9 @@ on:
       require-access:
         description: >-
           Refuse to deploy unless a Cloudflare Access application already covers the
-          site's hostname. Set true wherever the docs must not be world-readable.
+          site's hostname. Set true wherever the docs must not be world-readable. The
+          application is created in the Cloudflare dashboard, not by any API: Access
+          rejects a pages.dev hostname as "domain does not belong to zone".
         type: boolean
         required: false
         default: false
@@ -124,7 +126,7 @@ jobs:
       target: ${{ steps.docs.outputs.target }}
     steps:
       - id: docs
-        uses: MagmaMoose/tremvok@v1  # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        uses: MagmaMoose/tremvok@0abf8fb67dce4059024375b665d514162ed9b28b # v1.0.27
         with:
           # `publish: false` means build and check only, which is what a pull-request run
           # wants. It can never deploy by accident.

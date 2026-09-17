@@ -78,7 +78,11 @@ inputs:
       hostname. Set true for anything whose docs must not be world-readable: a Pages
       project is served on the open internet at <project>.pages.dev by default, so "the
       repo is private" gates nothing on its own. This makes the gate an enforced
-      precondition rather than a flag someone remembered to set.
+      precondition rather than a flag someone remembered to set. The application has to
+      be created in the Cloudflare dashboard (Workers & Pages > the project > Settings >
+      General > Enable access policy, then remove the wildcard from the application's
+      Subdomain field) - the Access API rejects a pages.dev hostname as "domain does not
+      belong to zone", so it cannot be done in Terraform.
     required: false
     default: 'false'
   cloudflare-branch:
@@ -312,10 +316,19 @@ runs:
     # nothing: the moment content is uploaded it is public. Checking afterwards would be
     # checking after the leak.
     #
-    # This VERIFIES rather than creates. The org's Cloudflare token has Access read but
-    # not Access write (probed: GET /access/apps returns 200, POST returns 403 code 1010),
-    # so the application itself is created once by a human. What this guarantees is that
-    # nothing publishes until that has happened.
+    # This VERIFIES rather than creates, and the application it looks for can ONLY be
+    # created by hand. `pages.dev` is Cloudflare's zone, not the caller's, so the Access
+    # API refuses to create an application on `<project>.pages.dev` at all — it answers
+    # `access.api.error.invalid_request: domain does not belong to zone (12130)`. That
+    # rejection is server-side at CREATE, so Terraform plans the resource clean and only
+    # the apply fails; two separate attempts to express these applications as IaC merged
+    # on green plans and never applied, while the sites they were meant to gate stayed
+    # unpublished for weeks. Cloudflare documents exactly one path, its dashboard, and no
+    # API or wrangler equivalent. The error below names it, because "create an Access
+    # application" is the sentence that sent both attempts the wrong way.
+    # (The org token is also Access read-only — probed: GET /access/apps returns 200,
+    # POST returns 403 code 1010 — so it could not create one even where the API allows
+    # it.) What this step guarantees is that nothing publishes until the app exists.
     - name: Require Cloudflare Access
       id: access
       if: steps.detect.outputs.target == 'cloudflare-pages' && inputs.require-access == 'true'
@@ -324,6 +337,7 @@ runs:
         CF_TOKEN: ${{ inputs.cloudflare-api-token }}
         CF_ACCOUNT: ${{ inputs.cloudflare-account-id }}
         HOST_TO_CHECK: ${{ steps.detect.outputs.cf-project }}.pages.dev
+        CF_PROJECT: ${{ steps.detect.outputs.cf-project }}
         CHECK: ${{ github.action_path }}/scripts/access_covers.py
       run: |
         set -uo pipefail
@@ -334,7 +348,7 @@ runs:
           YES)
             echo "Cloudflare Access covers $HOST_TO_CHECK; publishing." ;;
           NO)
-            echo "::error::require-access is set, but no Cloudflare Access application covers $HOST_TO_CHECK. A Pages project is public on the open internet by default, so publishing now would expose these docs. Create an Access application for that hostname (or a parent domain) and re-run." >&2
+            echo "::error::require-access is set, but no Cloudflare Access application covers $HOST_TO_CHECK. A Pages project is public on the open internet by default, so publishing now would expose these docs. Create the application in the Cloudflare DASHBOARD - Workers & Pages > $CF_PROJECT > Settings > General > Enable access policy, then Zero Trust > Access > Applications > that application > Configure, delete the '*' from the Subdomain field and Save - then re-run. The Access API cannot create one on a pages.dev hostname (it answers 'domain does not belong to zone', 12130), so Terraform and curl are dead ends." >&2
             exit 1 ;;
           ERROR:denied)
             echo "::error::Cannot verify Cloudflare Access: the API token was refused. Refusing to publish rather than assuming the site is gated." >&2
