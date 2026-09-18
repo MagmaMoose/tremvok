@@ -77,18 +77,26 @@ run_gate() { run bash "${SCRIPTS}/access-covers.sh"; }
   [ "$status" -ne 0 ]
 }
 
-@test "no applications at all is a refusal that names what exists" {
+@test "an empty list is 'could not tell', NOT 'no applications exist'" {
+  # The shape that actually bit, and the one the 403 branch below does not catch: a token
+  # without Access:Apps:Read is answered 200 with an empty list, not refused. Four
+  # applications existed on the real hostname while this listing came back empty.
   curl_returns 200 '{"success":true,"result":[]}'
   run_gate
   [ "$status" -ne 0 ]
-  printf '%s\n' "$output" | grep -Fq 'Existing applications: none'
+  printf '%s\n' "$output" | grep -Fq "Access: Apps and Policies"
+  printf '%s\n' "$output" | grep -Fq 'could not tell'
+  refute grep -Fq 'no Cloudflare Access application covers' <<<"$output"
 }
 
 @test "the refusal lists the applications that DO exist" {
+  # A non-empty list that covers nothing is the one case where "create an application" is
+  # sound advice, so it is the only case that gives it.
   curl_returns 200 '{"success":true,"result":[{"domain":"other.magmamoose.com"}]}'
   run_gate
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep -Fq 'other.magmamoose.com'
+  printf '%s\n' "$output" | grep -Fq 'no Cloudflare Access application covers'
 }
 
 @test "a 403 is unreadable, NOT 'no applications exist'" {

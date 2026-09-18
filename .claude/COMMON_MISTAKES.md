@@ -338,3 +338,29 @@ diagnose. `9.0` started first try with a byte-identical package. Verified 2026-0
 Related, and the reason this target verifies by HTTP rather than by asking Azure: an
 `azurerm_linux_function_app` in that state reports `state: Running` and
 `availabilityState: Normal`. Platform state is not evidence that anything is being served.
+
+## A Cloudflare token without Access read is answered 200 and an empty list, not 403
+
+`scripts/access-covers.sh` exists to keep three outcomes apart — covered, not covered, and
+could-not-tell — and ADR-0004 names the failure it was built against: "a 403 from a token
+without `Access: Apps` read being indistinguishable from an account with no applications".
+The 403 branch is there and is tested. It never fires, because that is not what Cloudflare
+does. A token that merely lacks `Access: Apps and Policies` read gets `200`,
+`"success": true`, and `"result": []`, which walks past every status check and lands on the
+"no application covers this" message with `Existing applications: none`.
+
+So the gate spent three days telling four repositories to create an application that already
+existed. Four were created on `docs.magmamoose.com/<repo>` and confirmed by the Cloudflare
+API; the next run reported `Existing applications: none` again, which is what proved it —
+the account demonstrably held ~24 applications at the time, and the listing returned zero.
+
+**An empty list is now its own refusal**, naming the permission and the token template that
+omits it (`Edit Cloudflare Workers` has no Access permission at all). Refusing both cases
+costs nothing: an account with genuinely no applications cannot cover the site either. The
+entire value is in the message, which is the difference between adding an application and
+fixing a token.
+
+**The general rule is about how you test a permission boundary.** "The call returns 200" is
+not evidence the caller can see anything — it is evidence the API did not object. Assert on
+a value you know is there: list a resource you just created, and treat an empty answer from a
+non-empty account as an authorization result rather than a data one.

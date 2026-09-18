@@ -20,8 +20,16 @@
 #   covered        exit 0
 #   not covered    exit 1, naming what would have had to exist
 #   unreadable     exit 1, naming WHY it could not tell — a 403 from a token without
-#                  Access:Apps:Read is the likely one, and it must never read as "no
+#                  Access:Apps:Read is the obvious one, and it must never read as "no
 #                  applications exist", which is the same JSON shape with an empty list.
+#
+# AND THE 403 IS NOT THE SHAPE THAT ACTUALLY BITES. A token that merely lacks
+# `Access: Apps and Policies` read is not refused — it is answered 200, `success: true`,
+# and an EMPTY LIST, which walks straight past the status check below. Observed
+# 2026-09-18: four applications existed on the router's paths, created minutes earlier
+# and confirmed by the Cloudflare API, while this listing came back empty and the gate
+# reported `Existing applications: none` for the third day running. An empty list is
+# therefore "could not tell", not "nothing is there".
 set -euo pipefail
 # shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
@@ -79,6 +87,14 @@ if ! jq -e '.success == true and (.result | type == "array")' "$body" >/dev/null
   tremvok::fail "require-access: the Access applications response was not readable JSON with a result array. Refusing to publish rather than assuming the site is protected."
 fi
 
+# ZERO APPLICATIONS IS NOT PROOF THAT NONE EXIST — see the header. Refusing both cases
+# costs nothing, because an account with genuinely no applications cannot cover this site
+# either; the entire difference is the message, and it is the difference between adding an
+# application and fixing a token.
+if [[ "$(jq -r '.result | length' "$body")" == "0" ]]; then
+  tremvok::fail "require-access: Cloudflare answered 200 with ZERO Access applications for this account. That is also what a token WITHOUT the 'Access: Apps and Policies' READ permission gets — Cloudflare does not refuse it, it returns an empty list — and the 'Edit Cloudflare Workers' token template does not include that permission. So this is 'could not tell', not 'nothing is protected'. Add the permission to cloudflare-api-token, or check cloudflare-account-id names the account the applications live in; if the account really is empty, create an application on '${target}'. Refusing to publish either way."
+fi
+
 # Coverage: an application covers the target when its domain IS the target, is the bare
 # hostname (which covers every path on it), or is a path prefix of the target on the same
 # host. Compared segment-wise, so an application on `docs.magmamoose.com/trem` does not
@@ -101,7 +117,7 @@ if [[ "$covered" == "0" ]]; then
   # Every domain, so the log says what DOES exist rather than only what is missing. That is
   # the difference between a five-minute fix and an afternoon.
   known="$(jq -r '[.result[]?.domain // empty] | join(", ")' "$body")"
-  tremvok::fail "require-access: no Cloudflare Access application covers '${target}'. Existing applications: ${known:-none}. Create one on '${target}' (or on '${ACCESS_HOST}' to cover every site on it) before publishing a private site."
+  tremvok::fail "require-access: no Cloudflare Access application covers '${target}'. The account HAS applications and none of them match: ${known}. Create one on '${target}' (or on '${ACCESS_HOST}' to cover every site on it) before publishing a private site."
 fi
 
 tremvok::log "require-access: ${covered} Access application(s) cover ${target}"
