@@ -91,7 +91,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a pull request and every target-gated step fell away with it; `mode` replaced that and this
   step did not get the memo.
 
-
 - **`dry-run` on `cloudflare-workers` now runs Wrangler's own `wrangler deploy --dry-run`**
   instead of logging the command. It bundles and validates the Worker, uploads nothing, and
   calls no API, so it no longer requires `cloudflare-api-token` or `cloudflare-account-id`. A
