@@ -522,7 +522,7 @@ run. A terragrunt run needs more than one credential, and they come from differe
 Supply the first and not the second and the run does not fail early or clearly. `init` reads
 and writes state perfectly well, the plan starts, and then every stack dies inside a provider:
 
-```
+```text
 Error: unable to build authorizer for Resource Manager API: could not configure AzureCli
 Authorizer: tenant ID was not specified and the default tenant ID could not be determined:
 obtaining tenant ID: obtaining account details: running Azure CLI: exit status 1:
@@ -581,7 +581,7 @@ of every parent directory up to `terragrunt-root` so a shared `root.hcl` counts,
 whether this runner holds a credential for each cloud they name. On `auto`, the default, a
 missing one fails the run before the first plan with the cloud, the stacks and the fix:
 
-```
+```text
 ## Terragrunt — a provider has no credential
 
 ### azure — 19 stack(s)
