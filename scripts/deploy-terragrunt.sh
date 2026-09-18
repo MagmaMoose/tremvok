@@ -56,6 +56,10 @@ APPLY_OPERATORS="${APPLY_OPERATORS:-}"
 # different account (a deliberate blast-radius boundary, not an accident) cannot be planned
 # with one credential, and without this the choice is one job per credential class.
 STACK_ENV="${STACK_ENV:-}"
+# auto | warn | off. See terragrunt-credentials.sh. `auto` fails the run, and that is the
+# default because the failure it replaces costs a full plan cycle across every stack to say
+# less than this does in one line.
+TG_CREDENTIAL_PREFLIGHT="${TG_CREDENTIAL_PREFLIGHT:-auto}"
 CHECK_NAME="${CHECK_NAME:-Terragrunt apply}"
 RUN_URL="${RUN_URL:-}"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}/tremvok-terragrunt}"
@@ -223,6 +227,71 @@ if (( ${#stacks[@]} == 0 )); then
   tremvok::set_output applied false
   tremvok::set_output deployed true
   exit 0
+fi
+
+# ── does this runner hold the credentials the stacks' providers need ─────────────────────
+# Before the first plan, because the failure it catches is the one this action reports worst:
+# the state backend's credential is supplied per stack and the PROVIDERS' is not, so init
+# succeeds, the plan starts, and every stack in turn dies inside a provider with a message
+# naming a generated file and no credential. See terragrunt-credentials.sh for what it reads.
+#
+# Per stack and with that stack's own environment applied, the same way its plan is invoked:
+# a credential that arrives through `terragrunt-stack-env` is invisible to a check run
+# without it, and a false alarm is how a guard like this gets switched off.
+credential_report="${WORK_DIR}/credentials-missing.tsv"
+: >"$credential_report"
+
+case "$TG_CREDENTIAL_PREFLIGHT" in
+  auto | warn | off) ;;
+  *) tremvok::fail "terragrunt-credential-preflight must be auto, warn or off (got '${TG_CREDENTIAL_PREFLIGHT}')" ;;
+esac
+
+if [[ "$TG_CREDENTIAL_PREFLIGHT" == "off" ]]; then
+  tremvok::log "terragrunt-credential-preflight is off; not checking provider credentials"
+else
+  printf '::group::provider credential preflight\n'
+  for stack in "${stacks[@]}"; do
+    stack_env=()
+    while IFS= read -r assignment; do
+      [[ -n "$assignment" ]] && stack_env+=( "$assignment" )
+    done < <(stack_env_for "$stack")
+    # Not `|| true`: the report file is the result, and a non-zero exit here only means this
+    # stack contributed a row to it. Under errexit the call has to be in a condition.
+    if env ${stack_env[@]+"${stack_env[@]}"} \
+         ROOT_DIR="$ROOT_DIR" CREDENTIAL_REPORT="$credential_report" \
+         "${here}/terragrunt-credentials.sh" "$stack"; then :; fi
+  done
+  printf '::endgroup::\n'
+fi
+
+if [[ -s "$credential_report" ]]; then
+  # One row per (cloud, stack). The summary groups by cloud, because the fix is per cloud and
+  # a list of forty stacks missing the same credential is one problem printed forty times.
+  clouds="$(cut -f1 "$credential_report" | sort -u)"
+  affected="$(wc -l <"$credential_report" | tr -d ' ')"
+
+  tremvok::summary "## Terragrunt — a provider has no credential"
+  tremvok::summary ""
+  tremvok::summary "The state backend's credential is not the providers'. \`terragrunt-stack-env\` supplies the first; these stacks declare a provider whose own credential chain finds nothing on this runner."
+  tremvok::summary ""
+  while IFS= read -r cloud; do
+    [[ -n "$cloud" ]] || continue
+    remedy="$(awk -F'\t' -v c="$cloud" '$1 == c { print $4; exit }' "$credential_report")"
+    count="$(awk -F'\t' -v c="$cloud" '$1 == c { n++ } END { print n + 0 }' "$credential_report")"
+    tremvok::summary "### ${cloud} — ${count} stack(s)"
+    tremvok::summary ""
+    tremvok::summary "${remedy}"
+    tremvok::summary ""
+    awk -F'\t' -v c="$cloud" '$1 == c { printf "- `%s` (provider \"%s\")\n", $2, $3 }' "$credential_report" \
+      | while IFS= read -r row; do tremvok::summary "$row"; done
+    tremvok::summary ""
+  done <<<"$clouds"
+
+  if [[ "$TG_CREDENTIAL_PREFLIGHT" == "warn" ]]; then
+    tremvok::warn "${affected} stack(s) declare a provider with no credential on this runner. terragrunt-credential-preflight is 'warn', so the plan runs anyway and will fail inside the provider."
+  else
+    tremvok::fail "${affected} stack(s) declare a provider with no credential on this runner. Planning them would fail inside the provider with an error naming a generated file rather than the credential. Fix the credential, or set terragrunt-credential-preflight: warn to plan anyway."
+  fi
 fi
 
 # ── plan every stack, continuing past failures ───────────────────────────────────────────

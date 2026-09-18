@@ -96,23 +96,29 @@ inputs:
   # ── Azure (every target that talks to Azure) ─────────────────────────────────
   azure-client-id:
     description: |
-      azure-functions-zip: client id of the Entra ID app registration this run signs in as,
-      using the run's GitHub OIDC token. The Azure counterpart of `aws-role-to-assume`, and
-      preferred over a stored publish profile for the same reasons: the session is minted per
-      run and expires, and the app registration's federated credential decides which
-      repository and which ref may mint one. A publish profile is a long-lived file carrying
-      the deployment rights of the whole site, tied to nothing. Requires
-      `permissions: id-token: write`. Leave empty to use a session an earlier step created.
+      terragrunt, azure-functions-zip: client id of the Entra ID app registration this run
+      signs in as, using the run's GitHub OIDC token. The Azure counterpart of
+      `aws-role-to-assume`, and preferred over a stored publish profile or client secret for
+      the same reasons: the session is minted per run and expires, and the app registration's
+      federated credential decides which repository and which ref may mint one. A publish
+      profile is a long-lived file carrying the deployment rights of the whole site, tied to
+      nothing. Requires `permissions: id-token: write`. Leave empty to use a session an
+      earlier step created.
+
+      On `terragrunt` this is the PROVIDER's credential and has nothing to do with the state
+      backend's, which `terragrunt-stack-env` carries. `provider "azurerm"` with no explicit
+      auth falls through its default chain to the Azure CLI, so a run with a perfectly good
+      ARM_ACCESS_KEY still fails at plan on a runner nobody signed in.
     required: false
     default: ''
 
   azure-tenant-id:
-    description: 'azure-functions-zip: Entra ID tenant the app registration lives in. Required whenever `azure-client-id` is set.'
+    description: 'terragrunt, azure-functions-zip: Entra ID tenant the app registration lives in. Required whenever `azure-client-id` is set.'
     required: false
     default: ''
 
   azure-subscription-id:
-    description: 'azure-functions-zip: subscription the Function App lives in, selected after login. Required whenever `azure-client-id` is set.'
+    description: 'terragrunt, azure-functions-zip: subscription to select after login. Required whenever `azure-client-id` is set. On terragrunt it is the CLI default a stack inherits when its own provider block names no subscription.'
     required: false
     default: ''
 
@@ -423,6 +429,41 @@ inputs:
       the userinfo replaced rather than echoing the line.
     required: false
     default: ''
+
+  terragrunt-credential-preflight:
+    description: |
+      terragrunt: check that every cloud the discovered stacks name has a credential on this
+      runner, before the first plan. `auto` (default) fails the run, `warn` annotates and
+      plans anyway, `off` checks nothing.
+
+      Exists because the credential a terragrunt run needs is not one credential. The state
+      backend has its own (`terragrunt-stack-env`), and every `provider` block the stacks
+      declare has another, from a different chain, that nothing in the workflow mentions. The
+      failure that produces is the least readable in this action: state reads fine, init
+      succeeds, and the plan dies inside a provider with `could not configure AzureCli
+      Authorizer: … Please run 'az login'`, twenty stacks in a row, which reads as a broken
+      runner rather than as a credential nobody wired.
+
+      What it reads: the `provider "<name>"` blocks in each discovered stack and in every
+      parent directory up to `terragrunt-root`, so a `generate` block in a shared root.hcl
+      counts. What it knows: azurerm/azuread/azapi, aws, google/google-beta, vcd. A provider
+      it does not recognise is passed over in silence rather than guessed at.
+
+      The state backend is deliberately not checked. A backend with no credential fails in
+      `init`, immediately, naming the backend, which is already the good failure; and an
+      ARM_ACCESS_KEY opens one storage account and cannot configure a provider, so counting
+      it either way would be wrong.
+
+      What it will NOT report: a provider block that configures its own authentication
+      (`client_id`, `client_secret`, `use_oidc`, `use_msi`, `access_key`, `credentials`,
+      `token`, `api_token` …), because that stack answers the question itself. That is the
+      exemption that keeps this from being a check people turn off.
+
+      This proves a credential is present, never that it is valid or that it can reach the
+      subscription, project or account the stack names — the same distinction
+      `terragrunt-preflight-urls` draws between reachable and authorised.
+    required: false
+    default: 'auto'
 
   terragrunt-log-level:
     description: 'terragrunt: value for TF_LOG when diagnosing a stuck provider call (debug, trace). Empty (default) leaves provider logging off; the log is written next to the plan and redacted before it is shown.'
@@ -1223,6 +1264,31 @@ runs:
         ROLE_DURATION_SECONDS: ${{ inputs.aws-role-duration-seconds }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/assume-role.sh"
 
+    # ── targets: terragrunt, azure-functions-zip ─────────────────────────────
+    # The Azure counterpart of the assume-role step, gated on the input rather than on a
+    # target for the same reason that one is: the question "has the caller asked for a
+    # session?" is the same question whichever target consumes it.
+    #
+    # A script rather than `azure/login`, for the reason this repository does not use
+    # `aws-actions/configure-aws-credentials` either: a third-party action inside the step
+    # that holds production credentials, for an exchange that is one `az login` call. A
+    # caller who prefers it runs it earlier and leaves azure-client-id empty.
+    #
+    # ON TERRAGRUNT THIS IS THE PROVIDER'S CREDENTIAL, WHICH IS NOT THE STATE BACKEND'S.
+    # `terragrunt-stack-env` carries the backend one (an ARM_ACCESS_KEY per stack), so a run
+    # without this step reads and writes state perfectly well and then dies at
+    # `provider "azurerm"`, whose default chain falls through to the Azure CLI. That failure
+    # reads as a broken runner rather than as a missing credential, which is why
+    # terragrunt-credentials.sh below says so in one line before the first plan.
+    - name: Sign in to Azure
+      if: steps.preflight.outputs.skip != 'true' && inputs.azure-client-id != ''
+      shell: bash
+      env:
+        AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+        AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/azure-login.sh"
+
     - name: Deploy, S3 + CloudFront
       id: deploy-s3
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 's3-cloudfront'
@@ -1299,6 +1365,7 @@ runs:
         STACK_ENV: ${{ inputs.terragrunt-stack-env }}
         CHECK_NAME: ${{ inputs.terragrunt-check-name }}
         TG_REFRESH: ${{ inputs.terragrunt-refresh }}
+        TG_CREDENTIAL_PREFLIGHT: ${{ inputs.terragrunt-credential-preflight }}
         TG_TIMEOUT: ${{ inputs.terragrunt-timeout }}
         TG_LOG_LEVEL: ${{ inputs.terragrunt-log-level }}
         EXTRA_ARGS: ${{ inputs.terragrunt-extra-args }}
@@ -1392,20 +1459,6 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
         VERIFY_CONFIG: ${{ inputs.cloudflare-verify-config }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-cloudflare-workers.sh"
-
-    # ── target: azure-functions-zip ──────────────────────────────────────────
-    # The Azure counterpart of the assume-role step, and a script for the same reason: a
-    # third-party action inside the step that holds production credentials, for an exchange
-    # that is one `az login` call. A caller who prefers `azure/login` runs it earlier and
-    # leaves azure-client-id empty.
-    - name: Sign in to Azure
-      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'azure-functions-zip' && inputs.azure-client-id != ''
-      shell: bash
-      env:
-        AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
-        AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
-        AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
-      run: bash "${GITHUB_ACTION_PATH}/scripts/azure-login.sh"
 
     - name: Deploy, Azure Functions package
       id: deploy-azure-functions
