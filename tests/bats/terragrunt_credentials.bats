@@ -248,3 +248,23 @@ HCL
   [ "$status" -ne 0 ]
   [[ "$output" == *"no such stack directory"* ]]
 }
+
+@test "a self-configured azuread does not exempt a default-chain azurerm in the same stack" {
+  # The dedup/exemption ordering bug: providers are sorted, so azuread < azurerm.
+  # A self-configuring azuread would mark the whole azure cloud checked and skip azurerm,
+  # which actually relies on the CLI — exactly the failure this script exists to catch.
+  cat >"${STACK}/provider.tf" <<'HCL'
+provider "azuread" {
+  client_id     = var.client_id
+  use_oidc      = true
+}
+
+provider "azurerm" {
+  features {}
+}
+HCL
+  run bash "${SCRIPTS}/terragrunt-credentials.sh" "$STACK"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"NO CREDENTIAL"* ]]
+  grep -q '^azure' "$CREDENTIAL_REPORT"
+}

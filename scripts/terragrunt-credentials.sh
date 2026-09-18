@@ -253,17 +253,18 @@ while IFS= read -r provider; do
   cloud="$(cloud_for_provider "$provider")"
   [[ -n "$cloud" ]] || continue
 
-  # One verdict per cloud per stack: azurerm and azuread are one credential, and reporting it
-  # twice makes a two-line failure look like two problems.
-  case " ${checked} " in
-    *" ${cloud} "*) continue ;;
-  esac
-  checked="${checked}${cloud} "
-
   if provider_block "$provider" <<<"$content" | self_configures_auth "$cloud"; then
     tremvok::log "  ${stack}: provider \"${provider}\" configures its own authentication; not checked"
     continue
   fi
+
+  # One verdict per cloud per stack: azurerm and azuread are one credential, and reporting it
+  # twice makes a two-line failure look like two problems. The dedup runs after the exemption
+  # check so a self-configuring azuread does not stand in for a default-chain azurerm.
+  case " ${checked} " in
+    *" ${cloud} "*) continue ;;
+  esac
+  checked="${checked}${cloud} "
 
   if has_credential "$cloud"; then
     tremvok::log "  ${stack}: ${cloud} (provider \"${provider}\") — credential present"
