@@ -565,13 +565,51 @@ blames the token rather than the issuer.
 
 #### AWS
 
-Already covered: `aws-role-to-assume` applies to this target too, and the assumed-role session
-is what the `aws` provider's default chain finds.
+`aws-role-to-assume` applies to this target too, and has since the target existed — the step is
+gated on the input, not on a target, so nothing extra is needed:
+
+```yaml
+- uses: MagmaMoose/tremvok@v2
+  with:
+    target: terragrunt
+    aws-role-to-assume: arn:aws:iam::123456789012:role/tremvok-terragrunt
+    aws-region: eu-west-1
+```
+
+The assumed-role session is exported into the environment, so both the S3 backend and the
+`aws` provider find it in the default chain — one credential covers both, unlike Azure.
+
+#### Google Cloud
+
+```yaml
+- uses: MagmaMoose/tremvok@v2
+  with:
+    target: terragrunt
+    gcp-workload-identity-provider: projects/123456/locations/global/workloadIdentityPools/github/providers/tremvok
+    gcp-service-account: tremvok@my-project.iam.gserviceaccount.com   # optional
+    gcp-project-id: my-project                                        # optional
+```
+
+The full **provider** resource name, not the pool — a pool name is refused before any call is
+made, because Google answers it with a 400 about an invalid audience that names nothing useful.
+
+The action mints the run's OIDC token, writes it and a small `external_account` credential
+configuration into `RUNNER_TEMP` at 0600, and exports `GOOGLE_APPLICATION_CREDENTIALS`. The
+Terraform `google` provider reads that variable like every other Google client, and a GCS
+backend uses the same credentials.
+
+`gcp-service-account` is optional. Leave it empty when the IAM bindings name the pool's
+`principalSet` directly; set it, and that principalSet needs `roles/iam.workloadIdentityUser`
+on the service account.
+
+Both halves are proved before the run continues, because they fail alike from inside Terraform
+and have different fixes: an STS exchange that is refused means the pool provider's issuer or
+attribute condition does not match this repository or ref, and an impersonation that is refused
+means it does match and the `workloadIdentityUser` binding is missing. The error names which.
 
 #### Anything else
 
-Sign in during an earlier step — `google-github-actions/auth`, a vault read, whatever the
-provider needs — or hand the credential to the stacks that need it through
+Sign in during an earlier step, or hand the credential to the stacks that need it through
 `terragrunt-stack-env`. The action does not care which; it checks that *something* is there.
 
 #### The check that says so in one line

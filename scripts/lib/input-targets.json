@@ -120,6 +120,24 @@
       ],
       "default": ""
     },
+    "gcp-workload-identity-provider": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "gcp-service-account": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "gcp-project-id": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
     "pages-toolchain": {
       "targets": [
         "github-pages",

@@ -122,6 +122,37 @@ inputs:
     required: false
     default: ''
 
+  # ── Google Cloud (every target that talks to GCP) ────────────────────────────
+  gcp-workload-identity-provider:
+    description: |
+      terragrunt: full resource name of the workload identity pool provider this run
+      federates with, `projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`.
+      The Google counterpart of `aws-role-to-assume` and `azure-client-id`, and preferred over
+      a downloaded service-account key for the same reasons: the credential is minted per run
+      and expires, and the pool provider's attribute condition decides which repository and
+      which ref may mint one. A service-account key is a long-lived file, valid until somebody
+      deletes it, tied to nothing. Requires `permissions: id-token: write`. Leave empty to use
+      credentials an earlier step created.
+
+      On `terragrunt` this is the PROVIDER's credential. If your state lives in GCS the
+      backend needs one too, and the same federated credentials serve both.
+    required: false
+    default: ''
+
+  gcp-service-account:
+    description: |
+      terragrunt: service account to impersonate after federating, `name@project.iam.gserviceaccount.com`.
+      Empty (default) uses the federated identity directly, which works when the IAM bindings
+      name the pool's `principalSet` rather than a service account. Set, the pool's principalSet
+      needs `roles/iam.workloadIdentityUser` on it.
+    required: false
+    default: ''
+
+  gcp-project-id:
+    description: 'terragrunt: project exported as GOOGLE_PROJECT and GOOGLE_CLOUD_PROJECT, for configurations that do not name one themselves. Optional.'
+    required: false
+    default: ''
+
   # ── target: github-pages ─────────────────────────────────────────────────────────
   pages-toolchain:
     description: |
@@ -1288,6 +1319,18 @@ runs:
         AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
         AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/azure-login.sh"
+
+    # ── target: terragrunt ───────────────────────────────────────────────────
+    # The third of the set, gated on its input like the other two. Nothing else here publishes
+    # to Google, so this is terragrunt's alone until something does.
+    - name: Federate with Google Cloud
+      if: steps.preflight.outputs.skip != 'true' && inputs.gcp-workload-identity-provider != ''
+      shell: bash
+      env:
+        WORKLOAD_IDENTITY_PROVIDER: ${{ inputs.gcp-workload-identity-provider }}
+        GCP_SERVICE_ACCOUNT: ${{ inputs.gcp-service-account }}
+        GCP_PROJECT_ID: ${{ inputs.gcp-project-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/gcp-login.sh"
 
     - name: Deploy, S3 + CloudFront
       id: deploy-s3
