@@ -48,6 +48,38 @@ the more useful error. Before this was fixed, a terragrunt run with no `aws-role
 skipped outright: every terragrunt step is gated on this skip, so the target quietly did
 nothing.
 
+### `could not configure AzureCli Authorizer: ... Please run 'az login'` during a terragrunt plan
+
+Or `exec: "az": executable file not found in $PATH`, which is the same problem on a runner
+without the CLI installed.
+
+The state backend has a credential and the **provider** does not. They are different
+credentials from different chains: `terragrunt-stack-env` supplies the first, which is why
+`init` reads and writes state perfectly well and the failure only arrives once the plan
+reaches `provider "azurerm"`. An `ARM_ACCESS_KEY` opens one storage account; it cannot
+configure a provider.
+
+Set `azure-client-id`, `azure-tenant-id` and `azure-subscription-id` — the action signs in
+with this run's OIDC token before the first plan. Or run `azure/login` in an earlier step, or
+hand the stacks `ARM_CLIENT_ID` and a secret through `terragrunt-stack-env`. See
+[Setup](setup.md#credentials-for-the-providers-which-are-not-the-state-backends).
+
+### `N stack(s) declare a provider with no credential on this runner`
+
+`terragrunt-credential-preflight` caught the failure above before the first plan rather than
+twenty stacks into it. The summary names the cloud, the stacks and the fix.
+
+If it is wrong — the credential is there and the check cannot see it — the useful question is
+*how* the provider authenticates. A provider block that configures its own authentication is
+not checked at all, so a stack reading `client_id` from a variable is already exempt. What is
+left is a chain this action does not know about, and `terragrunt-credential-preflight: warn`
+is the escape hatch; `off` turns it off entirely. Both are worth a moment's thought first: the
+error it replaces costs a full plan cycle across every stack to say less.
+
+### `terragrunt-credential-preflight must be auto, warn or off`
+
+It is an enum, not a boolean. `true` and `false` are refused rather than read as one of them.
+
 ### `role-to-assume is set but this job cannot mint an OIDC token`
 
 Add `permissions: id-token: write` to the job. Without it, GitHub doesn't hand the runner a

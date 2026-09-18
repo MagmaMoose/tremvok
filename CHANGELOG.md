@@ -9,6 +9,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Azure credentials for `target: terragrunt`, and a check that says when they are missing.**
+  `azure-client-id`, `azure-tenant-id` and `azure-subscription-id` now apply to the terragrunt
+  target: the action signs in with this run's OIDC token before the first plan, so
+  `provider "azurerm"` finds a session in its default chain. The step is gated on the input
+  rather than on a target, like `aws-role-to-assume` already was.
+  - **This is the provider's credential, not the state backend's.** `terragrunt-stack-env`
+    supplies the backend's, which is why a run without this reads and writes state perfectly
+    well and then dies at the plan with `could not configure AzureCli Authorizer: … Please
+    run 'az login'`, once per stack, pointing at a `provider.tf` a `generate` block wrote.
+  - **`terragrunt-credential-preflight`** (`auto` | `warn` | `off`, default `auto`) reads the
+    `provider` blocks of every discovered stack and of every parent directory up to
+    `terragrunt-root`, and fails before the first plan when a cloud they name has no
+    credential on this runner. It knows azurerm/azuread/azapi, aws, google/google-beta and
+    vcd; an unrecognised provider is passed over in silence. A provider block that configures
+    its own authentication is not checked, which is the exemption that keeps it from being a
+    check people switch off.
+  - Run per stack with that stack's own environment, so a credential arriving through
+    `terragrunt-stack-env` counts. It proves a credential is present, never that it works.
+  - **Behaviour change for existing terragrunt callers**: a run whose providers have no
+    credential now fails at the preflight instead of at the plan. It was going to fail either
+    way; `warn` restores the old order if you need it.
+
 - **The docs corpus, on `target: cloudflare-docs`.** The build writes `llms.txt` and
   `llms-full.txt` into the site before publishing it, and generates a search index of every
   page (`cloudflare-docs-index`, on by default, no credentials). With

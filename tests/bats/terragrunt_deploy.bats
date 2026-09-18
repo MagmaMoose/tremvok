@@ -644,3 +644,72 @@ RECEOF
   [ "$(output_value applied)" = "true" ]
   grep -q 'terragrunt apply' "$STUB_LOG"
 }
+
+# ── the provider-credential preflight, as the deploy path aggregates it ───────────────────
+# terragrunt_credentials.bats covers the detection itself. These cover the part only this
+# script can get wrong: whether a missing credential stops the run before the first plan, and
+# whether the stack's own environment reaches the check the way it reaches the plan.
+
+needs_azure() {
+  cat >terraform/aws/prod/api/provider.tf <<'HCL'
+provider "azurerm" {
+  features {}
+}
+HCL
+  export AZ_BIN="${STUB_BIN}/az"
+  stub az 1 ''
+}
+
+@test "a stack whose provider has no credential fails BEFORE the first plan" {
+  needs_azure
+  run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no credential on this runner"* ]]
+  # The whole point: nothing was planned. A plan that runs anyway spends the time this
+  # check exists to save and then reports the unreadable provider error instead.
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "the summary groups by cloud and names the stack" {
+  needs_azure
+  run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  grep -q '### azure' "$GITHUB_STEP_SUMMARY"
+  grep -q 'terraform/aws/prod/api' "$GITHUB_STEP_SUMMARY"
+}
+
+@test "warn plans anyway, and says the plan is expected to fail" {
+  needs_azure
+  TG_CREDENTIAL_PREFLIGHT=warn run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"* ]]
+  grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "off checks nothing at all" {
+  needs_azure
+  TG_CREDENTIAL_PREFLIGHT=off run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"is off; not checking"* ]]
+  refute grep -q 'az account show' "$STUB_LOG"
+}
+
+@test "a credential arriving through terragrunt-stack-env satisfies the check" {
+  # The reason the check runs per stack with that stack's environment rather than once with
+  # the job's: this credential does not exist until the stack's own run is built.
+  cat >terraform/aws/prod/api/provider.tf <<'HCL'
+provider "vcd" {
+  url = "https://vcd.example.com/api"
+}
+HCL
+  export STACK_ENV='* VCD_API_TOKEN=from-stack-env'
+  run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "an unknown preflight mode is refused rather than read as off" {
+  TG_CREDENTIAL_PREFLIGHT=yes run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"must be auto, warn or off"* ]]
+}

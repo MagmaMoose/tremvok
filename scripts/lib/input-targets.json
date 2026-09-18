@@ -101,18 +101,21 @@
     },
     "azure-client-id": {
       "targets": [
+        "terragrunt",
         "azure-functions-zip"
       ],
       "default": ""
     },
     "azure-tenant-id": {
       "targets": [
+        "terragrunt",
         "azure-functions-zip"
       ],
       "default": ""
     },
     "azure-subscription-id": {
       "targets": [
+        "terragrunt",
         "azure-functions-zip"
       ],
       "default": ""
@@ -349,6 +352,12 @@
         "terragrunt"
       ],
       "default": ""
+    },
+    "terragrunt-credential-preflight": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "auto"
     },
     "terragrunt-log-level": {
       "targets": [

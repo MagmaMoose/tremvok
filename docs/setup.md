@@ -509,6 +509,101 @@ in scope, however it got there. `all` stays legal: plan the whole estate, gate o
 request's approval, comment on that pull request. A fork pull request is refused on this path,
 exactly as the automatic one refuses fork code before it reaches a deploy credential.
 
+### Credentials for the providers, which are not the state backend's
+
+The most confusing failure this target has, and the one worth setting up before the first
+run. A terragrunt run needs more than one credential, and they come from different places:
+
+- **The state backend's**, which `terragrunt-stack-env` supplies per stack — an
+  `ARM_ACCESS_KEY`, a role, a key file. See the section below.
+- **Every provider's**, resolved by that provider's own chain, which nothing in the workflow
+  mentions.
+
+Supply the first and not the second and the run does not fail early or clearly. `init` reads
+and writes state perfectly well, the plan starts, and then every stack dies inside a provider:
+
+```
+Error: unable to build authorizer for Resource Manager API: could not configure AzureCli
+Authorizer: tenant ID was not specified and the default tenant ID could not be determined:
+obtaining tenant ID: obtaining account details: running Azure CLI: exit status 1:
+ERROR: Please run 'az login' to setup account.
+
+  with provider["registry.opentofu.org/hashicorp/azurerm"],
+  on provider.tf line 25, in provider "azurerm":
+```
+
+Twenty times over, pointing at a `provider.tf` a `generate` block wrote and nobody has opened.
+That reads as a broken runner. It is a credential nobody wired.
+
+#### Azure
+
+The same three inputs as `azure-functions-zip`, and the same federated credential:
+
+```yaml
+permissions: { contents: read, pull-requests: write, checks: write, id-token: write }
+
+- uses: MagmaMoose/tremvok@v2
+  with:
+    target: terragrunt
+    azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+    azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+    azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+```
+
+The action signs in with this run's OIDC token before the first plan, and
+`provider "azurerm"` with no explicit auth picks that session up from its default chain. Give
+the app registration a federated credential for each subject the workflow runs under —
+`repo:<owner>/<repo>:pull_request` for the plan on a pull request, and
+`repo:<owner>/<repo>:ref:refs/heads/<default-branch>` for the apply, the post-merge run and
+the schedule — with audience `api://AzureADTokenExchange`.
+
+**On GitHub Enterprise Cloud with data residency the issuer is not
+`https://token.actions.githubusercontent.com`.** It is `https://token.actions.<your-
+subdomain>.ghe.com`. Read `/.well-known/openid-configuration` at that host and use the
+`issuer` it returns; a federated credential built on the wrong one fails with a message that
+blames the token rather than the issuer.
+
+#### AWS
+
+Already covered: `aws-role-to-assume` applies to this target too, and the assumed-role session
+is what the `aws` provider's default chain finds.
+
+#### Anything else
+
+Sign in during an earlier step — `google-github-actions/auth`, a vault read, whatever the
+provider needs — or hand the credential to the stacks that need it through
+`terragrunt-stack-env`. The action does not care which; it checks that *something* is there.
+
+#### The check that says so in one line
+
+`terragrunt-credential-preflight` reads the `provider` blocks of every discovered stack, and
+of every parent directory up to `terragrunt-root` so a shared `root.hcl` counts, and asks
+whether this runner holds a credential for each cloud they name. On `auto`, the default, a
+missing one fails the run before the first plan with the cloud, the stacks and the fix:
+
+```
+## Terragrunt — a provider has no credential
+
+### azure — 19 stack(s)
+
+set azure-client-id, azure-tenant-id and azure-subscription-id (the action signs in with
+this run's OIDC token), run azure/login in an earlier step, or hand the stack ARM_CLIENT_ID
+and a secret through terragrunt-stack-env. ARM_ACCESS_KEY is the state backend's credential
+and does not configure the provider.
+
+- `terraform/azure/non-prod/westerneurope/aks` (provider "azurerm")
+```
+
+It knows azurerm/azuread/azapi, aws, google/google-beta and vcd, and passes over a provider it
+does not recognise in silence rather than guessing. A provider block that configures its own
+authentication — `client_id`, `credentials`, `api_token` and the rest — is not checked, because
+that stack has answered the question itself.
+
+It proves a credential is **present**, never that it is valid or that it reaches the
+subscription, project or account the stack names — the same line
+`terragrunt-preflight-urls` draws between reachable and authorised. `warn` annotates and plans
+anyway; `off` checks nothing.
+
 ### Per-stack state credentials
 
 If your production state lives in a different storage account from the rest, which is a
