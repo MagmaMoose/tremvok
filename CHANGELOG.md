@@ -9,6 +9,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Google Cloud credentials for `target: terragrunt`.** `gcp-workload-identity-provider`,
+  `gcp-service-account` and `gcp-project-id` federate this run's GitHub OIDC token with a
+  workload identity pool before the first plan. No service-account key is stored anywhere: the
+  action writes the token and a small `external_account` credential configuration into
+  `RUNNER_TEMP` at 0600 and exports `GOOGLE_APPLICATION_CREDENTIALS`, which the Terraform
+  `google` provider and a GCS backend both read. A script rather than
+  `google-github-actions/auth`, for the reason this repository runs neither
+  `aws-actions/configure-aws-credentials` nor `azure/login`.
+  - **Both halves are proved at login**, because they fail alike from inside Terraform and have
+    different fixes: an STS exchange refused means the pool's issuer or attribute condition does
+    not match this repository and ref; an impersonation refused means it does, and the
+    `roles/iam.workloadIdentityUser` binding is missing.
+  - A pool name passed where a provider resource name belongs is refused before any call.
+  - **AWS needed nothing.** `aws-role-to-assume` has always applied to this target — the step is
+    gated on the input rather than on a target — and the assumed-role session covers both the S3
+    backend and the `aws` provider. A contract test now pins that for all three clouds, because
+    the symptom of a login step regaining a target gate is not a missing input, it is a plan
+    that dies inside a provider.
+
 - **Azure credentials for `target: terragrunt`, and a check that says when they are missing.**
   `azure-client-id`, `azure-tenant-id` and `azure-subscription-id` now apply to the terragrunt
   target: the action signs in with this run's OIDC token before the first plan, so
