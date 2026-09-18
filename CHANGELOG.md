@@ -82,6 +82,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`cloudflare-docs-require-access` is checked only when a publish is actually going to
+  happen.** It was gated on the target alone, so it also ran in `preview` mode — on a pull
+  request, which for this target publishes nothing at all. In a repository that sets it, every
+  documentation pull request therefore failed on a deploy it was never going to do. A required
+  check that is always red is one people learn to merge past, which costs more than the early
+  warning is worth. `github-pages` never had this because v1's caller passed `target: none` on
+  a pull request and every target-gated step fell away with it; `mode` replaced that and this
+  step did not get the memo.
+
+
 - **`dry-run` on `cloudflare-workers` now runs Wrangler's own `wrangler deploy --dry-run`**
   instead of logging the command. It bundles and validates the Worker, uploads nothing, and
   calls no API, so it no longer requires `cloudflare-api-token` or `cloudflare-account-id`. A
