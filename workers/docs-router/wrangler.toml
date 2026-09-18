@@ -32,18 +32,48 @@ routes = [
 # identifier on `env` and a hyphen is not one. `service` is the name of that repository's own
 # docs Worker, which is `docs-<repo>` by convention — see workers/docs-site/wrangler.toml.
 
-[[services]]
-binding = "TREMVOK"
-service = "docs-tremvok"
+# A BINDING TO A WORKER THAT DOES NOT EXIST IS A FAILED DEPLOY, not a dead route. The API
+# refuses the whole script with `Service binding '<NAME>' references Worker '<service>' which
+# was not found [code: 10143]`, so this table can never run ahead of the site Workers — every
+# name below has to have published at least once before this file can be deployed at all.
+# That is the opposite of the failure the 404 page warns about (a site with no binding, which
+# is quiet); this one is loud and takes the whole router with it.
 
 [[services]]
-binding = "NIEVAH"
-service = "docs-nievah"
+binding = "BRIMYR"
+service = "docs-brimyr"
 
 [[services]]
 binding = "CHARGATE"
 service = "docs-chargate"
 
 [[services]]
-binding = "NOCTYR"
-service = "docs-noctyr"
+binding = "DIATREME"
+service = "docs-diatreme"
+
+[[services]]
+binding = "DRAVENTIS"
+service = "docs-draventis"
+
+[[services]]
+binding = "PONVARA"
+service = "docs-ponvara"
+
+[[services]]
+binding = "TREMVOK"
+service = "docs-tremvok"
+
+# ── The private four, deliberately absent until they have published ─────────
+#
+# caldrith, dunmir, nievah and noctyr carry `docs_require_access: true` in
+# MagmaMoose/admin, so their docs deploy asks Cloudflare which Access applications cover
+# `docs.magmamoose.com/<repo>` and REFUSES when nothing does. Until someone creates those
+# applications by hand in the dashboard — there is no API for it — those four publish no
+# site Worker, and a binding named here would take this router down with them rather than
+# quietly 404 their path.
+#
+# Adding each one back is a `[[services]]` block and a redeploy, in that repo's order:
+#
+#   [[services]]
+#   binding = "NIEVAH"
+#   service = "docs-nievah"

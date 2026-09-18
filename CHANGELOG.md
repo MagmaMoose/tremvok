@@ -59,6 +59,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The check fails rather than skips when Node is absent, so it cannot become a required check
   that never reports.
 
+- **The docs router is deployed by CI** (`.github/workflows/docs-router.yml`), and its routing
+  table covers the fleet rather than the four repositories it was sketched with. Adding a
+  repository's docs to `docs.magmamoose.com` is adding a `[[services]]` block and redeploying,
+  and a redeploy nothing performs is a path that 404s with a green build everywhere.
+  - **A binding to a Worker that has not published yet fails the whole deploy**, with
+    `Service binding '<NAME>' references Worker '<service>' which was not found [code: 10143]`.
+    It is not degraded to a dead route, so the table can never run ahead of the site Workers.
+    That is the opposite of a missing binding, which 404s quietly.
+  - caldrith, dunmir, nievah and noctyr are deliberately absent until their Access
+    applications exist and they have published once; `cloudflare-docs-require-access` refuses
+    their deploy until then.
+  - A pull request is a dry run, never a preview: `--preview-alias` needs a workers.dev
+    subdomain and `workers_dev = false` is what the service-binding design rests on.
+
 - **`cloudflare-verify-config`** (on by default): before any `cloudflare-workers` publish, run
   `wrangler deploy --dry-run` and refuse to publish when Wrangler reports configuration it will
   not apply. A misspelled `[[r2_bucket]]` is only an "Unexpected fields" warning, Wrangler exits
