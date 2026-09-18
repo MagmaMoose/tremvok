@@ -1205,8 +1205,23 @@ runs:
 
     # Before the publish, not after. A site that went out uncovered is already public, and
     # "we noticed afterwards" is what this check exists to prevent.
+    #
+    # AND ONLY WHEN THERE IS A PUBLISH. `mode` is what decides that, so it belongs in this
+    # condition beside the target: a pull request resolves to `preview`, and these Workers
+    # have no preview destination at all — `deploy-cloudflare-docs.sh` and
+    # `publish-docs-index.sh` both return early on any mode but `deploy`. Gating on the
+    # target alone made this the one docs step that ran when nothing was going to be
+    # published, which turns every documentation pull request in a repo with
+    # `cloudflare-docs-require-access` permanently red for a deploy it was never going to
+    # do. A required check that is always failing is a check people learn to merge past,
+    # which costs more than the early warning is worth.
+    #
+    # `github-pages` never had this problem and the difference is worth naming, because it
+    # is not that v1 was more careful: its caller passed `target: none` on a pull request,
+    # so every target-gated step fell away with it. `mode` replaced that, and this step did
+    # not get the memo.
     - name: Is the docs site actually behind Access?
-      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs'
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs' && steps.resolve.outputs.mode == 'deploy'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
