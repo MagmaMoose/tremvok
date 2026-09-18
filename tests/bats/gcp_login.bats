@@ -66,9 +66,9 @@ token_file() { printf '%s/tremvok-gcp-oidc-token' "$CREDENTIAL_DIR"; }
   run bash "${SCRIPTS}/gcp-login.sh"
   [ "$status" -eq 0 ]
   mask_line="$(grep -n '::add-mask::header.payload.s3cr3t-github-token' <<<"$output" | cut -d: -f1)"
-  done_line="$(grep -n 'federated with' <<<"$output" | cut -d: -f1)"
+  sts_line="$(grep -n 'sts.googleapis.com' <<<"$output" | head -1 | cut -d: -f1)"
   [ -n "$mask_line" ]
-  [ "$mask_line" -lt "$done_line" ]
+  [ "$mask_line" -lt "$sts_line" ]
   [[ "$output" == *"::add-mask::ya29.federated-s3cr3t"* ]]
 }
 
