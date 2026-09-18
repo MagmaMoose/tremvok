@@ -58,6 +58,12 @@ jobs:
           # publish a preview to, and the strict build is the check. Same position
           # `github-pages` is in, for a different reason.
           cloudflare-docs-host: docs.magmamoose.com
+          # Tremvok's own docs belong in the corpus the rest of the fleet publishes to.
+          # This input defaults to empty, which publishes no index — so the repository that
+          # SHIPS index publishing was the one repository already on this target and
+          # contributing no documents to it. `list_docs` on mcp.magmamoose.com counted
+          # tremvok among the repositories with nothing published.
+          cloudflare-docs-index-bucket: magmamoose-docs-index
           # `cloudflare-docs-path` defaults to the repository name, which is what the router
           # dispatches on, so it is left unset rather than restated here.
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
