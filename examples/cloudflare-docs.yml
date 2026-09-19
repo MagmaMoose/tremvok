@@ -60,6 +60,14 @@ jobs:
           # router dispatches on. Set it only if your site is mounted somewhere else.
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # The docs corpus, and the capability declaration beside it. Both land in this
+          # bucket, written only by a deploy and only after the site itself published.
+          cloudflare-docs-index-bucket: magmamoose-docs-index
+          # `cloudflare-docs-capability-file` defaults to `capability.json` and needs no line
+          # here. Commit that file if this repository is a house TOOL: it is what
+          # `find_capability` on mcp.magmamoose.com answers from, and the only thing that lets
+          # the MCP say "no house tool does this" rather than "nothing was found". Absent is
+          # the normal case. Present and malformed FAILS the run, pull requests included.
           # For a PRIVATE site, turn this on. The deploy then asks Cloudflare which Access
           # applications exist and refuses to publish unless one actually covers
           # docs.magmamoose.com/<repo>. "It is behind Access" is otherwise a belief that

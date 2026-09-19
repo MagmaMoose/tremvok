@@ -641,6 +641,12 @@
       ],
       "default": ""
     },
+    "cloudflare-docs-capability-file": {
+      "targets": [
+        "cloudflare-docs"
+      ],
+      "default": "capability.json"
+    },
     "cloudflare-extra-args": {
       "targets": [
         "cloudflare-workers"
