@@ -176,6 +176,64 @@ token needs **R2 object write** on top of the Workers permissions. The upload is
 failure-isolated: a run that deployed the site and quietly failed to publish the index would
 be green while every agent read the previous commit's documentation.
 
+#### The capability registry
+
+The corpus answers questions about documentation. It cannot answer the one an agent asks
+*before* it writes a workflow — which house tool already does this, how do I consume it, and
+if none does, where do I file? Prose has to be interpreted, it does not carry the `uses:`
+ref, and it cannot say **no**: four pages read and nothing found is indistinguishable from a
+tool that has not published, and those two lead to opposite actions.
+
+So a tool declares what it does, in a file at its own root, and this deploy ships it to
+`capability/<repo>.json` beside the index:
+
+```json
+{
+  "schema": 1,
+  "repo": "tremvok",
+  "private": false,
+  "file_issues_at": "MagmaMoose/tremvok",
+  "action": { "uses": "MagmaMoose/tremvok@v2", "kind": "composite-action" },
+  "capabilities": [
+    {
+      "id": "cloudflare-docs",
+      "summary": "Build an MkDocs site strictly and publish it to Cloudflare Workers.",
+      "ecosystems": ["python", "mkdocs"],
+      "inputs": ["cloudflare-docs-host", "cloudflare-docs-index-bucket"],
+      "excludes": ["a docs site that is not MkDocs", "publishing to GitHub Pages"],
+      "doc": "docs/setup.md"
+    }
+  ]
+}
+```
+
+`cloudflare-docs-capability-file` names it, defaulting to `capability.json`; empty turns it
+off. **Absent is the normal case** — most repositories are not house tools — and a run that
+finds no file uploads nothing and says so in its summary.
+
+`excludes` is the field that earns its keep, and the one worth writing first. A capability
+that only says what it covers gets returned for cases it cannot serve, and the symptom is a
+check that passes having measured nothing. A capability that declares none is warned about.
+
+**A declaration that does not validate fails the run**, on a pull request as much as on a
+deploy. The schema is
+[`capability.schema.json`](https://mcp.magmamoose.com/schema/capability.schema.json), and the
+reason for refusing rather than uploading is what the MCP does with a broken document: it
+reads it as private and reports it as unreadable, counted and never named. A tool that
+vanished because its JSON broke looks exactly like a tool that declared nothing, from the
+only side that could notice. Every problem is reported in one run, not one per attempt.
+
+Validation runs on a pull request; the upload does not. There is one key per repository, so a
+preview that wrote would overwrite the shared registry with an unmerged branch — but a
+declaration only checked on `main` is checked after the merge that broke it.
+
+Two fields are the publisher's rather than the file's. `commit` and `generated` are stamped
+from the run, because a file in a repository cannot know which commit it shipped from. And
+`private` is republished from the repository's own visibility on the same fail-closed rule as
+the index: a declaration is public only when it asks to be **and** GitHub says the repository
+is public. Two visibility rules over one bucket is one rule that eventually disagrees with the
+other, and the direction it disagrees in is a leak.
+
 ### `cloudflare-workers`
 
 ```yaml
