@@ -76,6 +76,29 @@ left is a chain this action does not know about, and `terragrunt-credential-pref
 is the escape hatch; `off` turns it off entirely. Both are worth a moment's thought first: the
 error it replaces costs a full plan cycle across every stack to say less.
 
+### `Google STS refused the OIDC token for <provider>`
+
+The federation itself, not the permissions. The pool provider's issuer URI or its attribute
+condition does not match this run. Check the issuer is the one your enterprise actually mints
+tokens from (on GitHub Enterprise Cloud with data residency that is
+`https://token.actions.<subdomain>.ghe.com`, not `token.actions.githubusercontent.com`), and
+that the attribute condition allows this repository and ref. The message carries Google's own
+`error_description` when there is one.
+
+### `the federated identity may not impersonate <service account>`
+
+The opposite half: the pool accepted the token and the service account will not be
+impersonated. Grant the pool's `principalSet` `roles/iam.workloadIdentityUser` on that service
+account. Or drop `gcp-service-account` entirely and bind the roles to the principalSet, which
+is one fewer indirection.
+
+### `gcp-workload-identity-provider must be the provider's full resource name`
+
+A pool is not a provider. It is
+`projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>` — the
+project **number**, not its id. Refused before any call, because Google answers a pool name
+with a 400 about an invalid audience that names neither the pool nor the provider.
+
 ### `terragrunt-credential-preflight must be auto, warn or off`
 
 It is an enum, not a boolean. `true` and `false` are refused rather than read as one of them.

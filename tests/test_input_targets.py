@@ -102,7 +102,11 @@ def test_target_specific_inputs_are_named_for_their_target():
         "github-pages": ("pages-",),
         "s3-cloudfront": ("s3-", "cloudfront-", "artifact-"),
         "lambda-zip": ("lambda-", "s3-", "artifact-"),
-        "terragrunt": ("terragrunt-",),
+        # `gcp-` is the cloud prefix, exactly as `aws-` and `azure-` are below: the
+        # credential trio belongs to Google rather than to this one target, and a
+        # second Google target would share it unchanged. Terragrunt is only the first
+        # target that needs it because it is the only one that talks to GCP today.
+        "terragrunt": ("terragrunt-", "gcp-"),
         # `vault-` is HashiCorp Vault, and it is deliberately NOT `ansible-vault-`: that
         # prefix already means ansible-vault, the file-encryption tool, and
         # `ansible-vault-password` sits three lines away from it in the same input list.
