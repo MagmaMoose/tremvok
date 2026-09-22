@@ -146,8 +146,33 @@ def test_url_shape_is_detected_from_the_built_site(repo: Path) -> None:
 
 def test_index_md_is_the_directory_root(repo: Path) -> None:
     site = build_site(repo)
+    (site / "adr").mkdir()
+    (site / "adr" / "index.html").write_text("<html></html>", encoding="utf-8")
     assert url_path_for(Path("index.md"), site) == ""
     assert url_path_for(Path("adr/index.md"), site) == "adr/"
+
+
+def test_readme_is_the_directory_index(repo: Path) -> None:
+    """MkDocs renders `README.md` to `<dir>/index.html`, so `<dir>/README/` never exists.
+
+    Resolved like any other page, a README the build did render would be left out.
+    """
+    site = build_site(repo)
+    (site / "guide").mkdir()
+    (site / "guide" / "index.html").write_text("<html></html>", encoding="utf-8")
+    assert url_path_for(Path("guide/README.md"), site) == "guide/"
+    assert url_path_for(Path("README.md"), site) == ""
+
+
+def test_a_source_the_build_emitted_no_page_for_has_no_url(repo: Path) -> None:
+    """`exclude_docs` and `draft_docs` keep a file in `docs/` and its page out of the site.
+
+    Given the URL it would have had, the corpus cites a page that 404s.
+    """
+    site = build_site(repo)
+    assert url_path_for(Path("other/general/_docs/README.md"), site) is None
+    assert url_path_for(Path("drafts/wip.md"), site) is None
+    assert url_path_for(Path("drafts/index.md"), site) is None
 
 
 def test_url_falls_back_to_directory_urls_without_a_built_site(tmp_path: Path) -> None:
@@ -212,6 +237,64 @@ def test_main_emits_index_llms_and_llms_full(repo: Path, tmp_path: Path) -> None
     assert "Grant what the target needs." in full
     # The page's own H1 is dropped in favour of the emitted one, so it appears once.
     assert full.count("# Setting Tremvok up") == 1
+
+
+def test_a_page_the_build_excluded_is_not_in_the_corpus(repo: Path, tmp_path: Path, capsys) -> None:
+    """`exclude_docs: **/_docs/` keeps a lab-file README in `docs/` and out of the site.
+
+    Walking the markdown still finds it. Indexed, it is cited at a URL that 404s by every
+    MCP surface reading the corpus, and listed in llms.txt beside pages that exist.
+    """
+    lab = repo / "docs" / "other" / "general" / "_docs"
+    lab.mkdir(parents=True)
+    (lab / "README.md").write_text("# Lab files\n\nA template for a lab.\n", encoding="utf-8")
+    build_site(repo)
+    out = tmp_path / "out"
+    rc = main(
+        [
+            "--root",
+            str(repo),
+            "--repo",
+            "tremvok",
+            "--site-dir",
+            "site",
+            "--index-out",
+            str(out),
+        ]
+    )
+    assert rc == 0
+
+    document = json.loads((out / "index" / "tremvok.json").read_text(encoding="utf-8"))
+    assert {entry["path"] for entry in document["docs"]} == {"docs/index.md", "docs/setup.md"}
+    for name in ("llms.txt", "llms-full.txt"):
+        text = (repo / "site" / name).read_text(encoding="utf-8")
+        assert "Lab files" not in text
+        assert "_docs/" not in text
+    # Named in the log: a page missing from the corpus is otherwise noticed by nobody.
+    assert "docs/other/general/_docs/README.md" in capsys.readouterr().out
+
+
+def test_a_site_with_no_page_for_any_source_is_a_hard_error(
+    repo: Path, tmp_path: Path, capsys
+) -> None:
+    """Pointed at the wrong site, every source is left out. Say that, not "no markdown"."""
+    (repo / "site").mkdir()
+    rc = main(
+        [
+            "--root",
+            str(repo),
+            "--repo",
+            "tremvok",
+            "--site-dir",
+            "site",
+            "--index-out",
+            str(tmp_path / "o"),
+        ]
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "has no page for any markdown file" in err
+    assert "no markdown" not in err
 
 
 def test_index_is_byte_stable_across_runs(repo: Path, tmp_path: Path) -> None:

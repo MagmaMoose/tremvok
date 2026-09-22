@@ -38,6 +38,14 @@ re-deriving MkDocs' rule from config, each page's URL is resolved by looking at 
 file the build actually emitted. Same principle as ``pages-detect.sh``: the tree is the
 fact.
 
+THE SITE ALSO DECIDES WHICH PAGES ARE IN THE CORPUS. ``exclude_docs`` and ``draft_docs``
+keep a file in ``docs/`` but out of the build, and walking the markdown still finds it.
+Indexed at the URL it would have had, it becomes a citation that 404s on every MCP surface
+reading the corpus. So when there is a built site, a source file it has no page for is
+left out. Re-deriving that from ``exclude_docs`` would mean reimplementing MkDocs'
+gitignore-style patterns and its defaults (``.*``, ``/templates/``); the build has
+already applied them.
+
 PyYAML is imported rather than hand-rolled, on the same grounds as ``lint_docs.py``: this
 runs after the docs toolchain is installed, and MkDocs depends on PyYAML.
 """
@@ -199,31 +207,37 @@ def extract_snippet(body: str) -> str:
 # --------------------------------------------------------------------------- urls
 
 
-def url_path_for(rel: Path, site_dir: Path) -> str:
+def url_path_for(rel: Path, site_dir: Path) -> str | None:
     """Resolve a source path to the site-relative URL the build actually emitted.
 
-    Detection, not declaration — see the module docstring. The fallback is the
-    ``use_directory_urls: true`` convention, which is MkDocs' default, used only when
-    there is no built site to look at (unit tests, a --check run).
+    Detection, not declaration — see the module docstring. ``None`` means the site exists
+    and has no page for this source: the build excluded it, so there is no URL to cite.
+    The fallback is the ``use_directory_urls: true`` convention, which is MkDocs' default,
+    used only when there is no built site to look at (unit tests, a --check run).
     """
     stem = rel.with_suffix("")
     parent = stem.parent
 
     # `index.md` is the directory itself under either URL style — `use_directory_urls: false`
-    # renders it to `<dir>/index.html`, which is still served as `<dir>/`. So there is nothing
-    # to detect here, unlike every other page below.
-    if stem.name == "index":
-        return "" if str(parent) == "." else parent.as_posix() + "/"
+    # renders it to `<dir>/index.html`, which is still served as `<dir>/`. MkDocs renders a
+    # `README.md` to the same file, so `<dir>/README/` never exists. The shape needs no
+    # detecting here, only whether the page was built at all.
+    if stem.name in ("index", "README"):
+        directory_url = "" if str(parent) == "." else parent.as_posix() + "/"
+        if site_dir.is_dir() and not (site_dir / directory_url / "index.html").is_file():
+            return None
+        return directory_url
 
     directory_url = stem.as_posix() + "/"
     flat_url = stem.as_posix() + ".html"
 
-    if site_dir.is_dir():
-        if (site_dir / directory_url / "index.html").is_file():
-            return directory_url
-        if (site_dir / flat_url).is_file():
-            return flat_url
-    return directory_url
+    if not site_dir.is_dir():
+        return directory_url
+    if (site_dir / directory_url / "index.html").is_file():
+        return directory_url
+    if (site_dir / flat_url).is_file():
+        return flat_url
+    return None
 
 
 def canonical_url(site_url: str, url_path: str) -> str:
@@ -248,8 +262,11 @@ def collect(
     repo: str,
     site_url: str,
     source_prefix: str = "docs",
-) -> tuple[list[Entry], dict[str, str]]:
+) -> tuple[list[Entry], dict[str, str], list[str]]:
     """Walk the docs tree once, returning entries and each entry's raw markdown body.
+
+    Also returns the source paths left out because the built site has no page for them,
+    so the caller can say what it dropped rather than drop it silently.
 
     ``source_prefix`` is the docs directory as the repository names it, so an entry's
     ``path`` is repository-relative while its URL is still resolved from the path inside
@@ -257,25 +274,31 @@ def collect(
     """
     entries: list[Entry] = []
     bodies: dict[str, str] = {}
+    unbuilt: list[str] = []
     prefix = source_prefix.strip("/")
 
     for path in sorted(docs_dir.rglob("*.md")):
         rel = path.relative_to(docs_dir)
+        source = f"{prefix}/{rel.as_posix()}" if prefix else rel.as_posix()
+        url_path = url_path_for(rel, site_dir)
+        if url_path is None:
+            unbuilt.append(source)
+            continue
         meta, body = strip_front_matter(path.read_text(encoding="utf-8"))
         entry = Entry(
             repo=repo,
-            path=f"{prefix}/{rel.as_posix()}" if prefix else rel.as_posix(),
+            path=source,
             title=extract_title(meta, body, path),
             headings=extract_headings(body),
             snippet=extract_snippet(body),
-            url=canonical_url(site_url, url_path_for(rel, site_dir)),
+            url=canonical_url(site_url, url_path),
             text=body,
             bytes=len(body.encode("utf-8")),
         )
         entries.append(entry)
         bodies[entry.path] = body
 
-    return entries, bodies
+    return entries, bodies, unbuilt
 
 
 def is_private(visibility: str) -> bool:
@@ -418,9 +441,17 @@ def main(argv: list[str] | None = None) -> int:
     if not site_url.endswith("/"):
         site_url += "/"
 
-    entries, bodies = collect(docs_dir, site_dir, args.repo, site_url, args.docs_dir)
+    entries, bodies, unbuilt = collect(docs_dir, site_dir, args.repo, site_url, args.docs_dir)
     if not entries:
-        print(f"::error::gen-docs-index: no markdown under {docs_dir}", file=sys.stderr)
+        # Every source left out means the site is the wrong one (another --site-dir, a stale
+        # build), not that there is no markdown. "No markdown" would send whoever reads it
+        # to docs/, where nothing is wrong.
+        reason = (
+            f"{site_dir} has no page for any markdown file under {docs_dir}"
+            if unbuilt
+            else f"no markdown under {docs_dir}"
+        )
+        print(f"::error::gen-docs-index: {reason}", file=sys.stderr)
         return 1
 
     index_out: Path = args.index_out or (root / ".docs-index")
@@ -445,6 +476,8 @@ def main(argv: list[str] | None = None) -> int:
             written.append(str(site_dir / name))
 
     print(f"gen-docs-index: {len(entries)} pages -> {', '.join(written)}")
+    if unbuilt:
+        print(f"gen-docs-index: no page in {site_dir}, left out: {', '.join(unbuilt)}")
     return 0
 
 
