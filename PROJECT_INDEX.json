@@ -108,7 +108,7 @@
 "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring",
     "tests/test_input_targets.py": "the applicability map is generated, complete, and matches action.yml's defaults; every target-only input carries its target's prefix",
     "tests/test_workers_bindings.py": "every wrangler.toml binding appears in `wrangler deploy --dry-run`; fails rather than skips under TREMVOK_REQUIRE_WRANGLER=1",
-    "tests/test_gen_docs_index.py": "the corpus generator: URL shape detected from the built site, intraword underscores, fenced code excluded, byte-stable output",
+    "tests/test_gen_docs_index.py": "the corpus generator: URL shape detected from the built site, pages the build excluded left out, intraword underscores, fenced code excluded, byte-stable output",
     "tests/test_notify.py": "notify.py unit tests: Slack payload shape, Teams adaptive card, non-HTTPS refusal, fanout, notify policy matrix",
     "tests/test_oidc.py": "RS256 verification: valid token, tampered payload, wrong audience/issuer, expiry, leeway, pinned JWKS, authorize deny-by-default",
     "tests/test_store.py": "DynamoDB store: record/read, idempotency token dedup and compensation, per-repository isolation, history ordering and TTL",

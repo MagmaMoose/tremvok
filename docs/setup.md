@@ -162,6 +162,10 @@ are written into the site before it is published, and a search index of every pa
 generated beside it. On by default (`cloudflare-docs-index`), with no credentials and no
 network.
 
+The corpus is what the build rendered, not everything under `docs/`. A file the build left
+out (`exclude_docs`, `draft_docs`) is not indexed, because its URL would 404; the step's log
+names each one.
+
 Name a bucket and a deploy also publishes that index to R2 as `index/<repo>.json`, which is
 the corpus the documentation MCP servers read:
 
