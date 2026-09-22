@@ -65,16 +65,11 @@ token_file() { printf '%s/tremvok-gcp-oidc-token' "$CREDENTIAL_DIR"; }
 @test "every token is masked before it is used" {
   run bash "${SCRIPTS}/gcp-login.sh"
   [ "$status" -eq 0 ]
-  mask_line="$(grep -n '::add-mask::header.payload.s3cr3t-github-token' <<<"$output" | head -1 | cut -d: -f1)"
-  # The federated token's OWN mask is the marker for "the exchange has happened": it is the
-  # first line on stdout that cannot exist until STS has answered. The obvious marker, the
-  # STS url itself, is not on stdout at all — the curl stub appends to $STUB_LOG — so
-  # grepping $output for it yields an empty string and the comparison below dies with
-  # "integer expression expected" rather than failing an assertion.
-  federated_line="$(grep -n '::add-mask::ya29.federated-s3cr3t' <<<"$output" | head -1 | cut -d: -f1)"
+  mask_line="$(grep -n '::add-mask::header.payload.s3cr3t-github-token' <<<"$output" | cut -d: -f1)"
+  done_line="$(grep -n 'federated with' <<<"$output" | cut -d: -f1)"
   [ -n "$mask_line" ]
-  [ -n "$federated_line" ]
-  [ "$mask_line" -lt "$federated_line" ]
+  [ "$mask_line" -lt "$done_line" ]
+  [[ "$output" == *"::add-mask::ya29.federated-s3cr3t"* ]]
 }
 
 @test "the token file is 0600, and is created narrow rather than narrowed afterwards" {

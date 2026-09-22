@@ -790,6 +790,21 @@ inputs:
     required: false
     default: ''
 
+  cloudflare-docs-capability-file:
+    description: |
+      cloudflare-docs: this repository's capability declaration, published to
+      `capability/<repo>.json` in `cloudflare-docs-index-bucket`. Empty disables it; the
+      default names a file most repositories do not have, and absent is the normal case —
+      most repositories are not house tools. Present, it is validated against
+      https://mcp.magmamoose.com/schema/capability.schema.json on every run, including a
+      pull request, and a declaration that does not satisfy it FAILS THE RUN: the MCP reads
+      a malformed document as private and reports it as unreadable, counted and never
+      named, which is the one state invisible from the publishing side. `private` is
+      republished from the repository's own visibility on the same fail-closed rule as the
+      docs index, and `commit` and `generated` are stamped from the run.
+    required: false
+    default: 'capability.json'
+
   cloudflare-extra-args:
     description: 'cloudflare-workers: extra flags appended to the Wrangler invocation, split on whitespace.'
     required: false
@@ -1236,8 +1251,23 @@ runs:
 
     # Before the publish, not after. A site that went out uncovered is already public, and
     # "we noticed afterwards" is what this check exists to prevent.
+    #
+    # AND ONLY WHEN THERE IS A PUBLISH. `mode` is what decides that, so it belongs in this
+    # condition beside the target: a pull request resolves to `preview`, and these Workers
+    # have no preview destination at all — `deploy-cloudflare-docs.sh` and
+    # `publish-docs-index.sh` both return early on any mode but `deploy`. Gating on the
+    # target alone made this the one docs step that ran when nothing was going to be
+    # published, which turns every documentation pull request in a repo with
+    # `cloudflare-docs-require-access` permanently red for a deploy it was never going to
+    # do. A required check that is always failing is a check people learn to merge past,
+    # which costs more than the early warning is worth.
+    #
+    # `github-pages` never had this problem and the difference is worth naming, because it
+    # is not that v1 was more careful: its caller passed `target: none` on a pull request,
+    # so every target-gated step fell away with it. `mode` replaced that, and this step did
+    # not get the memo.
     - name: Is the docs site actually behind Access?
-      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs'
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs' && steps.resolve.outputs.mode == 'deploy'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -1284,6 +1314,33 @@ runs:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/publish-docs-index.sh"
+
+    # Validated on every run, uploaded only by a deploy. A declaration checked only on `main`
+    # is checked after the merge that broke it, so the pull request is green and the deploy
+    # that finds out is somebody else's; but there is one key per repository, so a preview
+    # that wrote would overwrite the shared registry with an unmerged branch. Ordered after
+    # the site for the same reason as the corpus: a capability cites documentation pages.
+    - name: Publish the capability declaration
+      if: inputs.target == 'cloudflare-docs' && inputs.cloudflare-docs-capability-file != '' && inputs.cloudflare-docs-index-bucket != '' && steps.deploy-cloudflare-docs.outcome == 'success'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CAPABILITY_FILE: ${{ inputs.cloudflare-docs-capability-file }}
+        BUCKET: ${{ inputs.cloudflare-docs-index-bucket }}
+        REPO: ${{ github.event.repository.name }}
+        COMMIT: ${{ github.sha }}
+        # Same source and same fail-closed rule as the docs index: only an explicit `public`
+        # publishes a public declaration, so `internal`, an empty value and an event carrying
+        # no repository object are all private. Two visibility rules over one bucket is one
+        # rule that eventually disagrees with the other, and it disagrees in the leaking
+        # direction.
+        VISIBILITY: ${{ github.event.repository.visibility }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        WRANGLER_VERSION: ${{ inputs.cloudflare-wrangler-version }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/publish-capability.sh"
 
     # ── targets: s3-cloudfront, lambda-zip, terragrunt ───────────────────────
     - name: Assume the deployment role

@@ -83,6 +83,43 @@ run_deploy() { run bash "${SCRIPTS}/deploy-cloudflare-docs.sh"; }
   [ "$(output_value deployed)" = "false" ]
 }
 
+@test "a pull request with no secrets still builds and checks" {
+  # Dependabot pull requests carry no repository secrets, so CLOUDFLARE_API_TOKEN and
+  # CLOUDFLARE_ACCOUNT_ID arrive EMPTY. Nothing before the early return above touches
+  # Cloudflare, so demanding them at the top of the script failed every dependency bump on a
+  # target the bump could not have reached — `CLOUDFLARE_API_TOKEN is required` on a run whose
+  # own log then says it publishes nothing.
+  export MODE=preview
+  unset CLOUDFLARE_API_TOKEN
+  unset CLOUDFLARE_ACCOUNT_ID
+  run_deploy
+  [ "$status" -eq 0 ]
+  refute grep -Fq 'wrangler' "$STUB_LOG"
+  [ "$(output_value deployed)" = "false" ]
+}
+
+@test "a dry run with no secrets still builds and checks" {
+  export DRY_RUN=true
+  unset CLOUDFLARE_API_TOKEN
+  unset CLOUDFLARE_ACCOUNT_ID
+  run_deploy
+  [ "$status" -eq 0 ]
+  [ "$(output_value deployed)" = "false" ]
+}
+
+@test "an empty site directory is refused even with no secrets" {
+  # The build IS the check on a pull request, so the guard that catches a --strict build
+  # producing nothing has to keep firing when there are no credentials to reach. Moving the
+  # credential check down must not take this guard with it.
+  export MODE=preview
+  unset CLOUDFLARE_API_TOKEN
+  unset CLOUDFLARE_ACCOUNT_ID
+  rm -f "${SITE_DIR}/index.html"
+  run_deploy
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -Fq 'Refusing to publish an empty site'
+}
+
 @test "an empty site directory is refused" {
   rm -f "${SITE_DIR}/index.html"
   run_deploy
@@ -99,6 +136,8 @@ run_deploy() { run bash "${SCRIPTS}/deploy-cloudflare-docs.sh"; }
 }
 
 @test "a missing API token is named, not guessed" {
+  # MODE=deploy from setup(), which is the point: a run that WILL publish still refuses
+  # without credentials. Only the runs that publish nothing were let through.
   unset CLOUDFLARE_API_TOKEN
   run_deploy
   [ "$status" -ne 0 ]
