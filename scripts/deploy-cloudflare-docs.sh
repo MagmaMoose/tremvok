@@ -32,9 +32,6 @@ WRANGLER_VERSION="${WRANGLER_VERSION:-}"
 # pinned version rather than whatever `wrangler` happens to be on PATH.
 WRANGLER_BIN="${WRANGLER_BIN:-}"
 
-tremvok::require CLOUDFLARE_API_TOKEN "cloudflare-api-token"
-tremvok::require CLOUDFLARE_ACCOUNT_ID "cloudflare-account-id"
-
 # Refusing an empty asset directory is the same guard the s3-cloudfront target has, for the
 # same reason: publishing nothing over a site that is currently serving SUCCEEDS. A --strict
 # build that produced no files is the shape this catches.
@@ -62,6 +59,15 @@ if tremvok::is_true "$DRY_RUN" || [[ "$MODE" != "deploy" ]]; then
   tremvok::set_output url "$url"
   exit 0
 fi
+
+# Credentials are required HERE, below the early return above, and not at the top of the
+# file. Nothing before this point touches Cloudflare: a pull request or a dry run builds the
+# site, checks it is not empty, reports "published nothing" and exits 0. Requiring a token to
+# reach that was a hard failure for anyone whose pull requests do not carry secrets, which is
+# every Dependabot pull request — `CLOUDFLARE_API_TOKEN is required — cloudflare-api-token`,
+# on a bump that could not have affected the docs. A real publish still refuses without them.
+tremvok::require CLOUDFLARE_API_TOKEN "cloudflare-api-token"
+tremvok::require CLOUDFLARE_ACCOUNT_ID "cloudflare-account-id"
 
 if [[ -z "$WRANGLER_BIN" ]]; then
   tremvok::require WRANGLER_VERSION "cloudflare-wrangler-version"
