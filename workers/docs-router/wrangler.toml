@@ -95,3 +95,13 @@ service = "docs-tremvok"
 # before its [[services]] block lands. Unbound, a name here does nothing at all: the router
 # never echoes this list, and every listing is built from the bindings.
 PRIVATE_SITES = ["caldrith", "dunmir", "nievah", "noctyr"]
+
+# WHERE A PERSON TYPING docs.magmamoose.com ENDS UP. Set, `/` answers a 302 to this page for
+# everything except a client asking for markdown, which still gets the /llms.txt index from
+# here; every other root document is unaffected. Blank, or anything but an https URL, and `/`
+# serves the router's own landing page. See src/root.js.
+#
+# Blank until https://www.magmamoose.com/documentation/ is live (MagmaMoose/website#82): that
+# page lists the same public sites under the Docs tab of the studio's site, and is what this
+# is for. Set before it deploys, and every visitor to the docs root lands on the studio's 404.
+LANDING_REDIRECT = ""

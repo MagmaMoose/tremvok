@@ -1,7 +1,8 @@
 /**
  * The host root: the documents docs.magmamoose.com serves itself rather than from a site.
  *
- *   GET /                            the landing page (HTML, or markdown to Accept: text/markdown)
+ *   GET /                            the landing page, or a 302 to LANDING_REDIRECT when that is
+ *                                    set; markdown to Accept: text/markdown either way
  *   GET /llms.txt                    an llmstxt.org index of every site
  *   GET /sitemap.xml                 a sitemap index of every site's sitemap.xml
  *   GET /robots.txt                  the crawl policy for the whole host
@@ -33,6 +34,7 @@ import {
   SERVER_CARD_URL,
   aiCatalog,
   apiCatalog,
+  discoveryLinks,
 } from "./discovery.js";
 import {
   HOST_HEADERS,
@@ -405,10 +407,44 @@ async function describedSites(request, env) {
   return describeSites(env, listedRepos(env), new URL(request.url).origin);
 }
 
+/**
+ * Where `/` sends everything that did not ask for markdown: `LANDING_REDIRECT` in
+ * wrangler.toml, meant for www.magmamoose.com/documentation/. That page lists the same public
+ * sites in the studio's own design, under the Docs tab of the studio's nav, so a person who
+ * types docs.magmamoose.com lands on the one documentation hub the org keeps, and every card
+ * there leads back to a site on this host.
+ *
+ * A client whose first media range is text/markdown is not sent away: an agent asking this
+ * host for markdown wants the docs' own index, which is the llms.txt below, not an HTML page
+ * on another host. And the redirect keeps the discovery Link header, absolute, so a client
+ * that reads headers without following the redirect still finds the catalogs and llms.txt.
+ *
+ * A 302, like the server card's, because the address is another repository's to move. A
+ * value that is blank or not an https URL is ignored and the landing page is served, so
+ * turning the redirect off is a config change and a typo cannot send anyone somewhere
+ * broken.
+ */
+export function landingRedirect(env) {
+  const value = typeof env.LANDING_REDIRECT === "string" ? env.LANDING_REDIRECT.trim() : "";
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 async function landing(request, env) {
+  const markdown = prefersMarkdown(request.headers.get("accept"));
+  const away = markdown ? null : landingRedirect(env);
+  // Before describedSites: the redirect names no site, so it reads no site's llms.txt.
+  if (away) {
+    return redirect(away, 302, "public, max-age=300", { link: discoveryLinks(ORIGIN), vary: "Accept" });
+  }
   const sites = await describedSites(request, env);
   const headers = { link: `<${ORIGIN}/>; rel="canonical", ${DISCOVERY_LINKS}`, vary: "Accept" };
-  if (prefersMarkdown(request.headers.get("accept"))) {
+  if (markdown) {
     return document(request, renderLlmsTxt(sites), { type: MARKDOWN, cache: "public, max-age=300", headers });
   }
   return document(request, renderLanding(sites), {

@@ -197,7 +197,7 @@ agents:
 
 | Path | What it is |
 |---|---|
-| `/` | A landing page listing every site, with its title and summary |
+| `/` | A landing page listing every site, with its title and summary, or a `302` to your own documentation hub (below) |
 | `/llms.txt` | An [llms.txt](https://llmstxt.org/) index linking each site's `llms.txt` and `llms-full.txt` |
 | `/sitemap.xml` | A sitemap index of every site's `sitemap.xml` |
 | `/robots.txt` | Allows everything, declares content signals, names the sitemap index |
@@ -211,6 +211,13 @@ root says about your site, and the `[[services]]` block is the only thing to reg
 The router also sets the security headers every response on the host carries, serves `.txt`
 and `.md` as UTF-8, and answers `Accept: text/markdown` on a page with that page's
 `index.md`, so a site Worker needs none of it.
+
+If you keep a documentation hub elsewhere, such as a Docs page on your main site, set
+`LANDING_REDIRECT` under `[vars]` in the router's `wrangler.toml` to its `https` URL. `/` then
+answers a `302` there instead of serving the landing page, keeping the discovery `Link`
+header. A client whose first media range is `text/markdown` still gets the index, and every
+other path above is unchanged. Blank, or anything but an `https` URL, and `/` serves the
+landing page. Set it only once that page is live: the redirect does not check.
 
 #### Keeping a private site private
 

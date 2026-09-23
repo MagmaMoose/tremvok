@@ -180,6 +180,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The docs router can send `/` to a documentation hub kept elsewhere.** With
+  `LANDING_REDIRECT` set to an `https` URL in its `wrangler.toml`, `docs.magmamoose.com/`
+  answers a `302` there instead of serving the landing page, for every client except one whose
+  first media range is `text/markdown`, which still gets the `llms.txt` index. The redirect
+  keeps the discovery `Link` header, with absolute targets so a client carrying it across the
+  hop cannot resolve them against the other host, and reads no site's `llms.txt`. Blank or not
+  an `https` URL, and the landing page is served as before. It ships blank, to be set to
+  `https://www.magmamoose.com/documentation/` once that page is live (MagmaMoose/website#82).
 - **`cloudflare-docs-require-access` is checked only when a publish is actually going to
   happen.** It was gated on the target alone, so it also ran in `preview` mode — on a pull
   request, which for this target publishes nothing at all. In a repository that sets it, every
