@@ -17,6 +17,7 @@ is unavailable, so a contributor without Node still gets a green local run; CI h
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import shutil
@@ -177,6 +178,82 @@ def test_every_declared_binding_appears_in_the_dry_run(name: str, stageable: pat
         f"{name}: declared but absent from `wrangler deploy --dry-run`: {missing}\n"
         f"A binding Wrangler does not print does not exist.\n{output}"
     )
+
+
+# Imports the bundle Wrangler built, asks it for /webmcp.js, and runs the answer in a context
+# holding only what a page would give it, with a model context that records registrations.
+BUNDLED_SCRIPT_CHECK = r"""
+import vm from "node:vm";
+import { pathToFileURL } from "node:url";
+const worker = (await import(pathToFileURL(process.argv[1]).href)).default;
+const response = await worker.fetch(new Request("https://docs.magmamoose.com/webmcp.js"), {});
+const tools = [];
+const page = {
+  URL,
+  AbortController,
+  location: {
+    href: "https://docs.magmamoose.com/",
+    origin: "https://docs.magmamoose.com",
+    assign() {},
+  },
+  document: { querySelectorAll: () => [] },
+  navigator: {
+    modelContext: {
+      registerTool: (tool) => {
+        tools.push(tool.name);
+        return Promise.resolve();
+      },
+    },
+  },
+  fetch: async () => new Response("", { status: 404 }),
+  addEventListener() {},
+};
+page.window = page;
+vm.createContext(page);
+vm.runInContext(await response.text(), page);
+process.stdout.write(JSON.stringify({ status: response.status, tools }));
+"""
+
+
+def test_the_bundled_router_serves_a_landing_script_that_runs_in_a_page(tmp_path) -> None:
+    """The landing page's WebMCP script, as the DEPLOYED router serves it.
+
+    The router's own suite runs the script from source, and source is not what ships: Wrangler
+    bundles with esbuild's `keepNames`, which wraps every named function in a `__name(...)`
+    helper that exists in the bundle and not in a browser page. A script produced by
+    `fn.toString()` passed every Node test and threw a ReferenceError from the bundle before it
+    registered a single tool. workers/docs-router/src/webmcp.js keeps the script a string for
+    that reason, and this is the test that fails if it stops being one.
+    """
+    if os.environ.get("TREMVOK_SKIP_WRANGLER") == "1":
+        _skip_unless_required("TREMVOK_SKIP_WRANGLER=1")
+    if shutil.which("npx") is None or shutil.which("node") is None:
+        _skip_unless_required("Node is not available")
+
+    router = tmp_path / "docs-router"
+    shutil.copytree(WORKERS / "docs-router", router)
+    bundle = tmp_path / "bundle"
+    wrangler = f"wrangler@{pinned_wrangler_version()}"
+    result = subprocess.run(  # nosec B603 B607
+        ["npx", "--yes", wrangler, "deploy", "--dry-run", "--outdir", str(bundle)],
+        cwd=router,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=DRY_RUN_TIMEOUT,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    checked = subprocess.run(  # nosec B603 B607
+        ["node", "--input-type=module", "-e", BUNDLED_SCRIPT_CHECK, str(bundle / "index.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    report = json.loads(checked.stdout)
+    assert report["status"] == 200
+    assert report["tools"] == ["list_docs_sites", "search_docs", "read_page", "open_site"]
 
 
 def test_the_router_binds_a_service_for_every_site_it_routes() -> None:

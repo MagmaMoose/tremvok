@@ -33,11 +33,14 @@ export const DOCUMENT_CSP = "default-src 'none'; base-uri 'none'; form-action 'n
 /**
  * The policy for the router's HTML pages, given the hash of the one inline stylesheet.
  *
- *   script-src   The pages run no script of their own. `'self'` admits Cloudflare's same-origin
- *                injections (/cdn-cgi/), and static.cloudflareinsights.com is where Web
- *                Analytics loads its beacon from when it injects it.
+ *   script-src   `'self'` admits the landing page's one script, /webmcp.js (the WebMCP tools,
+ *                webmcp.js), and Cloudflare's same-origin injections (/cdn-cgi/). Nothing inline:
+ *                the tools are a file rather than an inline block so that no hash has to track
+ *                their source. static.cloudflareinsights.com is where Web Analytics loads its
+ *                beacon from when it injects it.
  *   connect-src  Where that beacon reports: /cdn-cgi/rum on this host for a proxied site,
  *                cloudflareinsights.com otherwise (developers.cloudflare.com/web-analytics).
+ *                `'self'` is also what the WebMCP tools fetch: each site's llms.txt and pages.
  *   style-src-attr  Cloudflare's AI Labyrinth injects a hidden link carrying an inline
  *                `style` attribute into every HTML response. Refusing it breaks nothing (the
  *                link is empty) but logs a CSP error to the console on every page view.
@@ -169,6 +172,13 @@ const TEXT_TYPES = Object.freeze({
   ".md": "text/markdown; charset=utf-8",
 });
 
+/**
+ * A site's Agent Skills files are public metadata a browser-based client may read (the RFC asks
+ * for CORS then), like the host's own index. `*` never carries credentials, so a private site's
+ * copy stays behind Access for anything cross-origin.
+ */
+const SKILLS_PREFIX = "/.well-known/agent-skills/";
+
 function extensionOf(path) {
   const match = /\.[a-z0-9]+$/i.exec(path);
   return match ? match[0].toLowerCase() : "";
@@ -196,6 +206,8 @@ export function decorateSiteResponse(response, { repo, path, pageUrl = null, var
   if (ok && pageUrl) headers.append("link", `<${pageUrl}>; rel="canonical"`);
 
   if (varyAccept) appendVary(headers, "Accept");
+
+  if (ok && path.startsWith(SKILLS_PREFIX)) headers.set("access-control-allow-origin", "*");
 
   // THE SITE WORKER'S REDIRECTS ARE RELATIVE TO ITS OWN ROOT. It was asked for `/setup`, so
   // the assets router's trailing-slash redirect says `Location: /setup/`, and a browser that

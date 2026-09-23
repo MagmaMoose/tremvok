@@ -9,6 +9,44 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Docs sites are agent-ready by default.** A step after the page metadata and the corpus
+  (`scripts/gen_docs_agents.py`, on by default as `pages-agent-ready`) writes into the built
+  site, for `github-pages` and `cloudflare-docs` alike:
+  - **An Agent Skills index** at `/.well-known/agent-skills/index.json` (Discovery RFC v0.2.0)
+    with one `SKILL.md` saying what the site covers, how to read it and how to cite it. It names
+    `llms.txt`, `llms-full.txt` and the markdown twins only when the build wrote them, and the
+    index carries the SHA-256 of the bytes written. The URL is path-absolute at the address the
+    site is served from.
+  - **WebMCP tools on every page** (`search_docs`, `read_page`, `list_pages`, `open_page`) from
+    a same-origin, dependency-free script, `assets/javascripts/webmcp.js`: feature-detected on
+    `document.modelContext` and `navigator.modelContext`, registered on load, and confined to
+    the site. A `script-src 'self'` CSP admits it; without the API it does nothing.
+  - **An `/auth.md`** for a site served at the root of its host, saying the docs need no
+    credentials and pointing at the MCP server's own RFC 9728 metadata, so it stays true when a
+    host routes `/auth.md` to an MCP Worker instead. A site mounted under a path gets none, and
+    neither does one behind Access (`cloudflare-docs-require-access`).
+  - **Configured by `extra.agents`** (`mcp`, `skill`, `webmcp`, `auth_md`), read from the
+    resolved config like `extra.seo`. Whatever the site already publishes of these is kept, and
+    a second run changes nothing.
+  - **On `github-pages` the Pages artifact includes dot-directories** while the step is on:
+    `actions/upload-pages-artifact` drops them by default, which would publish the site with no
+    skills index and no error.
+  - **The docs corpus step now runs before the Pages artifact is staged**, in the one block of
+    steps that write into the site. It still runs for `cloudflare-docs` only.
+- **The docs router serves the host's Agent Skills and WebMCP.**
+  `/.well-known/agent-skills/index.json` lists a skill for the host, then every public site's
+  skills from each site's own index, read over the service binding, re-addressed from the root
+  and cached like the `llms.txt` summaries.
+  Malformed entries are dropped, a name is listed once, and `PRIVATE_SITES` are never read. The
+  landing page loads `/webmcp.js` (`list_docs_sites`, `search_docs` across every site's
+  `llms.txt`, `read_page`, `open_site`), which its CSP already admits as `'self'`. Skills files
+  are served with CORS. The script is a string, not a function's source: Wrangler bundles with
+  esbuild's `keepNames`, whose `__name` helper does not exist in a browser, and
+  `tests/test_workers_bindings.py` runs the bundled router's script to keep it that way.
+- **[Agent readiness](docs/agent-readiness.md)** documents what a build writes, what the router
+  adds, and what only a site's owner can do: DNS-AID records, markdown negotiation on a host of
+  its own (a URL rewrite Transform Rule), and Workers routes for OAuth on a docs host.
+
 - **Per-page search, social and agent metadata for both docs targets.** A step after the
   MkDocs build (`scripts/gen_docs_seo.py`, on by default as `pages-seo`) edits the built HTML
   in place, for `github-pages` and `cloudflare-docs` alike:

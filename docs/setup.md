@@ -101,6 +101,16 @@ Canonical links, `og:url` and the JSON-LD need an absolute address, which is `si
 `cloudflare-docs` the router address stands in when `site_url` is unset, and the step warns,
 because MkDocs has then written no canonical links and an empty `sitemap.xml`.
 
+#### Agent readiness
+
+A step after the metadata makes the site usable by AI agents, on by default
+(`pages-agent-ready`) and configured under `extra.agents`: an Agent Skills index at
+`/.well-known/agent-skills/index.json` with a skill that says what the site covers and how to
+read and cite it, WebMCP tools on every page (search, read a page as markdown, list and open
+pages), and an `/auth.md` for a site served at the root of its host. [Agent
+readiness](agent-readiness.md) has the details, and the steps a build cannot take for you: DNS
+records, markdown negotiation on a host of your own, and OAuth for an MCP server.
+
 #### Installing a dependency from a private git repository
 
 A docs build often pins its theme straight to a private repository:
@@ -203,6 +213,8 @@ agents:
 | `/robots.txt` | Allows everything, declares content signals, names the sitemap index |
 | `/.well-known/security.txt` | The RFC 9116 security contact |
 | `/.well-known/ai-catalog.json`, `/.well-known/api-catalog` | Pointers to the docs MCP server's card, for agent registries |
+| `/.well-known/agent-skills/index.json` | A skill for the host and every public site's own, re-addressed from the root |
+| `/webmcp.js` | The landing page's WebMCP tools: list the sites, search them, read a page, open a site |
 
 A site's title and summary there are read from its own `llms.txt`, which the build writes
 from `site_name` and `site_description`. Those two keys in your `mkdocs.yml` are what the
@@ -217,7 +229,9 @@ If you keep a documentation hub elsewhere, such as a Docs page on your main site
 answers a `302` there instead of serving the landing page, keeping the discovery `Link`
 header. A client whose first media range is `text/markdown` still gets the index, and every
 other path above is unchanged. Blank, or anything but an `https` URL, and `/` serves the
-landing page. Set it only once that page is live: the redirect does not check.
+landing page. Set it only once that page is live: the redirect does not check. The landing
+page's WebMCP tools go with it: a browser, a scanner's included, then reads the tools of the
+page it was sent to, so that page needs its own for the host to pass `webMcp`.
 
 #### Keeping a private site private
 

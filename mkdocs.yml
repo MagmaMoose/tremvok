@@ -19,6 +19,7 @@ edit_uri: edit/main/docs/
 nav:
   - Home: index.md
   - Setup: setup.md
+  - Agent readiness: agent-readiness.md
   - Reference:
       # action-reference.md is GENERATED from action.yml by scripts/gen_action_reference.py,
       # including which target each input belongs to, read out of the same descriptions the
@@ -30,3 +31,11 @@ nav:
   - Architecture: architecture.md
   - Migrating to v2: migration.md
   - Roadmap: roadmap.md
+
+# The agent-readiness step (scripts/gen_docs_agents.py) names this MCP server in the site's
+# skill, beside llms.txt and the markdown twins. `extra` is a dict, so this merges with the base's
+# `extra.seo` rather than replacing it. The fleet's server is every site's, so the line belongs in
+# the shared base in MagmaMoose/admin; it is here until it is there.
+extra:
+  agents:
+    mcp: https://mcp.magmamoose.com/

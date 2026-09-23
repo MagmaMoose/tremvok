@@ -9,8 +9,10 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, mock, test } from "node:test";
+import vm from "node:vm";
 
 import { matchesIfNoneMatch, prefersMarkdown, sha256Source } from "../src/headers.js";
 import worker from "../src/index.js";
@@ -22,6 +24,8 @@ import {
   listedRepos,
   parseLlmsTxt,
 } from "../src/sites.js";
+import { SKILLS_SCHEMA, forgetSkills, hostSkillDescription, siteSkills } from "../src/skills.js";
+import { LANDING_SCRIPT } from "../src/webmcp.js";
 
 const HOST = "https://docs.magmamoose.com";
 const PRIVATE = ["caldrith", "dunmir", "nievah", "noctyr"];
@@ -56,6 +60,23 @@ function llms(title, summary) {
   return `# ${title}\n\n> ${summary}\n\nCanonical documentation for ${title}.\n\n## Docs\n\n- [Home](https://x/): home\n`;
 }
 
+const sha256 = (text) => `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+
+/** A site's own SKILL.md, and the index its build writes beside it, digest and all. */
+const TREMVOK_SKILL = "---\nname: tremvok\ndescription: \"Read and cite the Tremvok docs.\"\n---\n\n# Tremvok documentation\n";
+
+function skillsIndex(skills) {
+  return { body: JSON.stringify({ $schema: SKILLS_SCHEMA, skills }), headers: { "content-type": "application/json" } };
+}
+
+const TREMVOK_ENTRY = {
+  name: "tremvok",
+  type: "skill-md",
+  description: "Read and cite the Tremvok docs.",
+  url: "/tremvok/.well-known/agent-skills/tremvok/SKILL.md",
+  digest: sha256(TREMVOK_SKILL),
+};
+
 /** The live fleet's shape: six public sites, and one private one bound. */
 function fleet() {
   return {
@@ -68,8 +89,15 @@ function fleet() {
       "/setup/index.md": { body: "# Setup\n\nMarkdown twin.\n", headers: { "content-type": "text/markdown", etag: '"md1"' } },
       "/setup": { status: 307, headers: { location: "/setup/" } },
       "/llms-full.txt": "# Tremvok\n\nEverything.\n",
+      "/.well-known/agent-skills/index.json": skillsIndex([TREMVOK_ENTRY]),
+      "/.well-known/agent-skills/tremvok/SKILL.md": { body: TREMVOK_SKILL, headers: { "content-type": "text/plain" } },
     }),
-    NIEVAH: fakeSite({ "/llms.txt": llms("Nievah", "A PRIVATE SUMMARY") }),
+    NIEVAH: fakeSite({
+      "/llms.txt": llms("Nievah", "A PRIVATE SUMMARY"),
+      "/.well-known/agent-skills/index.json": skillsIndex([
+        { ...TREMVOK_ENTRY, name: "nievah", url: "/nievah/.well-known/agent-skills/nievah/SKILL.md" },
+      ]),
+    }),
     PRIVATE_SITES: PRIVATE,
   };
 }
@@ -100,6 +128,7 @@ function jsonLd(html) {
 
 beforeEach(() => {
   forgetSites();
+  forgetSkills();
   mock.restoreAll();
 });
 
@@ -182,7 +211,9 @@ describe("GET /", () => {
     assert.match(csp, /default-src 'none'/);
     assert.match(csp, /frame-ancestors 'self'/);
     assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
-    assert.equal((html.match(/<script(?![^>]*application\/ld\+json)/g) ?? []).length, 0, "no executable script");
+    // One script, a same-origin file that `script-src 'self'` admits, and nothing inline.
+    const scripts = html.match(/<script(?![^>]*application\/ld\+json)[^>]*>[^<]*<\/script>/g) ?? [];
+    assert.deepEqual(scripts, ['<script src="/webmcp.js" defer></script>']);
   });
 
   test("advertises the catalogs and llms.txt in a Link header, and varies on Accept", async () => {
@@ -881,6 +912,437 @@ describe("Accept: text/markdown on a page", () => {
   });
 });
 
+// ── Agent Skills ─────────────────────────────────────────────────────────────
+
+async function skillsOfHost(env) {
+  const res = await get(env, "/.well-known/agent-skills/index.json");
+  assert.equal(res.status, 200);
+  return { res, index: JSON.parse(await res.text()) };
+}
+
+describe("the Agent Skills index", () => {
+  test("is JSON at the root, with the v0.2.0 schema, CORS and caching", async () => {
+    const { res, index } = await skillsOfHost(fleet());
+    assert.equal(res.headers.get("content-type"), "application/json");
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    assert.equal(res.headers.get("cache-control"), "public, max-age=300");
+    assert.match(res.headers.get("etag"), /^"[0-9a-f]{32}"$/);
+    assert.equal(index.$schema, "https://schemas.agentskills.io/discovery/0.2.0/schema.json");
+    for (const skill of index.skills) {
+      assert.deepEqual(Object.keys(skill).sort(), ["description", "digest", "name", "type", "url"], skill.name);
+      assert.match(skill.name, /^[a-z0-9]+(-[a-z0-9]+)*$/);
+      assert.match(skill.digest, /^sha256:[0-9a-f]{64}$/);
+    }
+  });
+
+  test("lists the host's own skill first, with the digest of the bytes it serves", async () => {
+    const env = fleet();
+    const { index } = await skillsOfHost(env);
+    const [host] = index.skills;
+    assert.equal(host.name, "magma-moose-docs");
+    assert.equal(host.type, "skill-md");
+    assert.equal(host.url, "/.well-known/agent-skills/magma-moose-docs/SKILL.md");
+    const res = await get(env, host.url);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "text/markdown; charset=utf-8");
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    assert.equal(host.digest, sha256(await res.text()));
+  });
+
+  test("then every public site's skills, addressed from the root, with the site's own digest", async () => {
+    const env = fleet();
+    const { index } = await skillsOfHost(env);
+    assert.deepEqual(
+      index.skills.map((skill) => skill.name),
+      ["magma-moose-docs", "tremvok"],
+    );
+    const tremvok = index.skills[1];
+    assert.deepEqual(tremvok, TREMVOK_ENTRY);
+    // And the file it names is served, byte for byte, where the digest says.
+    const res = await get(env, tremvok.url);
+    assert.equal(res.status, 200);
+    assert.equal(sha256(await res.text()), tremvok.digest);
+  });
+
+  test("a relative URL in a site's index resolves against that index, as RFC 3986 says", () => {
+    const [skill] = siteSkills(
+      JSON.stringify({ $schema: SKILLS_SCHEMA, skills: [{ ...TREMVOK_ENTRY, url: "tremvok/SKILL.md" }] }),
+      "tremvok",
+    );
+    assert.equal(skill.url, "/tremvok/.well-known/agent-skills/tremvok/SKILL.md");
+  });
+
+  test("never reads a private site, even one that publishes skills", async () => {
+    const env = fleet();
+    const { index } = await skillsOfHost(env);
+    assert.equal(env.NIEVAH.requests.length, 0);
+    assert.ok(!index.skills.some((skill) => skill.name === "nievah"));
+  });
+
+  test("a site built before it published skills adds nothing, and is not read again for five minutes", async () => {
+    let now = 1_000_000;
+    mock.method(Date, "now", () => now);
+    const env = fleet();
+    await skillsOfHost(env);
+    await skillsOfHost(env);
+    const paths = env.BRIMYR.requests.map((r) => r.path);
+    assert.deepEqual(paths, ["/.well-known/agent-skills/index.json"], "a 404 was not cached");
+    now += 5 * 60 * 1000 + 1;
+    await skillsOfHost(env);
+    assert.equal(env.BRIMYR.requests.length, 2);
+  });
+
+  test("a site that fails keeps its last good skills, and is retried after thirty seconds", async () => {
+    let now = 1_000_000;
+    mock.method(Date, "now", () => now);
+    let healthy = true;
+    const env = {
+      TREMVOK: fakeSite({
+        "/.well-known/agent-skills/index.json": () =>
+          healthy
+            ? new Response(skillsIndex([TREMVOK_ENTRY]).body)
+            : new Response("down", { status: 503 }),
+      }),
+    };
+    await skillsOfHost(env);
+    healthy = false;
+    now += 5 * 60 * 1000 + 1;
+    const { index } = await skillsOfHost(env);
+    assert.deepEqual(index.skills.map((s) => s.name), ["magma-moose-docs", "tremvok"], "a failure blanked good skills");
+    now += 29 * 1000;
+    await skillsOfHost(env);
+    assert.equal(env.TREMVOK.requests.length, 2, "retried inside thirty seconds");
+    now += 2 * 1000;
+    await skillsOfHost(env);
+    assert.equal(env.TREMVOK.requests.length, 3, "not retried after thirty seconds");
+  });
+
+  test(`reads at most ${MAX_LOOKUPS_PER_REQUEST} sites' indexes in one request`, async () => {
+    const env = {};
+    for (let i = 0; i < 40; i += 1) env[`SITE_${String(i).padStart(2, "0")}`] = fakeSite({});
+    await skillsOfHost(env);
+    const reads = Object.values(env).reduce((sum, site) => sum + site.requests.length, 0);
+    assert.equal(reads, MAX_LOOKUPS_PER_REQUEST);
+  });
+
+  test("drops what is not a skill this site serves, and lists a name once", async () => {
+    const good = { ...TREMVOK_ENTRY, name: "good", url: "good/SKILL.md" };
+    const env = {
+      ALPHA: fakeSite({
+        "/.well-known/agent-skills/index.json": skillsIndex([
+          good,
+          { ...good, name: "Upper-Case" },
+          { ...good, name: "double--hyphen" },
+          { ...good, name: "no-digest", digest: "sha256:abc" },
+          { ...good, name: "md5", digest: `md5:${"a".repeat(32)}` },
+          { ...good, name: "odd-type", type: "zip" },
+          { ...good, name: "no-description", description: " " },
+          { ...good, name: "no-url", url: undefined },
+          { ...good, name: "another-site", url: "/beta/.well-known/agent-skills/x/SKILL.md" },
+          { ...good, name: "climbs-out", url: "../../../beta/SKILL.md" },
+          { ...good, name: "elsewhere", url: "https://elsewhere.example/SKILL.md" },
+          { ...good, name: "magma-moose-docs" },
+          { ...good, name: "shared" },
+        ]),
+      }),
+      BETA: fakeSite({
+        "/.well-known/agent-skills/index.json": skillsIndex([{ ...good, name: "shared" }, { ...good, name: "beta" }]),
+      }),
+      GAMMA: fakeSite({
+        "/.well-known/agent-skills/index.json": { body: JSON.stringify({ skills: [{ ...good, name: "unversioned" }] }) },
+      }),
+      DELTA: fakeSite({ "/.well-known/agent-skills/index.json": { body: "<!doctype html>" } }),
+    };
+    const { index } = await skillsOfHost(env);
+    assert.deepEqual(
+      index.skills.map((skill) => [skill.name, skill.url]),
+      [
+        ["magma-moose-docs", "/.well-known/agent-skills/magma-moose-docs/SKILL.md"],
+        ["good", "/alpha/.well-known/agent-skills/good/SKILL.md"],
+        ["shared", "/alpha/.well-known/agent-skills/good/SKILL.md"],
+        ["beta", "/beta/.well-known/agent-skills/good/SKILL.md"],
+      ],
+    );
+  });
+
+  test("answers HEAD, and If-None-Match with a 304", async () => {
+    const env = fleet();
+    const head = await get(env, "/.well-known/agent-skills/index.json", {}, "HEAD");
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), "");
+    const etag = head.headers.get("etag");
+    assert.equal((await get(env, "/.well-known/agent-skills/index.json", { "if-none-match": etag })).status, 304);
+    assert.equal((await get(env, "/.well-known/agent-skills/index.json", {}, "POST")).status, 405);
+  });
+});
+
+describe("the host's own skill", () => {
+  test("is a SKILL.md whose front matter names it and describes it as the index does", async () => {
+    const env = fleet();
+    const body = await (await get(env, "/.well-known/agent-skills/magma-moose-docs/SKILL.md")).text();
+    const front = /^---\nname: (\S+)\ndescription: (.+)\n---\n/.exec(body);
+    assert.ok(front, body);
+    assert.equal(front[1], "magma-moose-docs");
+    const { index } = await skillsOfHost(env);
+    assert.equal(JSON.parse(front[2]), index.skills[0].description);
+  });
+
+  test("names every public site from the route table, reads none of them, and names no private one", async () => {
+    const env = fleet();
+    const body = await (await get(env, "/.well-known/agent-skills/magma-moose-docs/SKILL.md")).text();
+    for (const repo of ["brimyr", "chargate", "tremvok"]) {
+      assert.ok(body.includes(`- [${repo}](https://docs.magmamoose.com/${repo}/)`), repo);
+    }
+    assert.doesNotMatch(body, /nievah/i);
+    const reads = [env.BRIMYR, env.CHARGATE, env.TREMVOK, env.NIEVAH].reduce((n, site) => n + site.requests.length, 0);
+    assert.equal(reads, 0, "the host skill read a site, so two isolates could render it two ways");
+    for (const expected of ["(https://docs.magmamoose.com/llms.txt)", "`Accept: text/markdown`", "https://mcp.magmamoose.com/"]) {
+      assert.ok(body.includes(expected), expected);
+    }
+  });
+
+  test("promises the landing page's tools only while the landing page is what / serves", async () => {
+    const env = { ...fleet(), LANDING_REDIRECT: "https://www.magmamoose.com/documentation/" };
+    const res = await get(env, "/.well-known/agent-skills/magma-moose-docs/SKILL.md");
+    const body = await res.text();
+    assert.doesNotMatch(body, /list_docs_sites/);
+    const { index } = await skillsOfHost(env);
+    assert.equal(index.skills[0].digest, sha256(body), "the index and the file disagree under a redirect");
+    const served = await (await get(fleet(), "/.well-known/agent-skills/magma-moose-docs/SKILL.md")).text();
+    assert.match(served, /list_docs_sites/);
+  });
+
+  test("its description stays inside the spec's 1024 characters however many sites there are", () => {
+    const repos = Array.from({ length: 200 }, (_, i) => `a-rather-long-repository-name-${i}`);
+    assert.ok(hostSkillDescription(repos).length <= 1024);
+    assert.match(hostSkillDescription(["brimyr", "tremvok"]), /brimyr, tremvok/);
+  });
+
+  test("a site's own skill files pass through with CORS and a markdown type", async () => {
+    const env = fleet();
+    const skill = await get(env, "/tremvok/.well-known/agent-skills/tremvok/SKILL.md");
+    assert.equal(skill.headers.get("access-control-allow-origin"), "*");
+    assert.equal(skill.headers.get("content-type"), "text/markdown; charset=utf-8");
+    const index = await get(env, "/tremvok/.well-known/agent-skills/index.json");
+    assert.equal(index.headers.get("access-control-allow-origin"), "*");
+    const missing = await get(env, "/tremvok/.well-known/agent-skills/nope/SKILL.md");
+    assert.equal(missing.status, 404);
+    assert.equal(missing.headers.get("access-control-allow-origin"), null, "CORS on the site's 404 page");
+    assert.equal((await get(env, "/tremvok/setup/")).headers.get("access-control-allow-origin"), null);
+  });
+});
+
+// ── WebMCP on the landing page ───────────────────────────────────────────────
+
+/**
+ * The served script, run in a context with nothing in it but what a browser page would give it:
+ * a document holding the landing page's JSON-LD, a location, fetch through the router, and
+ * whatever model context the test hands in. Anything the script borrowed from its module would
+ * be a ReferenceError here.
+ */
+async function landing(env, { modelContext, documentContext } = {}) {
+  const html = await (await get(env, "/")).text();
+  const jsonLd = [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map((m) => m[1]);
+  const listeners = {};
+  const assigned = [];
+  const fetched = [];
+  const page = {
+    URL,
+    AbortController,
+    DOMParser: undefined,
+    location: {
+      href: `${HOST}/`,
+      origin: HOST,
+      assign: (url) => assigned.push(String(url)),
+    },
+    document: {
+      modelContext: documentContext,
+      querySelectorAll: (selector) =>
+        selector === 'script[type="application/ld+json"]' ? jsonLd.map((textContent) => ({ textContent })) : [],
+    },
+    navigator: modelContext === undefined ? {} : { modelContext },
+    fetch: async (input, init = {}) => {
+      const url = new URL(String(input), `${HOST}/`);
+      fetched.push(url.href);
+      return worker.fetch(new Request(url, init), env);
+    },
+    addEventListener: (type, listener) => {
+      listeners[type] = listener;
+    },
+  };
+  page.window = page;
+  vm.createContext(page);
+  vm.runInContext(LANDING_SCRIPT, page);
+  return { page, listeners, assigned, fetched };
+}
+
+/** A model context shaped like the spec's, recording what registers. */
+function modelContext() {
+  const tools = [];
+  return {
+    tools,
+    registerTool(tool, options) {
+      if (tools.some((t) => t.tool.name === tool.name)) return Promise.reject(new Error("InvalidStateError"));
+      tools.push({ tool, options });
+      return Promise.resolve();
+    },
+  };
+}
+
+function toolNamed(context, name) {
+  const found = context.tools.find((t) => t.tool.name === name);
+  assert.ok(found, `${name} was not registered`);
+  return found.tool;
+}
+
+async function call(context, name, input) {
+  const result = await toolNamed(context, name).execute(input, { signal: new AbortController().signal });
+  const text = result.content[0].text;
+  let value = text;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    // markdown, not JSON
+  }
+  return { result, value };
+}
+
+describe("WebMCP on the landing page", () => {
+  test("/webmcp.js is the tools script, as JavaScript, with an ETag", async () => {
+    const res = await get(fleet(), "/webmcp.js");
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "text/javascript; charset=utf-8");
+    assert.match(res.headers.get("etag"), /^"[0-9a-f]{32}"$/);
+    assert.equal(await res.text(), LANDING_SCRIPT);
+  });
+
+  test("registers four tools with navigator.modelContext on load, each with a schema", async () => {
+    const context = modelContext();
+    await landing(fleet(), { modelContext: context });
+    assert.deepEqual(
+      context.tools.map((t) => t.tool.name),
+      ["list_docs_sites", "search_docs", "read_page", "open_site"],
+    );
+    for (const { tool, options } of context.tools) {
+      assert.ok(tool.description.length > 20, tool.name);
+      assert.equal(tool.inputSchema.type, "object", tool.name);
+      assert.equal(typeof tool.execute, "function", tool.name);
+      assert.ok(options.signal instanceof AbortSignal, `${tool.name} cannot be unregistered`);
+    }
+  });
+
+  test("uses document.modelContext too, and one object that is both only once", async () => {
+    const both = modelContext();
+    await landing(fleet(), { modelContext: both, documentContext: both });
+    assert.equal(both.tools.length, 4);
+    const onDocument = modelContext();
+    const onNavigator = modelContext();
+    await landing(fleet(), { modelContext: onNavigator, documentContext: onDocument });
+    assert.equal(onDocument.tools.length, 4);
+    assert.equal(onNavigator.tools.length, 4);
+  });
+
+  test("without a model context does nothing at all, and defines none", async () => {
+    const { page, listeners, fetched } = await landing(fleet());
+    assert.equal(page.navigator.modelContext, undefined);
+    assert.equal(page.__docsRouterWebMcp, undefined);
+    assert.deepEqual(Object.keys(listeners), []);
+    assert.deepEqual(fetched, []);
+  });
+
+  test("registers once however many times the script runs", async () => {
+    const context = modelContext();
+    const { page } = await landing(fleet(), { modelContext: context });
+    vm.runInContext(LANDING_SCRIPT, page);
+    assert.equal(context.tools.length, 4);
+  });
+
+  test("list_docs_sites reads the page's own JSON-LD and fetches nothing", async () => {
+    const context = modelContext();
+    const { fetched } = await landing(fleet(), { modelContext: context });
+    const { value } = await call(context, "list_docs_sites", {});
+    assert.deepEqual(
+      value.sites.map((site) => [site.name, site.title, site.url]),
+      [
+        ["brimyr", "Brimyr", `${HOST}/brimyr/`],
+        ["chargate", "Chargate", `${HOST}/chargate/`],
+        ["tremvok", "Tremvok", `${HOST}/tremvok/`],
+      ],
+    );
+    assert.equal(value.sites[2].llms_txt, `${HOST}/tremvok/llms.txt`);
+    assert.deepEqual(fetched, []);
+  });
+
+  test("search_docs searches each site's llms.txt and answers with page URLs to cite", async () => {
+    const env = fleet();
+    env.TREMVOK = fakeSite({
+      "/llms.txt": [
+        "# Tremvok",
+        "",
+        "> One action.",
+        "",
+        "## Docs",
+        "",
+        `- [Setting Tremvok up](${HOST}/tremvok/setup/index.md): the workflow for each target`,
+        `- [Troubleshooting](${HOST}/tremvok/troubleshooting/index.md): every error, what it means`,
+        `- [Home](${HOST}/tremvok/index.md): one action for the deploy side`,
+        "- [API](https://canonical.example/tremvok/api/index.md): the canonical host, not this one",
+        `- [Not Tremvok's](${HOST}/brimyr/api/index.md): another site's page, canonical host and all`,
+        "",
+      ].join("\n"),
+    });
+    const context = modelContext();
+    await landing(env, { modelContext: context });
+    const { value } = await call(context, "search_docs", { query: "workflow target", limit: 2 });
+    assert.equal(value.results.length, 1);
+    assert.deepEqual(value.results[0], {
+      site: "tremvok",
+      title: "Setting Tremvok up",
+      url: `${HOST}/tremvok/setup/`,
+      markdown: `${HOST}/tremvok/setup/index.md`,
+      summary: "the workflow for each target",
+    });
+    const scoped = await call(context, "search_docs", { query: "deploy", site: "tremvok" });
+    assert.deepEqual(scoped.value.results.map((r) => r.url), [`${HOST}/tremvok/`]);
+    // A link is taken by its path: the pages are served here, whatever host the file names,
+    // and only under the site's own path.
+    const hosted = await call(context, "search_docs", { query: "canonical" });
+    assert.deepEqual(hosted.value.results.map((r) => r.url), [`${HOST}/tremvok/api/`]);
+    assert.equal((await call(context, "search_docs", { query: "x", site: "nope" })).result.isError, true);
+    assert.equal((await call(context, "search_docs", { query: "  " })).result.isError, true);
+  });
+
+  test("read_page answers with markdown through the router, and only for this host", async () => {
+    const context = modelContext();
+    await landing(fleet(), { modelContext: context });
+    const { value } = await call(context, "read_page", { url: "/tremvok/setup/" });
+    assert.equal(value, "# Setup\n\nMarkdown twin.\n");
+    for (const url of ["https://elsewhere.example/tremvok/setup/", undefined]) {
+      assert.equal((await call(context, "read_page", { url })).result.isError, true, String(url));
+    }
+  });
+
+  test("open_site opens a listed site and nothing else", async () => {
+    const context = modelContext();
+    const { assigned } = await landing(fleet(), { modelContext: context });
+    await call(context, "open_site", { site: "Tremvok" });
+    assert.deepEqual(assigned, ["/tremvok/"]);
+    assert.equal((await call(context, "open_site", { site: "nievah" })).result.isError, true);
+    assert.equal((await call(context, "open_site", { site: "//elsewhere.example" })).result.isError, true);
+    assert.deepEqual(assigned, ["/tremvok/"]);
+  });
+
+  test("pagehide unregisters the tools, unless the page is kept for back and forward", async () => {
+    const context = modelContext();
+    const { listeners } = await landing(fleet(), { modelContext: context });
+    const { signal } = context.tools[0].options;
+    listeners.pagehide({ persisted: true });
+    assert.equal(signal.aborted, false);
+    listeners.pagehide({ persisted: false });
+    assert.equal(signal.aborted, true);
+  });
+});
+
 // ── One header policy for the host ───────────────────────────────────────────
 
 describe("every response", () => {
@@ -895,6 +1357,9 @@ describe("every response", () => {
       "/.well-known/ai-catalog.json",
       "/.well-known/api-catalog",
       "/.well-known/mcp/server-card.json",
+      "/.well-known/agent-skills/index.json",
+      "/.well-known/agent-skills/magma-moose-docs/SKILL.md",
+      "/webmcp.js",
       "/favicon.ico",
       "/nope/",
       "/tremvok",
@@ -912,7 +1377,15 @@ describe("every response", () => {
     for (const path of ["/", "/nope/"]) {
       assert.match((await get(env, path)).headers.get("content-security-policy"), /style-src 'sha256-/, path);
     }
-    for (const path of ["/robots.txt", "/llms.txt", "/sitemap.xml", "/.well-known/ai-catalog.json", "/favicon.ico"]) {
+    for (const path of [
+      "/robots.txt",
+      "/llms.txt",
+      "/sitemap.xml",
+      "/.well-known/ai-catalog.json",
+      "/.well-known/agent-skills/index.json",
+      "/webmcp.js",
+      "/favicon.ico",
+    ]) {
       assert.match((await get(env, path)).headers.get("content-security-policy"), /^default-src 'none'/, path);
     }
   });

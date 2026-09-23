@@ -1094,6 +1094,9 @@ class PageInfo:
     front_matter_description: bool
     trail: list[str]
     crumbs: list[tuple[str, str]]
+    #: In the nav. A page the build rendered and the nav leaves out has no place in it, and a
+    #: map of the site built from the nav (gen_docs_agents.py) must not list it at the top.
+    in_nav: bool = True
 
 
 def load_site(
@@ -1196,6 +1199,7 @@ def load_site(
             front_matter_description=bool(str(page.meta.get("description") or "").strip()),
             trail=trail,
             crumbs=crumbs,
+            in_nav=id(page) in seen,
         )
         infos.append(info)
 

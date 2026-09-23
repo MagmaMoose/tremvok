@@ -9,6 +9,11 @@
  *   GET /.well-known/security.txt    RFC 9116
  *   GET /.well-known/ai-catalog.json
  *   GET /.well-known/api-catalog     discovery, see discovery.js
+ *   GET /.well-known/agent-skills/index.json
+ *                                    the host's Agent Skills index: its own skill and every
+ *                                    site's, see skills.js
+ *   GET /.well-known/agent-skills/magma-moose-docs/SKILL.md
+ *   GET /webmcp.js                   the landing page's WebMCP tools, see webmcp.js
  *
  * and a handful of redirects for paths clients ask for by convention (/favicon.ico).
  *
@@ -46,6 +51,8 @@ import {
   sha256Source,
 } from "./headers.js";
 import { ORIGIN, describeSites, listedRepos, siteUrl } from "./sites.js";
+import { HOST_SKILL_PATH, SKILLS_INDEX_PATH, renderHostSkill, renderSkillsIndex } from "./skills.js";
+import { LANDING_SCRIPT, LANDING_SCRIPT_PATH } from "./webmcp.js";
 
 const WWW = "https://www.magmamoose.com";
 const ORGANIZATION_ID = `${WWW}/#organization`;
@@ -276,6 +283,9 @@ export function renderLanding(sites) {
     `<meta name="twitter:image" content="${OG_IMAGE}">`,
     '<meta name="twitter:image:alt" content="Magma Moose: platform engineering and developer tooling">',
     `<script type="application/ld+json">${jsonForHtml(structuredData(sites))}</script>`,
+    // The page's one script, same-origin so `script-src 'self'` admits it with no hash. Deferred,
+    // not async: it reads the JSON-LD above, and a deferred script runs once the page is parsed.
+    `<script src="${LANDING_SCRIPT_PATH}" defer></script>`,
   ].join("\n");
   const list = sites.length
     ? `<ul class="sites">\n${sites.map(siteCard).join("\n")}\n</ul>`
@@ -288,6 +298,7 @@ export function renderLanding(sites) {
     '<h2 id="agents">For agents</h2>',
     '<p>Every site publishes an <a href="https://llmstxt.org/">llms.txt</a> and an llms-full.txt, and <a href="/llms.txt">/llms.txt</a> indexes all of them. <a href="/sitemap.xml">/sitemap.xml</a> lists every site\'s sitemap. A page asked for with <code>Accept: text/markdown</code> is answered with its markdown wherever its site publishes one.</p>',
     `<p>The same documentation is searchable over MCP at <code>${MCP_ENDPOINT}</code> (Streamable HTTP, no sign-in), and described for registries by the <a href="${AI_CATALOG_PATH}">AI Catalog</a> and the <a href="${API_CATALOG_PATH}">API catalog</a>.</p>`,
+    `<p><a href="${SKILLS_INDEX_PATH}">An Agent Skills index</a> lists a skill for this host and one for each site, saying how to read and cite it. In a browser with <a href="https://webmachinelearning.github.io/webmcp/">WebMCP</a>, this page offers tools to list the sites, search them, read a page and open a site.</p>`,
     "</section>",
   ].join("\n");
   return page({ title: NAME, head, main });
@@ -332,6 +343,7 @@ export function renderLlmsTxt(sites) {
     "",
     `- [Sitemap index](${ORIGIN}/sitemap.xml): the sitemap of every site above`,
     `- [AI Catalog](${ORIGIN}${AI_CATALOG_PATH}): the MCP server's card, for agent registries`,
+    `- [Agent Skills](${ORIGIN}${SKILLS_INDEX_PATH}): a skill for this host and one for each site, saying how to read and cite it`,
     `- [Magma Moose](${WWW}/): the studio that builds these tools`,
     "",
   ];
@@ -494,12 +506,44 @@ function discovery(value, type, extra = {}) {
     });
 }
 
+/**
+ * The skills documents are public and read by clients that may run in a browser, which is when
+ * the RFC asks for CORS. The ETag is exposed for the same revalidation the catalogs allow.
+ */
+const SKILLS_HEADERS = { "access-control-allow-origin": "*", "access-control-expose-headers": "ETag" };
+
+async function skillsIndex(request, env) {
+  const body = await renderSkillsIndex(env, listedRepos(env), new URL(request.url).origin, {
+    landingTools: !landingRedirect(env),
+  });
+  return document(request, body, { type: "application/json", cache: "public, max-age=300", headers: SKILLS_HEADERS });
+}
+
+/**
+ * The same max-age as the index. The index carries this file's digest, and a client holding a
+ * fresher index than file (or the reverse) rejects the file until the older copy expires.
+ */
+async function hostSkill(request, env) {
+  return document(request, renderHostSkill(listedRepos(env), { landingTools: !landingRedirect(env) }), {
+    type: "text/markdown; charset=utf-8",
+    cache: "public, max-age=300",
+    headers: SKILLS_HEADERS,
+  });
+}
+
+async function landingScript(request) {
+  return document(request, LANDING_SCRIPT, { type: "text/javascript; charset=utf-8", cache: "public, max-age=300" });
+}
+
 const DOCUMENTS = {
   "/": landing,
   "/llms.txt": llmsTxt,
   "/robots.txt": robotsTxt,
   "/sitemap.xml": sitemapIndex,
   "/.well-known/security.txt": securityTxt,
+  [SKILLS_INDEX_PATH]: skillsIndex,
+  [HOST_SKILL_PATH]: hostSkill,
+  [LANDING_SCRIPT_PATH]: landingScript,
   [AI_CATALOG_PATH]: discovery(aiCatalog(), AI_CATALOG_TYPE),
   // RFC 9727: the catalog names itself in a Link header, on HEAD as well as GET.
   [API_CATALOG_PATH]: discovery(apiCatalog(), API_CATALOG_TYPE, {

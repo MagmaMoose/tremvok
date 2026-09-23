@@ -228,6 +228,21 @@ inputs:
     required: false
     default: 'true'
 
+  pages-agent-ready:
+    description: |
+      github-pages, cloudflare-docs: after the build, make the site agent-ready. Writes an Agent
+      Skills index at `/.well-known/agent-skills/index.json` with one skill that says what the
+      site covers and how to read and cite it; loads WebMCP tools on every page (search the
+      docs, read a page as markdown, list and open pages) from a same-origin script that does
+      nothing in a browser without the API; and, for a public site served at the root of its
+      host, writes an `/auth.md` saying the docs need no credentials, never for a site behind
+      `cloudflare-docs-require-access`. Configured by `extra.agents` in mkdocs.yml (`mcp`,
+      `skill`, `webmcp`, `auth_md`), every key optional. Anything the site already publishes of
+      these is left alone. On github-pages the artifact then includes dot-directories, which is
+      where the index lives. `false` skips the step.
+    required: false
+    default: 'true'
+
   # ── targets that run a build: github-pages, cloudflare-workers ───────────
   build-git-credentials:
     description: |
@@ -1235,23 +1250,11 @@ runs:
           python "$SCRIPT" "${args[@]}"
         fi
 
-    - name: Configure Pages
-      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.stage-pages == 'true'
-      uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
-    - name: Stage the Pages artifact
-      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.stage-pages == 'true'
-      uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-      with:
-        path: ${{ inputs.working-directory }}/${{ inputs.pages-site-dir }}
-
-    # ── target: cloudflare-docs ──────────────────────────────────────────────
+    # ── cloudflare-docs only: the corpus ─────────────────────────────────────
     #
-    # The build above is shared with github-pages; only the publish differs. What is published
-    # is a Worker with static assets and no route of its own — the docs router on
-    # `cloudflare-docs-host` reaches it over a service binding. See workers/docs-router/.
     # Before the deploy, not after: llms.txt and llms-full.txt are written INTO the built site,
-    # so they have to exist by the time it is uploaded.
+    # so they have to exist by the time it is uploaded. After the page metadata, because llms.txt
+    # links each page's markdown twin only when it finds one on disk.
     #
     # A step rather than a MkDocs plugin. A plugin has to be named in `plugins:`, and a repo
     # that declares `plugins:` in its own mkdocs.yml silently discards every entry in the
@@ -1295,6 +1298,71 @@ runs:
         fi
         echo "index-file=${INDEX_DIR}/index/${REPO_NAME}.json" >> "$GITHUB_OUTPUT"
 
+
+    # ── both docs targets: agent readiness ───────────────────────────────────
+    #
+    # An Agent Skills index with a skill describing the site, WebMCP tools on every page, and an
+    # auth.md for a site served at the root of its host, all written into the built site. See
+    # scripts/gen_docs_agents.py for what each is for, and for what a build cannot do.
+    #
+    # WHERE IT SITS IS THE CONTRACT, as it is for the page metadata. After the metadata and the
+    # corpus, because the skill mentions markdown twins, llms.txt and llms-full.txt only when it
+    # finds them on disk, and run before them it would describe a site with none of the three.
+    # Before the Pages artifact is staged and before the Workers deploy, or the site goes out
+    # without any of it. None of that fails if broken, so tests/test_gen_docs_agents.py pins it.
+    #
+    # `--site-url` is the address the router serves the site at, and here it wins over
+    # `site_url`, as it does for the corpus: the skill's URL in the index is a file a client
+    # fetches, so it has to be where the file actually is.
+    - name: Make the site agent-ready
+      if: (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs') && inputs.pages-agent-ready == 'true' && steps.pages-detect.outputs.toolchain != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLCHAIN: ${{ steps.pages-detect.outputs.toolchain }}
+        SCRIPT: ${{ github.action_path }}/scripts/gen_docs_agents.py
+        SITE_DIR: ${{ inputs.pages-site-dir }}
+        DOCS_HOST: ${{ inputs.cloudflare-docs-host }}
+        DOCS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
+        # A site behind Access is read by nobody who has not signed in, so it gets no auth.md
+        # saying it needs no credentials. The script reads the value the way the Access check
+        # does. On github-pages it is always false, and a gated Pages site sets
+        # extra.agents.auth_md: false instead.
+        REQUIRE_ACCESS: ${{ inputs.cloudflare-docs-require-access }}
+      run: |
+        set -euo pipefail
+        args=(--root . --site-dir "$SITE_DIR" --access-required "$REQUIRE_ACCESS")
+        if [ -n "$DOCS_HOST" ]; then
+          args+=(--site-url "https://${DOCS_HOST}/${DOCS_PATH}/")
+        fi
+        if [ "$TOOLCHAIN" = "uv" ]; then
+          uv run --no-sync python "$SCRIPT" "${args[@]}"
+        else
+          python "$SCRIPT" "${args[@]}"
+        fi
+
+    # ── target: github-pages ─────────────────────────────────────────────────
+    - name: Configure Pages
+      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.stage-pages == 'true'
+      uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+    # HIDDEN FILES GO IN WHEN THE AGENT STEP RAN. upload-pages-artifact leaves out every path
+    # that starts with a dot unless told otherwise, and the Agent Skills index lives under
+    # `.well-known/`: the step writes it, the artifact drops it, and the published site has no
+    # skills, with nothing anywhere saying so. Tied to the input, so turning the step off stages
+    # exactly what it staged before. `.git` and `.github` are left out either way.
+    - name: Stage the Pages artifact
+      if: inputs.target == 'github-pages' && steps.pages-detect.outputs.stage-pages == 'true'
+      uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      with:
+        path: ${{ inputs.working-directory }}/${{ inputs.pages-site-dir }}
+        include-hidden-files: ${{ inputs.pages-agent-ready }}
+
+    # ── target: cloudflare-docs ──────────────────────────────────────────────
+    #
+    # The build above is shared with github-pages; only the publish differs. What is published
+    # is a Worker with static assets and no route of its own: the docs router on
+    # `cloudflare-docs-host` reaches it over a service binding. See workers/docs-router/.
     - name: Set up Node for Wrangler
       if: steps.preflight.outputs.skip != 'true' && inputs.target == 'cloudflare-docs'
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
