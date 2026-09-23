@@ -135,6 +135,9 @@ STUBEOF
 }
 
 # A 200 KB body: GitHub's limit is 65,536 characters, and a single argument is capped at 128 KiB.
+# Handed over as BODY_FILE, the way deploy-terragrunt.sh hands over a plan. Linux caps any one
+# environment string at 128 KiB too (MAX_ARG_STRLEN), so BODY=<200 KB> fails execve with E2BIG
+# before notify-pr.sh runs: the test passed on macOS, which has no per-string cap, and failed CI.
 @test "an oversized body is sent from a file and cut to fit" {
   stub_script curl <<'STUBEOF'
 #!/usr/bin/env bash
@@ -149,7 +152,8 @@ case "$*" in
   *) printf '[]' ;;
 esac
 STUBEOF
-  BODY="$(printf '%200000s' | tr ' ' x)" PR_NUMBER=42 run bash "${SCRIPTS}/notify-pr.sh"
+  printf '%200000s' | tr ' ' x >"${WORK}/body.md"
+  BODY_FILE="${WORK}/body.md" PR_NUMBER=42 run bash "${SCRIPTS}/notify-pr.sh"
   [ "$status" -eq 0 ]
   grep -q -- "--request POST" "$STUB_LOG"
   # No argument carried the body.
