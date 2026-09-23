@@ -105,7 +105,7 @@ export default {
     } catch (error) {
       // A site Worker that throws would otherwise surface as Cloudflare's own error page,
       // which carries none of the host's headers and says nothing about which site failed.
-      console.error(`docs-router: the ${site} site Worker did not answer`, error);
+      console.error("docs-router: a site Worker did not answer", { site, error: String(error) });
       return badGateway();
     }
     const twinOf = inner.pathname.endsWith("/index.md")

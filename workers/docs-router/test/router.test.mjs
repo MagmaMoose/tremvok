@@ -219,7 +219,7 @@ describe("GET /", () => {
     assert.equal(res.status, 200);
     const html = await res.text();
     for (const repo of ["diatreme", "draventis", "ponvara"]) {
-      assert.match(html, new RegExp(`<h2><a href="/${repo}/">${repo}</a></h2><p class="alt">`), repo);
+      assert.ok(html.includes(`<h2><a href="/${repo}/">${repo}</a></h2><p class="alt">`), repo);
     }
     assert.doesNotMatch(html, /oops/);
   });
