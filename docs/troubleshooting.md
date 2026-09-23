@@ -187,6 +187,22 @@ to the default branch both say true.
 If a push also staged nothing, check the job summary for a skip: a fork pull request and an
 unwired repository both report one with a reason.
 
+### `gen-docs-agents: site_name '<name>' gives no Agent Skills name`
+
+The skill is named after `site_name`, lowercased, with every run of anything but letters and
+digits turned into one hyphen, and a `site_name` with no Latin letter or digit in it leaves
+nothing to name it by. Set `extra.agents.skill.name` to a name of `a-z`, `0-9` and single
+hyphens. The rest of the agent-readiness step still runs; only the skill is left out.
+
+### The published site has no `/.well-known/agent-skills/index.json`
+
+Check that the step ran (`pages-agent-ready`, on by default) and that the site does not already
+publish its own `/.well-known/agent-skills/`, which the step keeps whole. On `github-pages` the
+Pages artifact includes dot-directories only while `pages-agent-ready` is on, because
+`actions/upload-pages-artifact` leaves them out otherwise. On a host shared through the docs
+router, a site's skill appears in the host's root index within five minutes of its deploy, the
+time the router keeps what it last read from each site.
+
 ## `target: s3-cloudfront` and `target: lambda-zip`
 
 ### `artifact-path '<path>' is not a directory` / `is not a file` / `is empty`

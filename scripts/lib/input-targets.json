@@ -215,6 +215,13 @@
       ],
       "default": "true"
     },
+    "pages-agent-ready": {
+      "targets": [
+        "github-pages",
+        "cloudflare-docs"
+      ],
+      "default": "true"
+    },
     "build-git-credentials": {
       "targets": [
         "github-pages",

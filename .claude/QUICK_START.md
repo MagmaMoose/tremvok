@@ -36,5 +36,6 @@ uv run --group docs mkdocs serve    # preview at :8000
 **Docs router (`workers/docs-router/`):**
 ```bash
 node --test workers/docs-router/test/router.test.mjs   # or: uv run pytest tests/test_docs_router.py
+node --test tests/js/docs_webmcp.test.mjs             # the WebMCP script every docs site gets
 npx wrangler@<cloudflare-wrangler-version> deploy --dry-run   # from workers/docs-router: the bindings table is the check
 ```

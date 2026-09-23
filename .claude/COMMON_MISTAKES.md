@@ -338,3 +338,32 @@ diagnose. `9.0` started first try with a byte-identical package. Verified 2026-0
 Related, and the reason this target verifies by HTTP rather than by asking Azure: an
 `azurerm_linux_function_app` in that state reports `state: Running` and
 `availabilityState: Normal`. Platform state is not evidence that anything is being served.
+
+## `actions/upload-pages-artifact` leaves out every dotfile, so `.well-known/` never ships
+
+From v4 the action tars the site with `--exclude=.[^/]*` unless `include-hidden-files` is
+`true`. The agent-readiness step writes `/.well-known/agent-skills/index.json` into the built
+site, the artifact drops it, and GitHub Pages serves the site without it: a 404 at the one path
+a client reads, and no warning anywhere, because nothing failed. Cloudflare's Wrangler uploads
+dot-directories, so the same build on `cloudflare-docs` looks fine, which is what makes this
+look like a Pages problem rather than a Tremvok one.
+
+The Stage step passes `include-hidden-files: ${{ inputs.pages-agent-ready }}`, tied to the input
+so that turning the step off stages exactly what it staged before. `.git` and `.github` are
+excluded either way. `tests/test_gen_docs_agents.py` pins the wiring.
+
+## A browser script served as `fn.toString()` passes in Node and throws from the bundle
+
+The router's landing page script was first a function in `workers/docs-router/src/webmcp.js`,
+served as its own source text, so the code was parsed at import and testable in Node. Every
+test passed. Wrangler bundles with esbuild's `keepNames`, which rewrites each named function
+and arrow into `__name(fn, "fn")`, where `__name` is a helper defined at the top of the bundle.
+The served text then called a function that exists in the Worker and not in the page:
+
+    ReferenceError: __name is not defined
+
+before a single tool registered, on the one page whose job was to register them. The script is
+a `String.raw` template now, served byte for byte whatever the bundler does, and
+`tests/test_workers_bindings.py` runs the dry-run bundle's `/webmcp.js` in an empty context so
+that going back to `toString()` fails CI. The general rule: anything the router sends to a
+browser is data, never a function's source.

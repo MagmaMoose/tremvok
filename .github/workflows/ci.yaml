@@ -106,14 +106,14 @@ jobs:
           TREMVOK_REQUIRE_WRANGLER: '1'
         run: uv run pytest tests/test_workers_bindings.py -q
 
-      - name: The docs router's behaviour
+      - name: The docs router's behaviour, and the WebMCP script every docs site gets
         # The router's own node:test suite, plus the llms.txt layout it reads from every site,
-        # run through pytest so a contributor runs the same thing with `uv run pytest`.
-        # TREMVOK_REQUIRE_NODE turns the local "no Node" skip into a failure, for the same
-        # reason TREMVOK_REQUIRE_WRANGLER does above.
+        # and the suite for scripts/docs_webmcp.js, run through pytest so a contributor runs the
+        # same thing with `uv run pytest`. TREMVOK_REQUIRE_NODE turns the local "no Node" skip
+        # into a failure, for the same reason TREMVOK_REQUIRE_WRANGLER does above.
         env:
           TREMVOK_REQUIRE_NODE: '1'
-        run: uv run pytest tests/test_docs_router.py -q
+        run: uv run pytest tests/test_docs_router.py tests/test_docs_webmcp.py -q
 
   api:
     name: API (ruff + mypy + pytest)

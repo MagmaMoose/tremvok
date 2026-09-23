@@ -14,7 +14,7 @@ file; edit the two together.
 
 ## Footguns — read `.claude/COMMON_MISTAKES.md` before debugging any of these
 
-Fifteen incidents, each with symptom, cause and fix. The clusters:
+Twenty-seven incidents, each with symptom, cause and fix. The clusters:
 
 - **A script exits silently under `set -e`** — a false `[[ ]]` last in `$( )`, a helper that
   re-enables errexit, a loop ending on a false test, `cmd | tee`.
@@ -28,6 +28,8 @@ Fifteen incidents, each with symptom, cause and fix. The clusters:
 - **An AWS call that does something other than what it says** — `sync --delete` on an empty
   build, `--value https://…` fetching the URL, an IAM grant that was never needed, `docker
   compose` missing where `docker` is present.
+- **Something the build wrote that never reaches the browser**: `upload-pages-artifact`
+  dropping `.well-known/`, a script served as `fn.toString()` from an esbuild bundle.
 
 ## Hard constraints
 

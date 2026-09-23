@@ -21,7 +21,8 @@ name: Docs
 # `mkdocs.base.yml` is in both lists because Caldrith commits it straight to main when the
 # fleet base changes in MagmaMoose/admin. Without it that commit, which is how the brand and
 # the `extra.seo` defaults arrive, would reach this site only on the next unrelated docs edit.
-# The two generators are here because they write into the site this workflow publishes.
+# The generators and the WebMCP script are here because they write into the site this workflow
+# publishes.
 on:
   push:
     branches: [main]
@@ -32,6 +33,7 @@ on:
       - 'wrangler.toml'
       - 'action.yml'
       - 'scripts/gen_docs_*.py'
+      - 'scripts/docs_webmcp.js'
       - '.github/workflows/docs-site.yml'
   pull_request:
     paths:
@@ -41,6 +43,7 @@ on:
       - 'wrangler.toml'
       - 'action.yml'
       - 'scripts/gen_docs_*.py'
+      - 'scripts/docs_webmcp.js'
       - '.github/workflows/docs-site.yml'
   workflow_dispatch:
 

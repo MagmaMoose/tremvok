@@ -125,8 +125,13 @@ export function parseLlmsTxt(text) {
   return { title, summary: null };
 }
 
-async function readHead(response, limit) {
-  if (!response.body) return "";
+/**
+ * At most about `limit` characters of a body, and whether that was all of it. Past the limit
+ * the rest is cancelled rather than read: a site's file must not cost the root more than it
+ * needs, however large the file grew.
+ */
+export async function readUpTo(response, limit) {
+  if (!response.body) return { text: "", complete: true };
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let text = "";
@@ -144,7 +149,11 @@ async function readHead(response, limit) {
       // Nothing to do: the head is already in hand.
     }
   }
-  return text;
+  return { text, complete: done };
+}
+
+async function readHead(response, limit) {
+  return (await readUpTo(response, limit)).text;
 }
 
 /** How a site is listed when its llms.txt cannot be read: by its repository name, not dropped. */
@@ -189,9 +198,9 @@ async function describe(service, repo, origin, timeoutMs) {
 // failure. Here a failure is retried after thirty seconds, and a site that was described
 // before keeps its last good title and summary in the meantime.
 
-const DESCRIBED_TTL_MS = 5 * 60 * 1000;
-const RETRY_TTL_MS = 30 * 1000;
-const LOOKUP_TIMEOUT_MS = 2000;
+export const DESCRIBED_TTL_MS = 5 * 60 * 1000;
+export const RETRY_TTL_MS = 30 * 1000;
+export const LOOKUP_TIMEOUT_MS = 2000;
 
 /**
  * A request may invoke at most 32 Workers, and every service binding call is one of them
