@@ -18,21 +18,29 @@ name: Docs
 # CLOUDFLARE_ACCOUNT_ID are set as repository secrets. Until then a push to main fails here
 # rather than publishing to the wrong place, which is the intended direction to fail in.
 
+# `mkdocs.base.yml` is in both lists because Caldrith commits it straight to main when the
+# fleet base changes in MagmaMoose/admin. Without it that commit, which is how the brand and
+# the `extra.seo` defaults arrive, would reach this site only on the next unrelated docs edit.
+# The two generators are here because they write into the site this workflow publishes.
 on:
   push:
     branches: [main]
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - 'mkdocs.base.yml'
       - 'wrangler.toml'
       - 'action.yml'
+      - 'scripts/gen_docs_*.py'
       - '.github/workflows/docs-site.yml'
   pull_request:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - 'mkdocs.base.yml'
       - 'wrangler.toml'
       - 'action.yml'
+      - 'scripts/gen_docs_*.py'
       - '.github/workflows/docs-site.yml'
   workflow_dispatch:
 
