@@ -713,3 +713,58 @@ HCL
   [ "$status" -ne 0 ]
   [[ "$output" == *"must be auto, warn or off"* ]]
 }
+
+# ── the plan comment's size ──────────────────────────────────────────────────────────────
+
+@test "a stack with no changes gets a table row but no plan excerpt" {
+  PLAN_EXIT=0 PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'aws/prod/api' "${WORK_DIR}/comment.md"
+  refute grep -q '<details>' "${WORK_DIR}/comment.md"
+}
+
+@test "terminal colour codes do not reach the plan comment" {
+  stub_script terragrunt <<'STUBEOF'
+#!/usr/bin/env bash
+case "$1" in
+  init) exit 0 ;;
+  plan) printf '\033[90m12:00:00.000\033[0m \033[1;32m+\033[0m resource "x" "y" {}\nPlan: 1 to add, 0 to change, 0 to destroy.\n'; exit 2 ;;
+esac
+exit 0
+STUBEOF
+  PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'resource "x" "y"' "${WORK_DIR}/comment.md"
+  refute grep -q "$(printf '\033')" "${WORK_DIR}/comment.md"
+}
+
+# Thirty stacks with 50 KB of plan each: the unbudgeted comment was 180 KB, which GitHub refuses
+# and which curl could not even be handed as an argument.
+@test "a plan across many large stacks still fits in one comment" {
+  for i in $(seq 1 30); do
+    mkdir -p "terraform/aws/prod/s${i}"
+    touch "terraform/aws/prod/s${i}/terragrunt.hcl"
+  done
+  stub_script terragrunt <<'STUBEOF'
+#!/usr/bin/env bash
+case "$1" in
+  init) exit 0 ;;
+  plan) yes '  + resource "azurerm_thing" "padding" { name = "padding padding" }' | head -c 50000
+        printf '\nPlan: 1 to add, 0 to change, 0 to destroy.\n'; exit 2 ;;
+esac
+exit 0
+STUBEOF
+  SCOPE=all PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(wc -c <"${WORK_DIR}/comment.md")" -lt 65000 ]
+  [ "$(grep -c '<details>' "${WORK_DIR}/comment.md")" -eq 31 ]
+  grep -q 'Plan: 1 to add' "${WORK_DIR}/comment.md"
+}
+
+@test "excerpts too small to be useful are left out for a pointer to the run" {
+  COMMENT_BUDGET=3000 PR_NUMBER=42 run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'aws/prod/api' "${WORK_DIR}/comment.md"
+  grep -q 'Plan excerpts left out' "${WORK_DIR}/comment.md"
+  refute grep -q '<details>' "${WORK_DIR}/comment.md"
+}

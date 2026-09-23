@@ -294,8 +294,9 @@ Order decides it: the first matching line wins for a given key, so a `*` catch-a
 
 ### `<n> stack(s) failed to plan`
 
-The pull-request comment carries a redacted excerpt per stack. Nothing applies while any stack
-fails to plan, approval or not.
+The pull-request comment carries a redacted excerpt for each stack that changed or failed, sized
+so the whole comment fits GitHub's limit; the workflow run has every plan in full. Nothing
+applies while any stack fails to plan, approval or not.
 
 ### `<actor> is not in terragrunt-apply-operators, so cannot force an apply`
 

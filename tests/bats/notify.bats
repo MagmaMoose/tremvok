@@ -133,3 +133,41 @@ STUBEOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"::warning::"* ]]
 }
+
+# A 200 KB body: GitHub's limit is 65,536 characters, and a single argument is capped at 128 KiB.
+@test "an oversized body is sent from a file and cut to fit" {
+  stub_script curl <<'STUBEOF'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >>"${STUB_LOG}"
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--data-binary" ]; then cp "${arg#@}" "${WORK}/request.json"; fi
+  prev="$arg"
+done
+case "$*" in
+  *"--request POST"*) printf '{"id":1}' ;;
+  *) printf '[]' ;;
+esac
+STUBEOF
+  BODY="$(yes 'x' | head -c 200000)" PR_NUMBER=42 run bash "${SCRIPTS}/notify-pr.sh"
+  [ "$status" -eq 0 ]
+  grep -q -- "--request POST" "$STUB_LOG"
+  # No argument carried the body.
+  [ "$(awk '{ print length }' "$STUB_LOG" | sort -n | tail -1)" -lt 2000 ]
+  [ "$(jq -r '.body | length' "${WORK}/request.json")" -le 65000 ]
+  jq -r '.body' "${WORK}/request.json" | grep -q "Cut short to fit GitHub's comment size limit"
+}
+
+@test "a refused post is a warning, not a false success" {
+  stub_script curl <<'STUBEOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"--request POST"*) exit 22 ;;
+  *) printf '[]' ;;
+esac
+STUBEOF
+  PR_NUMBER=42 BODY=hello run bash "${SCRIPTS}/notify-pr.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"could not post the pull-request comment"* ]]
+  [[ "$output" != *"posted a new pull-request comment"* ]]
+}

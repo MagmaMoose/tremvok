@@ -65,6 +65,9 @@ RUN_URL="${RUN_URL:-}"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}/tremvok-terragrunt}"
 DRY_RUN="${DRY_RUN:-false}"
 MAX_COMMENT_EXCERPT="${MAX_COMMENT_EXCERPT:-6000}"
+# What the whole plan comment may use. GitHub refuses one over 65,536 characters; this leaves
+# room for notify-pr.sh's marker and counts bytes, so multi-byte plan output stays inside it.
+COMMENT_BUDGET="${COMMENT_BUDGET:-60000}"
 # Overridable so the tests can put a recorder in front of it and assert it was never run;
 # production always uses the script next to this one. Same shape as VAULT_READ_BIN in
 # deploy-ansible.sh.
@@ -299,6 +302,11 @@ plan_failures=0
 plan_changes=0
 rows=""
 details=""
+# The stacks that get a plan excerpt in the comment, filled by the loop and rendered once the
+# loop knows how many there are. Parallel arrays: bash 3.2 has no associative ones.
+detail_stacks=()
+detail_statuses=()
+detail_files=()
 
 for stack in "${stacks[@]}"; do
   out="${WORK_DIR}/plan/$(sanitize "$stack")"
@@ -343,15 +351,48 @@ for stack in "${stacks[@]}"; do
   short="${stack#"${ROOT_DIR}"/}"
   rows+="| \`${short}\` | ${badge} | ${summary_line} |"$'\n'
 
-  if [[ -s "${out}/plan.txt" ]]; then
-    excerpt="$("${here}/terragrunt-run.sh" redact "${out}/plan.txt" | tail -c "$MAX_COMMENT_EXCERPT")"
-  else
-    excerpt='No plan output was produced; see the workflow run.'
+  # A stack with no changes is fully described by its table row; an excerpt would only spend the
+  # comment's size budget on "No changes." for every stack a module change reaches.
+  if [[ "$status" != "no-changes" ]]; then
+    detail_stacks+=("$short")
+    detail_statuses+=("$status")
+    detail_files+=("${out}/plan.txt")
   fi
-  # Single quotes here are the printf format string; %s args expand as positional parameters
-  # shellcheck disable=SC2016
-  details+="$(printf '<details><summary><code>%s</code> — %s</summary>\n\n```text\n%s\n```\n</details>' "$short" "$status" "$excerpt")"$'\n'
 done
+
+# Terminal colour codes render as `[90m` noise in a comment, and each one costs six bytes of
+# JSON escaping, so they come out before an excerpt is measured. Any CSI sequence, not just SGR.
+strip_ansi() { LC_ALL=C sed "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g"; }
+
+build_details() { # excerpt-bytes
+  local limit="$1" i excerpt out=""
+  for ((i = 0; i < ${#detail_stacks[@]}; i++)); do
+    if [[ -s "${detail_files[$i]}" ]]; then
+      excerpt="$("${here}/terragrunt-run.sh" redact "${detail_files[$i]}" | strip_ansi | tail -c "$limit")"
+    else
+      excerpt='No plan output was produced; see the workflow run.'
+    fi
+    # Single quotes here are the printf format string; %s args expand as positional parameters
+    # shellcheck disable=SC2016
+    out+="$(printf '<details><summary><code>%s</code> — %s</summary>\n\n```text\n%s\n```\n</details>' "${detail_stacks[$i]}" "${detail_statuses[$i]}" "$excerpt")"$'\n'
+  done
+  printf '%s' "$out"
+}
+
+# Share COMMENT_BUDGET between the excerpts, after the table and the apply section have taken
+# theirs, so a change that plans many stacks still posts a comment instead of one GitHub refuses.
+# Each excerpt is the TAIL of its plan, which is where the summary and the last resources are.
+# Below a useful size, excerpts are dropped for a pointer to the run rather than shrunk to noise.
+excerpt_budget=0
+if (( ${#detail_stacks[@]} > 0 )); then
+  excerpt_budget=$(( (COMMENT_BUDGET - ${#rows} - 3000) / ${#detail_stacks[@]} - 200 ))
+  if (( excerpt_budget > MAX_COMMENT_EXCERPT )); then excerpt_budget=$MAX_COMMENT_EXCERPT; fi
+  if (( excerpt_budget >= 400 )); then
+    details="$(build_details "$excerpt_budget")"
+  else
+    details="_Plan excerpts left out: ${#detail_stacks[@]} stacks with changes do not fit in one comment. The workflow run has every plan._"
+  fi
+fi
 
 tremvok::summary "## Terragrunt plan"
 tremvok::summary ""
