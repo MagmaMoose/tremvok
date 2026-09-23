@@ -908,6 +908,7 @@ def apply_edit(document: str, scan: Scan, edit: Edit) -> str:
         # by one new tag per line at the head's own indent, and `</head>` goes back on a line
         # of its own at the two spaces Material gives it. Nothing is appended when nothing was
         # added: a description replaced in place or a new title needs no new line.
+        # "  " restores Material's two-space indent before </head> that rstrip removed.
         head = head.rstrip() + "\n" + "".join(f"    {tag}\n" for tag in added) + "  "
     return head + rest
 
@@ -971,7 +972,7 @@ def rewrite_links(markdown: str, resolve: Callable[[str], str]) -> str:
             continue
         spans: list[str] = []
 
-        def keep(match: re.Match[str], spans: list[str] = spans) -> str:
+        def keep(match: re.Match[str]) -> str:
             spans.append(match.group(0))
             return f"\x00{len(spans) - 1}\x00"
 
