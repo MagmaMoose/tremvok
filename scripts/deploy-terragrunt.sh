@@ -66,7 +66,7 @@ WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}/tremvok-terragrunt}"
 DRY_RUN="${DRY_RUN:-false}"
 MAX_COMMENT_EXCERPT="${MAX_COMMENT_EXCERPT:-6000}"
 # What the whole plan comment may use. GitHub refuses one over 65,536 characters; this leaves
-# room for notify-pr.sh's marker and counts bytes, so multi-byte plan output stays inside it.
+# room for notify-pr.sh's marker and counts characters, so the total stays inside GitHub's limit.
 COMMENT_BUDGET="${COMMENT_BUDGET:-60000}"
 # Overridable so the tests can put a recorder in front of it and assert it was never run;
 # production always uses the script next to this one. Same shape as VAULT_READ_BIN in

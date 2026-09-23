@@ -149,7 +149,7 @@ case "$*" in
   *) printf '[]' ;;
 esac
 STUBEOF
-  BODY="$(yes 'x' | head -c 200000)" PR_NUMBER=42 run bash "${SCRIPTS}/notify-pr.sh"
+  BODY="$(printf '%200000s' | tr ' ' x)" PR_NUMBER=42 run bash "${SCRIPTS}/notify-pr.sh"
   [ "$status" -eq 0 ]
   grep -q -- "--request POST" "$STUB_LOG"
   # No argument carried the body.
