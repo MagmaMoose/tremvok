@@ -972,7 +972,10 @@ def rewrite_links(markdown: str, resolve: Callable[[str], str]) -> str:
             continue
         spans: list[str] = []
 
-        def keep(match: re.Match[str]) -> str:
+        # `spans` is bound as a default on purpose, not redundant: this function is
+        # defined inside the loop, and without the binding ruff's B023 fails CI because
+        # a late-binding closure would see whichever list the loop created last.
+        def keep(match: re.Match[str], spans: list[str] = spans) -> str:
             spans.append(match.group(0))
             return f"\x00{len(spans) - 1}\x00"
 
