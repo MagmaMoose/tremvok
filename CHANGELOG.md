@@ -9,6 +9,30 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Per-page search, social and agent metadata for both docs targets.** A step after the
+  MkDocs build (`scripts/gen_docs_seo.py`, on by default as `pages-seo`) edits the built HTML
+  in place, for `github-pages` and `cloudflare-docs` alike:
+  - **A meta description per page.** Material prints `site_description` on every page with no
+    `description:` of its own, which search engines read as duplicate metadata. Each such page
+    now carries its first paragraph of prose, at most 155 characters and unique across the
+    site; warnings, tables, code, lists, link-only lines and a sentence cut in half by a code
+    block are passed over. The home page keeps `site_description`, and a home title that is
+    only the site name gains its lead clause.
+  - **Open Graph and Twitter tags, and one JSON-LD `@graph` per page**: `WebSite` and its
+    publisher everywhere, `TechArticle` and a nav-built `BreadcrumbList` below the home page.
+  - **A markdown twin of every page** at `<page>/index.md`, linked from the page with
+    `rel="alternate" type="text/markdown"`, relative links resolved the way MkDocs resolves
+    them for the HTML, and a `> Markdown source of <url>.` line under the title. `llms.txt`
+    links the twins, as llmstxt.org asks; the search index keeps citing the pages.
+  - **Configured by `extra.seo`** (locale, card image, publisher, author), read from the
+    resolved config, so a shared `mkdocs.base.yml` sets it once through `INHERIT`. A step and
+    not a plugin, for the reason the corpus is one.
+  - **Nothing a page already has is replaced or doubled**: a description that is not the
+    site's, Open Graph tags, Twitter tags, JSON-LD, a twin or its link. That keeps
+    docs.calebsargeant.com's own hook in charge of its pages, and makes a second run a no-op.
+  - A build that resolves no `site_url` is warned about, because MkDocs then writes no
+    canonical links and an empty sitemap. On `cloudflare-docs` the router address stands in
+    for the canonical link and `og:url`.
 - **`docs.magmamoose.com/` is a front door, not a 404.** The docs router answers the host root
   itself: a landing page listing every site with its title and summary (canonical URL, Open
   Graph and Twitter cards, `CollectionPage`/`ItemList` JSON-LD, light and dark), `/llms.txt`

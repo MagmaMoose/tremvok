@@ -17,6 +17,7 @@ from scripts.gen_docs_index import (
     extract_snippet,
     extract_title,
     main,
+    markdown_twin,
     plain_text,
     strip_front_matter,
     url_path_for,
@@ -422,3 +423,66 @@ def test_the_index_meets_the_readers_contract(repo: Path, tmp_path: Path) -> Non
         assert isinstance(doc["bytes"], int) and doc["bytes"] >= 0
         assert doc["url"].startswith("https://")
         assert "github.com" not in doc["url"]
+
+
+# --------------------------------------------------------------------------- markdown twins
+
+
+@pytest.mark.parametrize(
+    ("url_path", "twin"),
+    [
+        ("", "index.md"),
+        ("setup/", "setup/index.md"),
+        ("adr/0005/", "adr/0005/index.md"),
+        ("setup.html", "setup.md"),
+        ("index.html", "index.md"),
+        # A build's dest_uri names the same file as the URL it is served at.
+        ("setup/index.html", "setup/index.md"),
+    ],
+)
+def test_the_twin_sits_where_llmstxt_org_puts_it(url_path: str, twin: str) -> None:
+    """The page's URL with `.md` for the extension, and `index.md` for a URL with no file name.
+
+    The docs router answers `Accept: text/markdown` by fetching `<path>index.md`, so this is
+    also the path it expects, not only the spec's.
+    """
+    assert markdown_twin(url_path) == twin
+
+
+def test_llms_txt_links_the_markdown_twin_where_the_site_has_one(
+    repo: Path, tmp_path: Path
+) -> None:
+    """llmstxt.org asks for links to "LLM-friendly content, such as the markdown versions".
+
+    Detected from the built site like every other URL here: a page with a twin is listed by
+    it, a page without one keeps its HTML address, and a site built without the page-SEO step
+    has exactly the llms.txt it had before.
+    """
+    site = build_site(repo)
+    (site / "setup" / "index.md").write_text("# Setting Tremvok up\n", encoding="utf-8")
+    assert main(["--root", str(repo), "--repo", "tremvok", "--index-out", str(tmp_path / "o")]) == 0
+
+    llms = (site / "llms.txt").read_text(encoding="utf-8")
+    assert f"[Setting Tremvok up]({SITE_URL}setup/index.md)" in llms
+    assert f"[Tremvok]({SITE_URL})" in llms
+    assert "Each link is the page's markdown" in llms
+
+    # The corpus keeps citing the page, never its markdown copy.
+    document = json.loads((tmp_path / "o" / "index" / "tremvok.json").read_text(encoding="utf-8"))
+    assert {doc["url"] for doc in document["docs"]} == {SITE_URL, f"{SITE_URL}setup/"}
+
+
+def test_llms_txt_is_unchanged_on_a_site_with_no_twins(repo: Path, tmp_path: Path) -> None:
+    site = build_site(repo)
+    assert main(["--root", str(repo), "--repo", "tremvok", "--index-out", str(tmp_path / "o")]) == 0
+    llms = (site / "llms.txt").read_text(encoding="utf-8")
+    assert "index.md" not in llms
+    assert "Each link is the page's markdown" not in llms
+
+
+def test_a_flat_url_site_links_the_twin_beside_the_page(repo: Path, tmp_path: Path) -> None:
+    """`use_directory_urls: false` renders setup.md to setup.html, and its twin is setup.md."""
+    site = build_site(repo, directory_urls=False)
+    (site / "setup.md").write_text("# Setting Tremvok up\n", encoding="utf-8")
+    assert main(["--root", str(repo), "--repo", "tremvok", "--index-out", str(tmp_path / "o")]) == 0
+    assert f"({SITE_URL}setup.md)" in (site / "llms.txt").read_text(encoding="utf-8")
