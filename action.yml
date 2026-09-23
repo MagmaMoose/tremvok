@@ -216,6 +216,18 @@ inputs:
     required: false
     default: 'true'
 
+  pages-seo:
+    description: |
+      github-pages, cloudflare-docs: after the build, give every page its own meta description
+      (from its first paragraph of prose; the home page keeps `site_description`), Open Graph
+      and Twitter tags, a JSON-LD graph (WebSite, TechArticle, BreadcrumbList) and a markdown
+      copy at `<page>/index.md`, linked from the page and from llms.txt. Configured by
+      `extra.seo` in mkdocs.yml (`locale`, `image`, `publisher`, `author`, `twitter`), every
+      key optional. A tag a page already carries is never replaced or doubled, so a site with
+      its own SEO hook keeps it. `false` skips the step.
+    required: false
+    default: 'true'
+
   # ── targets that run a build: github-pages, cloudflare-workers ───────────
   build-git-credentials:
     description: |
@@ -1182,6 +1194,46 @@ runs:
           mkdocs build $strict_flag --site-dir "$SITE_DIR"
         fi
         echo "site-dir=$(cd "$SITE_DIR" && pwd)" >> "$GITHUB_OUTPUT"
+
+    # ── both docs targets: page metadata ─────────────────────────────────────
+    #
+    # Per-page descriptions, Open Graph and Twitter tags, JSON-LD and markdown twins, written
+    # into the HTML the build just produced. See scripts/gen_docs_seo.py for what each is for.
+    #
+    # A step and not a MkDocs plugin or hook, for the reason the corpus step below gives: a
+    # plugin has to be named in `plugins:` (a hook in `hooks:`), and a repo that declares
+    # either list in its own mkdocs.yml silently discards the shared mkdocs.base.yml's.
+    #
+    # WHERE IT SITS IS THE CONTRACT. After the build, because it edits the build's output.
+    # Before the Pages artifact is staged and before the Workers deploy, or the site goes out
+    # without any of it. Before the corpus step, because llms.txt links each page's markdown
+    # twin only when it finds one on disk. None of those orderings fails if broken; the site
+    # just quietly loses the metadata, so tests/test_gen_docs_seo.py pins them.
+    #
+    # `--site-url` is the address the router serves the site at, the one the corpus cites. It
+    # stands in only when mkdocs.yml resolves no `site_url`, and a disagreement between the
+    # two is reported rather than silently resolved.
+    - name: Give each page its own search, social and agent metadata
+      if: (inputs.target == 'github-pages' || inputs.target == 'cloudflare-docs') && inputs.pages-seo == 'true' && steps.pages-detect.outputs.toolchain != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLCHAIN: ${{ steps.pages-detect.outputs.toolchain }}
+        SCRIPT: ${{ github.action_path }}/scripts/gen_docs_seo.py
+        SITE_DIR: ${{ inputs.pages-site-dir }}
+        DOCS_HOST: ${{ inputs.cloudflare-docs-host }}
+        DOCS_PATH: ${{ inputs.cloudflare-docs-path || github.event.repository.name }}
+      run: |
+        set -euo pipefail
+        args=(--root . --site-dir "$SITE_DIR")
+        if [ -n "$DOCS_HOST" ]; then
+          args+=(--site-url "https://${DOCS_HOST}/${DOCS_PATH}/")
+        fi
+        if [ "$TOOLCHAIN" = "uv" ]; then
+          uv run --no-sync python "$SCRIPT" "${args[@]}"
+        else
+          python "$SCRIPT" "${args[@]}"
+        fi
 
     - name: Configure Pages
       if: inputs.target == 'github-pages' && steps.pages-detect.outputs.stage-pages == 'true'

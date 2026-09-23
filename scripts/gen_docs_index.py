@@ -240,6 +240,20 @@ def url_path_for(rel: Path, site_dir: Path) -> str | None:
     return None
 
 
+def markdown_twin(url_path: str) -> str:
+    """The site-relative path of a page's markdown twin, which ``gen_docs_seo.py`` writes.
+
+    llmstxt.org: the clean markdown of a page sits at the page's own URL with the extension
+    replaced by ``.md``, and a URL with no file name takes ``index.md``. So ``setup/`` ->
+    ``setup/index.md``, ``setup.html`` -> ``setup.md``, and the site root -> ``index.md``.
+    A build's ``dest_uri`` (``setup/index.html``) maps to the same file as its URL does.
+    Defined here, beside ``url_path_for``, because llms.txt is what links to it.
+    """
+    if not url_path or url_path.endswith("/"):
+        return f"{url_path}index.md"
+    return f"{url_path.removesuffix('.html')}.md"
+
+
 def canonical_url(site_url: str, url_path: str) -> str:
     """``<site_url>/<path>`` — for the fleet, ``https://docs.magmamoose.com/<repo>/<path>``.
 
@@ -333,21 +347,32 @@ def render_llms_txt(
     site_description: str,
     site_url: str,
     entries: list[Entry],
+    twins: dict[str, str] | None = None,
 ) -> str:
-    """The llms.txt link index — https://llmstxt.org/ ."""
+    """The llms.txt link index, per https://llmstxt.org/.
+
+    ``twins`` maps an entry's source path to its markdown twin's URL. The spec asks for the
+    links to point at "LLM-friendly content, such as the markdown versions of pages", so a
+    page that has one is listed by it, and a page that has none keeps its HTML URL.
+    """
+    twins = twins or {}
     lines = [f"# {site_name}", ""]
     if site_description:
         lines += [f"> {site_description}", ""]
     lines += [
         f"Canonical documentation for {site_name}, served at {site_url}.",
         "The full text of every page below is at `llms-full.txt`.",
-        "",
-        "## Docs",
-        "",
     ]
+    if twins:
+        # An agent that cites what it read should cite the page, not its markdown copy.
+        lines.append(
+            "Each link is the page's markdown. The page itself is the same address without "
+            "the `index.md`, or with `.html` in place of `.md`."
+        )
+    lines += ["", "## Docs", ""]
     for entry in entries:
         suffix = f": {entry.snippet}" if entry.snippet else ""
-        lines.append(f"- [{entry.title}]({entry.url}){suffix}")
+        lines.append(f"- [{entry.title}]({twins.get(entry.path, entry.url)}){suffix}")
     return "\n".join(lines) + "\n"
 
 
@@ -468,8 +493,15 @@ def main(argv: list[str] | None = None) -> int:
     # a --strict build failure means there is nothing to attach them to.
     written = [str(index_path)]
     if site_dir.is_dir():
+        # Detected, not declared, like every URL above: a twin is linked when the page-SEO
+        # step wrote one, and a site built without that step keeps its HTML links.
+        twins = {}
+        for entry in entries:
+            twin = markdown_twin(entry.url.removeprefix(site_url))
+            if (site_dir / twin).is_file():
+                twins[entry.path] = canonical_url(site_url, twin)
         for name, body in (
-            ("llms.txt", render_llms_txt(site_name, site_description, site_url, entries)),
+            ("llms.txt", render_llms_txt(site_name, site_description, site_url, entries, twins)),
             ("llms-full.txt", render_llms_full_txt(site_name, site_url, entries, bodies)),
         ):
             (site_dir / name).write_text(body, encoding="utf-8")

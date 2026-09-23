@@ -48,6 +48,59 @@ build is the check, and it can't publish by accident.
 
 Set **Settings → Pages → Source = "GitHub Actions"** once per repository.
 
+#### Search, social and agent metadata
+
+Both docs targets finish the build by giving every page the metadata MkDocs Material leaves
+out. The step edits the built HTML, is on by default (`pages-seo`), and needs no credentials
+and no network:
+
+- **Its own meta description.** Material prints `site_description` on every page without a
+  `description:` in its front matter, so a search engine sees one sentence repeated across
+  the site. Each of those pages gets its first paragraph of prose instead, at most 155
+  characters and unique across the site. Warnings, tables, code, lists and lines that are
+  only links are skipped. The home page keeps `site_description`, and when its title is the
+  bare site name, the lead clause of `site_description` joins it
+  (`Tremvok - One GitHub Action for the whole deploy side`).
+- **Open Graph and Twitter tags**, so a link pasted into Slack or LinkedIn unfurls as a card.
+- **A JSON-LD graph**: the `WebSite` and its publisher on every page, and a `TechArticle`
+  and a `BreadcrumbList` built from the nav on every page but the home page.
+- **A markdown twin**: the page's source at `<page>/index.md` (the llmstxt.org convention),
+  announced with `<link rel="alternate" type="text/markdown">`, its relative links resolved
+  the way MkDocs resolves them for the HTML so they still work from where the twin lives.
+  On `cloudflare-docs`, `llms.txt` links the twins.
+
+Configure it under `extra.seo` in `mkdocs.yml`. `extra` is a dict, so it merges through
+`INHERIT` and a shared base can set it once for every site. Every key is optional:
+
+```yaml
+extra:
+  seo:
+    locale: en_GB                  # og:locale, and inLanguage (en-GB) in the JSON-LD
+    image:                         # the link-preview card
+      url: https://www.example.com/og/card.png
+      width: 1200
+      height: 630
+      alt: Example docs            # defaults to site_name
+    publisher:                     # use the @id your own site's JSON-LD already has
+      type: Organization
+      id: https://www.example.com/#organization
+      name: Example
+      url: https://www.example.com/
+      logo: https://www.example.com/logo.png
+      same_as: [https://github.com/example]
+    # author: the same shape; defaults to the publisher, then to site_author
+    # twitter: "@handle"
+```
+
+A page keeps whatever it already has: a description that is not `site_description` (from
+front matter or a hook of your own), Open Graph tags once `og:title` is present, Twitter
+tags once `twitter:card` is, JSON-LD once any `application/ld+json` block is, and a twin or
+twin link that exists already. The same rules make a second run change nothing.
+
+Canonical links, `og:url` and the JSON-LD need an absolute address, which is `site_url`. On
+`cloudflare-docs` the router address stands in when `site_url` is unset, and the step warns,
+because MkDocs has then written no canonical links and an empty `sitemap.xml`.
+
 #### Installing a dependency from a private git repository
 
 A docs build often pins its theme straight to a private repository:
@@ -165,6 +218,9 @@ network.
 The corpus is what the build rendered, not everything under `docs/`. A file the build left
 out (`exclude_docs`, `draft_docs`) is not indexed, because its URL would 404; the step's log
 names each one.
+
+`llms.txt` links each page's markdown twin when the metadata step above wrote one, as
+llmstxt.org asks, and the page itself otherwise. The search index always cites the page.
 
 Name a bucket and a deploy also publishes that index to R2 as `index/<repo>.json`, which is
 the corpus the documentation MCP servers read:

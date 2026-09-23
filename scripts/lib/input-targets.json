@@ -208,6 +208,13 @@
       ],
       "default": "true"
     },
+    "pages-seo": {
+      "targets": [
+        "github-pages",
+        "cloudflare-docs"
+      ],
+      "default": "true"
+    },
     "build-git-credentials": {
       "targets": [
         "github-pages",
