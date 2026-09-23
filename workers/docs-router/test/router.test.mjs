@@ -345,8 +345,16 @@ describe("reading llms.txt", () => {
           request.signal.addEventListener("abort", () => reject(request.signal.reason));
         }),
     };
-    const [site] = await describeSites({ HUNG: hung }, ["hung"], HOST, { timeoutMs: 20 });
-    assert.deepEqual(site, { repo: "hung", title: "hung", summary: null, described: false });
+    // AbortSignal.timeout's timer is unref'd in Node, so with nothing else pending the event
+    // loop drains before it fires and node:test (20) fails every test after this one. A
+    // Worker's request keeps its own timers alive; this stands in for that.
+    const keepAlive = setTimeout(() => {}, 5000);
+    try {
+      const [site] = await describeSites({ HUNG: hung }, ["hung"], HOST, { timeoutMs: 20 });
+      assert.deepEqual(site, { repo: "hung", title: "hung", summary: null, described: false });
+    } finally {
+      clearTimeout(keepAlive);
+    }
   });
 
   test("parses the H1 and the first blockquote line, and nothing that is not an llms.txt", () => {

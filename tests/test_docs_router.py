@@ -43,10 +43,22 @@ def _skip_unless_required(reason: str) -> None:
     pytest.skip(reason)
 
 
+# The router's modules are ES modules in a directory with no package.json, which Node loads
+# by syntax detection: unflagged in 22.7 and backported to 20.19. Older, the suite dies on
+# its first import with "is a CommonJS module", which reads like a bug in the router.
+MIN_NODE = (20, 19)
+
+
 def node() -> str:
     path = shutil.which("node")
     if path is None:
         _skip_unless_required("Node is not available")
+    version = subprocess.run(  # nosec B603
+        [str(path), "--version"], capture_output=True, text=True, check=False, timeout=30
+    ).stdout.strip()
+    match = re.match(r"v(\d+)\.(\d+)", version)
+    if not match or (int(match.group(1)), int(match.group(2))) < MIN_NODE:
+        _skip_unless_required(f"Node {version or '?'} is older than {'.'.join(map(str, MIN_NODE))}")
     return str(path)
 
 
