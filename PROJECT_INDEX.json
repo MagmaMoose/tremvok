@@ -76,7 +76,7 @@
     },
     "workers": {
       "note": "Cloudflare Workers that serve the fleet's documentation. Source and config only — deploying them is a separate, human act. See .claude/decisions/0004.",
-      "workers/docs-router/": "docs.<host>: owns the hostname, dispatches /<repo> to that repo's Worker over a SERVICE BINDING (never an HTTP proxy); route table is derived from env, so wrangler.toml is the only list. src/root.js serves the host root (landing page, llms.txt, sitemap index, robots.txt, security.txt), src/discovery.js the AI/API catalogs, src/sites.js reads each site's title and summary from its own llms.txt (PRIVATE_SITES are never listed or read), src/headers.js is the one header policy for every response on the host",
+      "workers/docs-router/": "docs.<host>: owns the hostname, dispatches /<repo> to that repo's Worker over a SERVICE BINDING (never an HTTP proxy); route table is derived from env, so wrangler.toml is the only list. src/root.js serves the host root (landing page, or a 302 to LANDING_REDIRECT when set; llms.txt, sitemap index, robots.txt, security.txt), src/discovery.js the AI/API catalogs, src/sites.js reads each site's title and summary from its own llms.txt (PRIVATE_SITES are never listed or read), src/headers.js is the one header policy for every response on the host",
       "workers/docs-site/": "the template every repo copies to its own root; assets plus a one-line main, because a service binding needs a fetch handler to dispatch to"
     }
   },

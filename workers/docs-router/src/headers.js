@@ -115,12 +115,16 @@ export async function document(request, body, { type, cache, csp = DOCUMENT_CSP,
   return new Response(request.method === "HEAD" ? null : body, { status: 200, headers: all });
 }
 
-/** A redirect the router issues itself. */
-export function redirect(location, status = 301, cache = "public, max-age=3600") {
+/**
+ * A redirect the router issues itself. `headers` adds to it (a Link, a Vary) but cannot
+ * replace the security headers, the CSP, the caching or the Location.
+ */
+export function redirect(location, status = 301, cache = "public, max-age=3600", headers = {}) {
   return new Response(null, {
     status,
     headers: {
       ...HOST_HEADERS,
+      ...headers,
       "content-security-policy": DOCUMENT_CSP,
       "cache-control": cache,
       location,

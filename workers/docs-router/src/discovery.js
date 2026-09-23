@@ -51,12 +51,20 @@ const DESCRIPTION =
 /**
  * The Link header on the landing page, so an agent that reads headers before bodies finds
  * all of it. `describedby` names llms.txt as the description of the site for a machine.
+ *
+ * `base` makes the targets absolute. The redirect at `/` needs that (root.js): it points at
+ * another host, and a client that carries the header across the hop must not resolve these
+ * against the page it lands on.
  */
-export const DISCOVERY_LINKS = [
-  `<${API_CATALOG_PATH}>; rel="api-catalog"`,
-  `<${AI_CATALOG_PATH}>; rel="ai-catalog"; type="${AI_CATALOG_TYPE}"`,
-  '</llms.txt>; rel="describedby"; type="text/plain"',
-].join(", ");
+export function discoveryLinks(base = "") {
+  return [
+    `<${base}${API_CATALOG_PATH}>; rel="api-catalog"`,
+    `<${base}${AI_CATALOG_PATH}>; rel="ai-catalog"; type="${AI_CATALOG_TYPE}"`,
+    `<${base}/llms.txt>; rel="describedby"; type="text/plain"`,
+  ].join(", ");
+}
+
+export const DISCOVERY_LINKS = discoveryLinks();
 
 /**
  * The AI Catalog. `displayName` and `description` restate the card's, which the catalog spec

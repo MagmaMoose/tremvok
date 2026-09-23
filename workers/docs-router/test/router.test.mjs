@@ -9,11 +9,12 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, mock, test } from "node:test";
 
 import { matchesIfNoneMatch, prefersMarkdown, sha256Source } from "../src/headers.js";
 import worker from "../src/index.js";
-import { securityTxtExpiry } from "../src/root.js";
+import { landingRedirect, securityTxtExpiry } from "../src/root.js";
 import {
   MAX_LOOKUPS_PER_REQUEST,
   describeSites,
@@ -253,6 +254,102 @@ describe("GET /", () => {
     assert.equal(res.status, 405);
     assert.equal(res.headers.get("allow"), "GET, HEAD");
     assert.equal((await get(fleet(), "/", {}, "HEAD")).status, 200);
+  });
+});
+
+// ── The redirect at the root ─────────────────────────────────────────────────
+
+describe("GET / with LANDING_REDIRECT", () => {
+  const TARGET = "https://www.magmamoose.com/documentation/";
+  const BROWSER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+
+  function withRedirect(value = TARGET) {
+    return { ...fleet(), LANDING_REDIRECT: value };
+  }
+
+  test("sends a browser to the documentation hub with a 302 and no body", async () => {
+    const res = await get(withRedirect(), "/", { accept: BROWSER });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get("location"), TARGET);
+    assert.equal(res.headers.get("cache-control"), "public, max-age=300");
+    assert.equal(res.headers.get("vary"), "Accept");
+    assert.match(res.headers.get("content-security-policy"), /^default-src 'none'/);
+    assertHostHeaders(res, "redirect");
+    assert.equal(await res.text(), "");
+  });
+
+  test("sends a client that names no media type, */*, and a HEAD the same way", async () => {
+    for (const [headers, method] of [[{}, "GET"], [{ accept: "*/*" }, "GET"], [{ accept: BROWSER }, "HEAD"]]) {
+      const res = await get(withRedirect(), "/", headers, method);
+      assert.equal(res.status, 302, `${method} ${JSON.stringify(headers)}`);
+      assert.equal(res.headers.get("location"), TARGET);
+    }
+  });
+
+  test("keeps the discovery links, absolute, so they cannot resolve against the other host", async () => {
+    const link = (await get(withRedirect(), "/", { accept: BROWSER })).headers.get("link");
+    assert.match(link, /<https:\/\/docs\.magmamoose\.com\/\.well-known\/api-catalog>; rel="api-catalog"/);
+    assert.match(
+      link,
+      /<https:\/\/docs\.magmamoose\.com\/\.well-known\/ai-catalog\.json>; rel="ai-catalog"; type="application\/ai-catalog\+json"/,
+    );
+    assert.match(link, /<https:\/\/docs\.magmamoose\.com\/llms\.txt>; rel="describedby"; type="text\/plain"/);
+    assert.doesNotMatch(link, /rel="canonical"/, "a URL that redirects is not canonical");
+  });
+
+  test("reads no site's llms.txt to do it", async () => {
+    const env = withRedirect();
+    await get(env, "/", { accept: BROWSER });
+    for (const name of ["BRIMYR", "CHARGATE", "TREMVOK", "NIEVAH"]) {
+      assert.equal(env[name].requests.length, 0, name);
+    }
+  });
+
+  test("still answers Accept: text/markdown with the index, from this host", async () => {
+    const env = withRedirect();
+    const res = await get(env, "/", { accept: "text/markdown" });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "text/markdown; charset=utf-8");
+    assert.equal(res.headers.get("vary"), "Accept");
+    assert.match(res.headers.get("link"), /<https:\/\/docs\.magmamoose\.com\/>; rel="canonical"/);
+    assert.equal(await res.text(), await (await get(env, "/llms.txt")).text());
+  });
+
+  test("serves the landing page instead when the value is blank or not an https URL", async () => {
+    const values = [
+      "",
+      "   ",
+      "http://www.magmamoose.com/documentation/", // DevSkim: ignore DS137138 - refused, which is the test
+      "www.magmamoose.com/documentation/",
+      "/documentation/",
+    ];
+    for (const value of values) {
+      const res = await get(withRedirect(value), "/", { accept: BROWSER });
+      assert.equal(res.status, 200, JSON.stringify(value));
+      assert.equal(res.headers.get("content-type"), "text/html; charset=utf-8", JSON.stringify(value));
+    }
+    assert.equal(landingRedirect({}), null, "unset");
+    assert.equal(landingRedirect({ LANDING_REDIRECT: ["https://x/"] }), null, "not a string");
+  });
+
+  test("changes nothing else at the root", async () => {
+    const env = withRedirect();
+    assert.equal((await get(env, "/llms.txt")).status, 200);
+    assert.equal((await get(env, "/robots.txt")).status, 200);
+    assert.equal((await get(env, "/.well-known/api-catalog")).status, 200);
+    assert.equal((await get(env, "/tremvok/setup/")).status, 200);
+    assert.equal((await get(env, "/nowhere/")).status, 404);
+    assert.equal((await get(env, "/", {}, "POST")).status, 405);
+  });
+
+  test("the value in wrangler.toml is blank or one the router will use as written", () => {
+    const config = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+    const declared = /^LANDING_REDIRECT\s*=\s*"([^"]*)"\s*$/m.exec(config);
+    assert.ok(declared, "wrangler.toml declares LANDING_REDIRECT under [vars]");
+    const value = declared[1];
+    if (value.trim() !== "") {
+      assert.equal(landingRedirect({ LANDING_REDIRECT: value }), value, "an https URL, already in its normal form");
+    }
   });
 });
 
