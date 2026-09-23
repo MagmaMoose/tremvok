@@ -72,6 +72,12 @@ def declared_bindings(config: pathlib.Path) -> set[str]:
         if isinstance(block, dict) and block.get("name"):
             names.add(block["name"])
 
+    # `[vars]` are not bindings in Cloudflare's vocabulary, but the dry-run prints them in the
+    # same table, and a var the Worker reads that Wrangler does not print is just as absent.
+    # The router's PRIVATE_SITES is the one that matters: missing, a bound private site's
+    # summary is published on the public root.
+    names.update((data.get("vars") or {}).keys())
+
     return names
 
 

@@ -9,6 +9,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`docs.magmamoose.com/` is a front door, not a 404.** The docs router answers the host root
+  itself: a landing page listing every site with its title and summary (canonical URL, Open
+  Graph and Twitter cards, `CollectionPage`/`ItemList` JSON-LD, light and dark), `/llms.txt`
+  indexing every site's own `llms.txt` and `llms-full.txt`, `/sitemap.xml` as a sitemap index,
+  `/robots.txt` with `Content-Signal`, `Sitemap:` and `Agentmap:` lines, RFC 9116
+  `/.well-known/security.txt` with an `Expires` computed per request, and `/favicon.ico`.
+  - **Nothing is listed twice.** Which sites exist still comes only from the `[[services]]`
+    blocks; what each is called comes from its own `llms.txt`, read over the service binding,
+    cached per isolate for five minutes and capped at 24 reads a request, because one request
+    may invoke at most 32 Workers. A site whose `llms.txt` cannot be read is listed by its
+    repository name, not dropped.
+  - **`PRIVATE_SITES` keeps an Access-gated site off the root once it is bound.** A service
+    binding call never passes through Access, so describing a bound private site would copy
+    its name and summary onto a public page. The private four are named before they are bound.
+  - **Discovery for agents:** `/.well-known/ai-catalog.json` (AI Catalog) and
+    `/.well-known/api-catalog` (RFC 9727) point at the docs MCP server's card, with CORS, an
+    hour of caching and ETags that answer `If-None-Match` with a 304, and
+    `/.well-known/mcp/server-card.json` redirects to the card. The landing page names them in
+    a `Link` header.
+  - **A page answers `Accept: text/markdown` with its `index.md` twin** when that is the first
+    media range and the site publishes one, and falls back to the HTML page when it does not.
+  - **Every response on the host carries HSTS, `nosniff`, `Referrer-Policy`,
+    `X-Frame-Options` and `Permissions-Policy`**, the site Workers' included; the router's own
+    pages add a strict CSP. `.txt` is served as `text/plain; charset=utf-8` and `.md` as
+    `text/markdown; charset=utf-8`, so curly quotes in an `llms.txt` survive a client that
+    does not assume UTF-8.
+  - **A URL without its trailing slash works.** The site Worker's redirect to `/setup/` was
+    relative to its own root, so `/tremvok/setup` landed on the host's 404; the router puts
+    the `/<repo>` prefix back on a path-absolute `Location`.
+  - **One spelling per path.** `/Tremvok/` or `/tremvok//setup/` is a 301 to the canonical
+    path, so duplicate URLs stop serving and the path an Access application is written for is
+    the only one that reaches a site.
+
 - **Google Cloud credentials for `target: terragrunt`.** `gcp-workload-identity-provider`,
   `gcp-service-account` and `gcp-project-id` federate this run's GitHub OIDC token with a
   workload identity pool before the first plan. No service-account key is stored anywhere: the

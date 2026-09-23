@@ -137,6 +137,28 @@ exactly what `workers_dev = false` exists to prevent — and proxying an Access-
 would need the router to hold a service token, at which point Access is gating the router
 rather than the person visiting.
 
+#### What the router serves itself
+
+The host root is the router's own, so the fleet has one front door for people, crawlers and
+agents:
+
+| Path | What it is |
+|---|---|
+| `/` | A landing page listing every site, with its title and summary |
+| `/llms.txt` | An [llms.txt](https://llmstxt.org/) index linking each site's `llms.txt` and `llms-full.txt` |
+| `/sitemap.xml` | A sitemap index of every site's `sitemap.xml` |
+| `/robots.txt` | Allows everything, declares content signals, names the sitemap index |
+| `/.well-known/security.txt` | The RFC 9116 security contact |
+| `/.well-known/ai-catalog.json`, `/.well-known/api-catalog` | Pointers to the docs MCP server's card, for agent registries |
+
+A site's title and summary there are read from its own `llms.txt`, which the build writes
+from `site_name` and `site_description`. Those two keys in your `mkdocs.yml` are what the
+root says about your site, and the `[[services]]` block is the only thing to register.
+
+The router also sets the security headers every response on the host carries, serves `.txt`
+and `.md` as UTF-8, and answers `Accept: text/markdown` on a page with that page's
+`index.md`, so a site Worker needs none of it.
+
 #### Keeping a private site private
 
 `cloudflare-docs-require-access: true` makes the deploy ask Cloudflare which Access
@@ -153,6 +175,11 @@ The API token needs the **`Access: Apps` read** permission for this. Cloudflare'
 Cloudflare Workers" template does not include it, and a `403` is reported as *could not tell*
 rather than as "nothing covers it" — the two look alike in the response and collapsing them
 would publish a private site while reporting that it checked.
+
+The repository's name also belongs in `PRIVATE_SITES` in the router's `wrangler.toml`
+before its `[[services]]` block lands. Access gates people, not the router's own reads over
+the binding, so without it the public landing page, `/llms.txt` and the sitemap index would
+list the site with the title and summary from its `llms.txt`.
 
 #### The docs corpus
 

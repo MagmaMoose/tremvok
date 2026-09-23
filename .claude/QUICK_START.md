@@ -32,3 +32,9 @@ make -C terraform down         # stop and discard
 ```bash
 uv run --group docs mkdocs serve    # preview at :8000
 ```
+
+**Docs router (`workers/docs-router/`):**
+```bash
+node --test workers/docs-router/test/router.test.mjs   # or: uv run pytest tests/test_docs_router.py
+npx wrangler@<cloudflare-wrangler-version> deploy --dry-run   # from workers/docs-router: the bindings table is the check
+```
