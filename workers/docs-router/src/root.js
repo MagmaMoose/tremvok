@@ -365,7 +365,7 @@ function renderRobotsTxt() {
 function renderSitemapIndex(repos) {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', // DevSkim: ignore DS137138 - the sitemap namespace is http:// by specification, an identifier that is never fetched
     ...repos.map(
       (repo) => `  <sitemap><loc>${escapeHtml(`${siteUrl(repo)}sitemap.xml`)}</loc></sitemap>`,
     ),
