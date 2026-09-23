@@ -76,7 +76,7 @@
     },
     "workers": {
       "note": "Cloudflare Workers that serve the fleet's documentation. Source and config only — deploying them is a separate, human act. See .claude/decisions/0004.",
-      "workers/docs-router/": "docs.<host>: owns the hostname, dispatches /<repo> to that repo's Worker over a SERVICE BINDING (never an HTTP proxy); route table is derived from env, so wrangler.toml is the only list",
+      "workers/docs-router/": "docs.<host>: owns the hostname, dispatches /<repo> to that repo's Worker over a SERVICE BINDING (never an HTTP proxy); route table is derived from env, so wrangler.toml is the only list. src/root.js serves the host root (landing page, llms.txt, sitemap index, robots.txt, security.txt), src/discovery.js the AI/API catalogs, src/sites.js reads each site's title and summary from its own llms.txt (PRIVATE_SITES are never listed or read), src/headers.js is the one header policy for every response on the host",
       "workers/docs-site/": "the template every repo copies to its own root; assets plus a one-line main, because a service binding needs a fetch handler to dispatch to"
     }
   },
@@ -112,6 +112,7 @@
 "terraform/localstack/smoke.py": "end-to-end invariants against LocalStack \u2014 the only thing that proves the wiring",
     "tests/test_input_targets.py": "the applicability map is generated, complete, and matches action.yml's defaults; every target-only input carries its target's prefix",
     "tests/test_workers_bindings.py": "every wrangler.toml binding appears in `wrangler deploy --dry-run`; fails rather than skips under TREMVOK_REQUIRE_WRANGLER=1",
+    "tests/test_docs_router.py": "runs the router's node:test suite (workers/docs-router/test/router.test.mjs), pins the llms.txt layout the router parses against gen_docs_index.py, and the router's origin against its route; fails rather than skips under TREMVOK_REQUIRE_NODE=1",
     "tests/test_gen_docs_index.py": "the corpus generator: URL shape detected from the built site, pages the build excluded left out, intraword underscores, fenced code excluded, byte-stable output",
     "tests/test_gen_docs_seo.py": "the page-SEO step against a real Material build: unique descriptions, escaped once, extra.seo through INHERIT (LegacyConfig is a Mapping, not a dict), idempotent reruns, existing tags and twins left alone, twin links resolved like MkDocs, step ordering in action.yml",
     "tests/test_notify.py": "notify.py unit tests: Slack payload shape, Teams adaptive card, non-HTTPS refusal, fanout, notify policy matrix",

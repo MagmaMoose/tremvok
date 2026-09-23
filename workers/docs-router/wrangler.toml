@@ -13,6 +13,11 @@
 # takes `name` where every other binding takes `binding`, and an older wrangler pin turns that
 # mistake into a warning nobody reads. `tests/test_workers_bindings.py` asserts every binding
 # in this file shows up in the dry-run output.
+#
+# THE SAME TABLE IS THE HOST ROOT'S LIST OF SITES. The landing page, /llms.txt and
+# /sitemap.xml name every site bound below (except PRIVATE_SITES), each by the title and
+# summary its own llms.txt gives. So a new block here is also a new entry there, with nothing
+# else to edit; see src/root.js.
 
 name = "docs-router"
 main = "src/index.js"
@@ -77,3 +82,16 @@ service = "docs-tremvok"
 #   [[services]]
 #   binding = "NIEVAH"
 #   service = "docs-nievah"
+
+[vars]
+# ROUTED, NEVER LISTED, NEVER READ. Access gates people at the edge; it does not gate this
+# Worker, and a service binding call never passes through it. Bind one of these without this
+# list and the root reads its llms.txt in-process and publishes a private site's name and
+# summary on the public landing page, in /llms.txt and in the sitemap index, past the gate
+# that protects the site itself.
+#
+# Named here BEFORE they are bound, so binding one needs no second edit. A name stays after
+# its site is bound: that is when it starts to matter. A new private docs site belongs here
+# before its [[services]] block lands. Unbound, a name here does nothing at all: the router
+# never echoes this list, and every listing is built from the bindings.
+PRIVATE_SITES = ["caldrith", "dunmir", "nievah", "noctyr"]

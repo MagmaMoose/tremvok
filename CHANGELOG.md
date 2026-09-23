@@ -33,6 +33,38 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - A build that resolves no `site_url` is warned about, because MkDocs then writes no
     canonical links and an empty sitemap. On `cloudflare-docs` the router address stands in
     for the canonical link and `og:url`.
+- **`docs.magmamoose.com/` is a front door, not a 404.** The docs router answers the host root
+  itself: a landing page listing every site with its title and summary (canonical URL, Open
+  Graph and Twitter cards, `CollectionPage`/`ItemList` JSON-LD, light and dark), `/llms.txt`
+  indexing every site's own `llms.txt` and `llms-full.txt`, `/sitemap.xml` as a sitemap index,
+  `/robots.txt` with `Content-Signal`, `Sitemap:` and `Agentmap:` lines, RFC 9116
+  `/.well-known/security.txt` with an `Expires` computed per request, and `/favicon.ico`.
+  - **Nothing is listed twice.** Which sites exist still comes only from the `[[services]]`
+    blocks; what each is called comes from its own `llms.txt`, read over the service binding,
+    cached per isolate for five minutes and capped at 24 reads a request, because one request
+    may invoke at most 32 Workers. A site whose `llms.txt` cannot be read is listed by its
+    repository name, not dropped.
+  - **`PRIVATE_SITES` keeps an Access-gated site off the root once it is bound.** A service
+    binding call never passes through Access, so describing a bound private site would copy
+    its name and summary onto a public page. The private four are named before they are bound.
+  - **Discovery for agents:** `/.well-known/ai-catalog.json` (AI Catalog) and
+    `/.well-known/api-catalog` (RFC 9727) point at the docs MCP server's card, with CORS, an
+    hour of caching and ETags that answer `If-None-Match` with a 304, and
+    `/.well-known/mcp/server-card.json` redirects to the card. The landing page names them in
+    a `Link` header.
+  - **A page answers `Accept: text/markdown` with its `index.md` twin** when that is the first
+    media range and the site publishes one, and falls back to the HTML page when it does not.
+  - **Every response on the host carries HSTS, `nosniff`, `Referrer-Policy`,
+    `X-Frame-Options` and `Permissions-Policy`**, the site Workers' included; the router's own
+    pages add a strict CSP. `.txt` is served as `text/plain; charset=utf-8` and `.md` as
+    `text/markdown; charset=utf-8`, so curly quotes in an `llms.txt` survive a client that
+    does not assume UTF-8.
+  - **A URL without its trailing slash works.** The site Worker's redirect to `/setup/` was
+    relative to its own root, so `/tremvok/setup` landed on the host's 404; the router puts
+    the `/<repo>` prefix back on a path-absolute `Location`.
+  - **One spelling per path.** `/Tremvok/` or `/tremvok//setup/` is a 301 to the canonical
+    path, so duplicate URLs stop serving and the path an Access application is written for is
+    the only one that reaches a site.
 
 - **Google Cloud credentials for `target: terragrunt`.** `gcp-workload-identity-provider`,
   `gcp-service-account` and `gcp-project-id` federate this run's GitHub OIDC token with a
@@ -189,6 +221,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     refused, because that package deploys cleanly and then 404s on every route.
   - A pull request publishes nothing unless `functions-slot` is set: a Linux Consumption plan
     has no deployment slots, so there is no destination that does not take production traffic.
+
+### Fixed
+
+- **A large Terragrunt plan comment was never posted.** `notify-pr.sh` handed the whole request
+  to `curl` as one argument, and a plan across many stacks is past the kernel's 128 KiB cap on a
+  single argument once JSON-escaped: the post died with `Argument list too long` and the run said
+  only "could not post the pull-request comment". The request now reaches `curl` as a file and
+  the body reaches `jq` on stdin. The two write calls also pass `--fail`, so a post GitHub
+  refuses is a warning rather than a logged success.
+- **The plan comment fits GitHub's 65,536-character limit.** Excerpts share `COMMENT_BUDGET`
+  (60,000 bytes) once the table and the apply section have taken theirs, and below 400 bytes each
+  they are left out for a pointer to the run. A stack with no changes gets its table row and no
+  excerpt, and terminal colour codes are stripped before an excerpt is measured. `notify-pr.sh`
+  cuts any other body that is still too long, and says so in the comment.
 
 ## [2.0.0]
 
