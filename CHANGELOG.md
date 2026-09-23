@@ -198,6 +198,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - A pull request publishes nothing unless `functions-slot` is set: a Linux Consumption plan
     has no deployment slots, so there is no destination that does not take production traffic.
 
+### Fixed
+
+- **A large Terragrunt plan comment was never posted.** `notify-pr.sh` handed the whole request
+  to `curl` as one argument, and a plan across many stacks is past the kernel's 128 KiB cap on a
+  single argument once JSON-escaped: the post died with `Argument list too long` and the run said
+  only "could not post the pull-request comment". The request now reaches `curl` as a file and
+  the body reaches `jq` on stdin. The two write calls also pass `--fail`, so a post GitHub
+  refuses is a warning rather than a logged success.
+- **The plan comment fits GitHub's 65,536-character limit.** Excerpts share `COMMENT_BUDGET`
+  (60,000 bytes) once the table and the apply section have taken theirs, and below 400 bytes each
+  they are left out for a pointer to the run. A stack with no changes gets its table row and no
+  excerpt, and terminal colour codes are stripped before an excerpt is measured. `notify-pr.sh`
+  cuts any other body that is still too long, and says so in the comment.
+
 ## [2.0.0]
 
 Released as v1.0.26 and retagged: the breaking changes below are v2, and were only ever
