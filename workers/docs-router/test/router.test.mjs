@@ -416,7 +416,7 @@ describe("root documents", () => {
     const lines = body.split("\n");
     assert.equal(lines[0], "# Magma Moose documentation");
     assert.match(lines[2], /^> \S/);
-    assert.ok(body.includes("https://mcp.magmamoose.com/"));
+    assert.match(body, /^The same documentation is searchable over MCP at https:\/\/mcp\.magmamoose\.com\/: /m);
     const site = "https://docs.magmamoose.com/tremvok/";
     assert.ok(
       lines.includes(
