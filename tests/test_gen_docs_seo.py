@@ -36,8 +36,6 @@ from scripts.gen_docs_seo import (
 ROOT = Path(__file__).resolve().parents[1]
 SITE_URL = "https://docs.example.test/widget/"
 
-pytest.importorskip("mkdocs", reason="the docs toolchain is the dev dependency group `docs`")
-
 
 # --------------------------------------------------------------------------- a real site
 
@@ -81,6 +79,7 @@ nav:
   - Guides:
       - guides/index.md
       - Deploying: guides/deploy.md
+      - Reference: guides/reference.md
 """
 
 PAGES = {
@@ -112,6 +111,8 @@ PAGES = {
         "A deploy is one push to the default branch once the job is in place, and nothing else.\n"
         "\n## Rolling back\n\nRevert the commit and push again.\n"
     ),
+    # Nothing but code: no paragraph of prose to describe it with.
+    "guides/reference.md": "# Reference\n\n```text\nwidget --help\n```\n",
 }
 
 
@@ -128,6 +129,9 @@ def write_repo(root: Path, *, child: str = CHILD, base: str = BASE) -> Path:
 
 
 def mkdocs_build(root: Path) -> Path:
+    # mkdocs-material is in the dev group, so this skips nothing under `uv run`. Only the
+    # tests that build a site need it; the parsing, clipping and link tests run without.
+    pytest.importorskip("material", reason="mkdocs-material is in the dev dependency group")
     subprocess.run(
         [sys.executable, "-m", "mkdocs", "build", "--strict", "--quiet", "--site-dir", "site"],
         cwd=root,
@@ -421,6 +425,33 @@ def test_a_missing_site_directory_is_a_hard_error(tmp_path: Path, capsys) -> Non
     assert "no built site" in capsys.readouterr().err
 
 
+def test_a_page_with_no_prose_is_described_by_where_it_sits(repo: Path, capsys) -> None:
+    """Better than the site's sentence, and unique, because the nav path to a page is."""
+    assert run(repo) == 0
+    assert description(repo, "guides/reference/index.html") == (
+        "Widget documentation: Guides / Reference."
+    )
+    # Named in the log, so a page that needs an opening sentence is not found by accident.
+    out = capsys.readouterr().out
+    assert "no paragraph of prose" in out
+    assert "guides/reference.md" in out
+
+
+def test_no_config_is_a_hard_error(tmp_path: Path, capsys) -> None:
+    (tmp_path / "site").mkdir()
+    assert run(tmp_path) == 1
+    assert "no mkdocs.yml" in capsys.readouterr().err
+
+
+def test_a_site_with_no_page_for_any_source_is_a_hard_error(tmp_path: Path, capsys) -> None:
+    """Pointed at the wrong directory, nothing matches. Say so rather than succeed at nothing."""
+    pytest.importorskip("material", reason="mkdocs-material is in the dev dependency group")
+    write_repo(tmp_path)
+    (tmp_path / "site").mkdir()
+    assert run(tmp_path) == 1
+    assert "has no page for any markdown file" in capsys.readouterr().err
+
+
 # --------------------------------------------------------------------------- descriptions
 
 ARTICLE = """
@@ -442,6 +473,30 @@ def candidates(body: str) -> list[str]:
 def test_only_the_article_is_read() -> None:
     assert candidates("<p>The page's own opening sentence, which is the one to use.</p>") == [
         "The page's own opening sentence, which is the one to use."
+    ]
+
+
+def test_a_line_break_is_a_space() -> None:
+    assert candidates("<p>A line that breaks here<br>and carries on for a while after it.</p>") == [
+        "A line that breaks here and carries on for a while after it."
+    ]
+
+
+def test_another_theme_is_read_by_its_main_region() -> None:
+    """The `mkdocs` theme has no <article>; its content is `role="main"`."""
+    document = (
+        "<html><body><nav><p>Navigation paragraph with plenty of words, never prose.</p></nav>"
+        '<div role="main"><p>The content of the page, in a theme without an article.</p></div>'
+        "</body></html>"
+    )
+    assert description_candidates(scan_html(document).prose()) == [
+        "The content of the page, in a theme without an article."
+    ]
+    bare = (
+        "<html><body><p>No landmarks at all, so every paragraph is a candidate.</p></body></html>"
+    )
+    assert description_candidates(scan_html(bare).prose()) == [
+        "No landmarks at all, so every paragraph is a candidate."
     ]
 
 
