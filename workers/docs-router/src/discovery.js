@@ -60,8 +60,12 @@ export const DISCOVERY_LINKS = [
 
 /**
  * The AI Catalog. `displayName` and `description` restate the card's, which the catalog spec
- * says to omit and ARD's validator asks for; they are kept short and generic so that they
- * cannot drift into disagreeing with it.
+ * says to omit and ARD's validator asks for.
+ *
+ * THE SAME ENTRY MagmaMoose/mcp PUBLISHES at mcp.magmamoose.com/.well-known/ai-catalog.json,
+ * field for field, host included: two hosts describing one server must not describe it two
+ * ways, or a registry that crawls both holds two records that disagree. Change it there and
+ * here together; the test pins this copy.
  */
 export function aiCatalog() {
   return {
@@ -70,7 +74,7 @@ export function aiCatalog() {
       displayName: "Magma Moose",
       identifier: "magmamoose.com",
       documentationUrl: `${ORIGIN}/`,
-      logoUrl: "https://www.magmamoose.com/assets/favicon.svg",
+      logoUrl: "https://www.magmamoose.com/assets/apple-touch-icon.png",
     },
     entries: [
       {
@@ -85,7 +89,7 @@ export function aiCatalog() {
           "How does Chargate fail a pull request only on the security findings it introduces?",
           "How do I publish MkDocs documentation to Cloudflare Workers with Tremvok?",
           "How does Diatreme version a release and promote a container image?",
-          "How does Ponvara send High and Critical DefectDojo findings to GitHub issues?",
+          "Which Magma Moose GitHub Action already does a CI step I need, and what does it not cover?",
         ],
       },
     ],

@@ -507,15 +507,40 @@ describe("discovery", () => {
     assert.match(res.headers.get("etag"), /^"[0-9a-f]{32}"$/);
     const catalog = await res.json();
     assert.equal(catalog.specVersion, "1.0");
-    assert.equal(catalog.host.displayName, "Magma Moose");
     assert.equal(catalog.entries.length, 1);
     const [entry] = catalog.entries;
-    assert.equal(entry.identifier, "urn:air:magmamoose.com:mcp:docs");
-    assert.equal(entry.type, "application/mcp-server-card+json");
-    assert.equal(entry.url, "https://mcp.magmamoose.com/server-card");
-    assert.ok(entry.displayName);
     assert.ok(entry.description.length >= 1 && entry.description.length <= 100);
     assert.ok(entry.representativeQueries.length >= 2 && entry.representativeQueries.length <= 5);
+  });
+
+  test("the AI Catalog says what MagmaMoose/mcp's own catalog says about the same server", async () => {
+    // Field for field the entry mcp.magmamoose.com/.well-known/ai-catalog.json publishes. A
+    // registry crawling both hosts must not end up with two records of one server that
+    // disagree, so a change to either side has to be made on both.
+    const catalog = await (await get(fleet(), "/.well-known/ai-catalog.json")).json();
+    assert.deepEqual(catalog.host, {
+      displayName: "Magma Moose",
+      identifier: "magmamoose.com",
+      documentationUrl: "https://docs.magmamoose.com/",
+      logoUrl: "https://www.magmamoose.com/assets/apple-touch-icon.png",
+    });
+    assert.deepEqual(catalog.entries, [
+      {
+        identifier: "urn:air:magmamoose.com:mcp:docs",
+        displayName: "Magma Moose documentation",
+        type: "application/mcp-server-card+json",
+        url: "https://mcp.magmamoose.com/server-card",
+        description: "Search and read the public docs for Magma Moose's open-source developer tools. Read-only.",
+        tags: ["documentation", "github-actions", "ci-cd", "deployment", "security"],
+        representativeQueries: [
+          "How do I gate a pull request on the coverage of the lines it changed with Brimyr?",
+          "How does Chargate fail a pull request only on the security findings it introduces?",
+          "How do I publish MkDocs documentation to Cloudflare Workers with Tremvok?",
+          "How does Diatreme version a release and promote a container image?",
+          "Which Magma Moose GitHub Action already does a CI step I need, and what does it not cover?",
+        ],
+      },
+    ]);
   });
 
   test("the API catalog is an RFC 9727 linkset that names itself, HEAD included", async () => {
