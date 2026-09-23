@@ -1391,7 +1391,7 @@ dev = [
     { name = "boto3" },
     { name = "cryptography" },
     { name = "httpx" },
-    { name = "mkdocs-material", specifier = ">=9.5" },
+    { name = "mkdocs-material", specifier = "==9.7.7" },
     { name = "moto", extras = ["dynamodb", "s3", "ssm"] },
     { name = "mypy" },
     { name = "pytest", specifier = ">=8" },
@@ -1400,7 +1400,7 @@ dev = [
     { name = "shellcheck-py" },
     { name = "uvicorn" },
 ]
-docs = [{ name = "mkdocs-material", specifier = ">=9.5" }]
+docs = [{ name = "mkdocs-material", specifier = "==9.7.7" }]
 
 [[package]]
 name = "typing-extensions"
