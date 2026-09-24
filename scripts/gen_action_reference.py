@@ -39,6 +39,7 @@ TARGET_SUMMARY = {
     "ansible": "Run a playbook over SSH, then prove it is idempotent",
     "cloudflare-workers": "Deploy a Worker and its static assets with Wrangler",
     "azure-functions-zip": "Publish a zip to an Azure Function App, then wait for it to answer",
+    "azure-apim-policy": "Publish policy documents to an existing API Management API, all or nothing",
 }
 
 _missing = set(TARGETS) - set(TARGET_SUMMARY)
@@ -84,6 +85,11 @@ PERMISSIONS = {
         ("pull-requests: write", "the sticky preview comment"),
     ],
     "azure-functions-zip": [
+        ("contents: read", "checkout"),
+        ("id-token: write", "sign in to Azure by OIDC"),
+        ("pull-requests: write", "the sticky preview comment"),
+    ],
+    "azure-apim-policy": [
         ("contents: read", "checkout"),
         ("id-token: write", "sign in to Azure by OIDC"),
         ("pull-requests: write", "the sticky preview comment"),

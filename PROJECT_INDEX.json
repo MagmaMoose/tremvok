@@ -1,12 +1,12 @@
 {
   "name": "tremvok",
-  "description": "One composite GitHub action with eight deployment targets (github-pages, cloudflare-docs, cloudflare-workers, azure-functions-zip, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
+  "description": "One composite GitHub action with nine deployment targets (github-pages, cloudflare-docs, cloudflare-workers, azure-functions-zip, azure-apim-policy, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
   "generated": "2026-09-23",
   "generated_for": "agents — read this before grepping the tree",
   "surfaces": {
     "action": {
       "entrypoint": "action.yml",
-      "note": "Glue only. One action, eight targets selected by `target`; every decision lives in scripts/, which is bats-tested and bash 3.2-compatible. An input belonging to another target is a hard error, checked first, before the checkout.",
+      "note": "Glue only. One action, nine targets selected by `target`; every decision lives in scripts/, which is bats-tested and bash 3.2-compatible. An input belonging to another target is a hard error, checked first, before the checkout.",
       "scripts": {
         "scripts/access-covers.sh": "target: cloudflare-docs. refuses to publish unless a Cloudflare Access application covers <host>/<path>; covered / not covered / could-not-tell are never collapsed",
         "scripts/approval-gate.sh": "independent approvers; exits non-zero rather than reporting 'nobody'",
@@ -16,6 +16,7 @@
         "scripts/build-git-credentials.sh": "targets that build: private-git-host rewrites into GIT_CONFIG_COUNT/KEY_n/VALUE_n for this job only, never ~/.gitconfig; tokens masked on receipt, bad lines named by index and host",
         "scripts/collect-outcome.sh": "one status every sink shares; a plan-only run is a success, a skip is a skip",
         "scripts/deploy-ansible.sh": "pinned ansible over SSH; secrets to 0600 files under RUNNER_TEMP; second check-mode run proves idempotence",
+        "scripts/deploy-azure-apim-policy.sh": "target: azure-apim-policy. az rest PUT of each policy document into an API that already exists; reads every scope first and puts it back if any document is refused; refuses a document for a missing operation",
         "scripts/deploy-azure-functions-zip.sh": "target: azure-functions-zip. config-zip, then poll the app until it answers; the az exit code is corroborated against WEBSITE_RUN_FROM_PACKAGE because it lies; refuses a package whose functions.metadata/.azurefunctions are not at the root",
         "scripts/deploy-cloudflare-docs.sh": "target: cloudflare-docs. MkDocs site -> Workers Static Assets; no preview destination (workers_dev=false), refuses an empty site, and composes the URL from the router's host/path because Wrangler has none to print",
         "scripts/gen_docs_index.py": "target: cloudflare-docs. the docs corpus from a built MkDocs site: index/<repo>.json, llms.txt, llms-full.txt; canonical URLs from the router address or site_url",

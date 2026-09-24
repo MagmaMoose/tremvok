@@ -14,6 +14,7 @@ reaches you through `@v2` rather than through nine copy-paste edits.
 | [`ansible.yml`](ansible.yml) | `ansible` | a fleet configured over SSH |
 | [`cloudflare-workers.yml`](cloudflare-workers.yml) | `cloudflare-workers` | a Worker and its static assets, published with Wrangler |
 | [`azure-functions.yml`](azure-functions.yml) | `azure-functions-zip` | a .NET function on an Azure Function App |
+| [`azure-apim-policy.yml`](azure-apim-policy.yml) | `azure-apim-policy` | policies on an existing Azure API Management API |
 
 They differ only in `target:` and that target's inputs. Everything shared (`mode`,
 `verify-url`, the notification sinks) is spelled the same way in all seven, which is the
@@ -25,7 +26,7 @@ Four conventions they inherit, so they leave the per-repo file:
   minutes are metered on private repositories.
 - **Never cancel a production deploy; do cancel a superseded preview.** That is what the
   `cancel-in-progress` expression says.
-- `permissions: id-token: write` on the AWS targets and on `azure-functions-zip`, because
+- `permissions: id-token: write` on the AWS targets and on the two Azure targets, because
   the whole point is that no repository stores a cloud key — and for Azure, no publish
   profile either. `cloudflare-workers` needs none: it authenticates with an API token, and
   touches no AWS or Azure account.

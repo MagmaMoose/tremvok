@@ -80,6 +80,7 @@ SHARED_INPUTS_ONLY = {"github-pages"}
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
+    "azure-apim-policy",
     ],
 )
 def test_every_target_owns_at_least_one_input(target):
@@ -119,6 +120,8 @@ def test_target_specific_inputs_are_named_for_their_target():
         # the cloud rather than to this one target, and a second Azure target would share it
         # unchanged. `functions-` is the target's own.
         "azure-functions-zip": ("functions-", "azure-", "artifact-"),
+        # `apim-` is the target's own, as `functions-` is the other Azure target's.
+        "azure-apim-policy": ("apim-", "azure-", "artifact-"),
     }
     data = json.loads(MAP.read_text())["inputs"]
     wrong = []

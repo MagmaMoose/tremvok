@@ -16,7 +16,7 @@ branding:
 # with `s3-bucket` set is a mistake, and it is reported as one.
 #
 # Input names carry their target as a prefix (`pages-`, `s3-`, `cloudfront-`,
-# `lambda-`, `terragrunt-`, `ansible-`, `functions-`), with `aws-` and `azure-` for what
+# `lambda-`, `terragrunt-`, `ansible-`, `functions-`, `apim-`), with `aws-` and `azure-` for what
 # each cloud's targets share, `build-` for what the two targets that run a build share,
 # and no prefix for what every target shares. The mapping is generated from the
 # descriptions below into scripts/lib/input-targets.json, which is what the validator
@@ -39,6 +39,8 @@ inputs:
         cloudflare-docs     Build an MkDocs site strictly and publish it to Cloudflare
                             Workers Static Assets, behind the docs router.
         azure-functions-zip  Publish a zip to an Azure Function App, then wait for it to answer.
+        azure-apim-policy    Publish policy documents to an existing Azure API Management API,
+                             putting the previous ones back if any is refused.
     required: true
 
   mode:
@@ -96,7 +98,7 @@ inputs:
   # ── Azure (every target that talks to Azure) ─────────────────────────────────
   azure-client-id:
     description: |
-      terragrunt, azure-functions-zip: client id of the Entra ID app registration this run
+      terragrunt, azure-functions-zip, azure-apim-policy: client id of the Entra ID app registration this run
       signs in as, using the run's GitHub OIDC token. The Azure counterpart of
       `aws-role-to-assume`, and preferred over a stored publish profile or client secret for
       the same reasons: the session is minted per run and expires, and the app registration's
@@ -113,12 +115,12 @@ inputs:
     default: ''
 
   azure-tenant-id:
-    description: 'terragrunt, azure-functions-zip: Entra ID tenant the app registration lives in. Required whenever `azure-client-id` is set.'
+    description: 'terragrunt, azure-functions-zip, azure-apim-policy: Entra ID tenant the app registration lives in. Required whenever `azure-client-id` is set.'
     required: false
     default: ''
 
   azure-subscription-id:
-    description: 'terragrunt, azure-functions-zip: subscription to select after login. Required whenever `azure-client-id` is set. On terragrunt it is the CLI default a stack inherits when its own provider block names no subscription.'
+    description: 'terragrunt, azure-functions-zip, azure-apim-policy: subscription to select after login. Required whenever `azure-client-id` is set. On terragrunt it is the CLI default a stack inherits when its own provider block names no subscription.'
     required: false
     default: ''
 
@@ -273,7 +275,7 @@ inputs:
 
   # ── targets: s3-cloudfront, lambda-zip ───────────────────────────────────
   artifact-path:
-    description: 's3-cloudfront, lambda-zip, cloudflare-workers, azure-functions-zip: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip and azure-functions-zip.'
+    description: 's3-cloudfront, lambda-zip, cloudflare-workers, azure-functions-zip, azure-apim-policy: the built artifact, a directory for s3-cloudfront, a .zip for lambda-zip and azure-functions-zip, and for azure-apim-policy a directory of policy documents: `api.xml` for the API scope and `<operation-id>.xml` for each operation.'
     required: false
     default: ''
 
@@ -889,6 +891,38 @@ inputs:
     required: false
     default: '10'
 
+  # ── target: azure-apim-policy ────────────────────────────────────────────
+  apim-service-name:
+    description: 'azure-apim-policy: the API Management instance to publish to. Required for this target.'
+    required: false
+    default: ''
+
+  apim-resource-group:
+    description: 'azure-apim-policy: resource group the instance lives in. Required for this target.'
+    required: false
+    default: ''
+
+  apim-api-id:
+    description: |
+      azure-apim-policy: the API the documents are published to, by its id (the name in its
+      resource id, not its display name). Required for this target.
+
+      The API and its operations must already exist. This target publishes behaviour into them,
+      the way azure-functions-zip publishes code into an existing Function App, and a document
+      named after an operation the API does not have is refused before anything is published.
+    required: false
+    default: ''
+
+  apim-policy-format:
+    description: |
+      azure-apim-policy: how the documents are written. `rawxml` (default) is what the portal's
+      editor shows: policy expressions unescaped, `@(context.Request.Headers.GetValueOrDefault("x", ""))`
+      as it reads. `xml` is strict XML, with every quote and angle bracket inside an expression
+      entity-escaped. Mixing them up fails at publish, when API Management compiles the
+      expressions.
+    required: false
+    default: 'rawxml'
+
   # ── Verification ─────────────────────────────────────────────────────────
   verify-url:
     description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green.'
@@ -995,7 +1029,7 @@ outputs:
     value: ${{ steps.resolve.outputs.environment }}
   url:
     description: 'URL of what was deployed, when the target produces one.'
-    value: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
+    value: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url }}
   deployed:
     description: 'true when something was actually deployed (false for a skip).'
     value: ${{ steps.outcome.outputs.deployed }}
@@ -1018,8 +1052,8 @@ outputs:
     description: 'github-pages: the toolchain actually used, uv or pip.'
     value: ${{ steps.pages-detect.outputs.toolchain }}
   version-id:
-    description: 'lambda-zip, cloudflare-workers, azure-functions-zip: the published version. A Lambda version number, a Worker Version ID, or the package sha256 — Azure exposes no per-deploy content hash of its own.'
-    value: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
+    description: 'lambda-zip, cloudflare-workers, azure-functions-zip, azure-apim-policy: the published version. A Lambda version number, a Worker Version ID, the package sha256, or the sha256 of the policy set — Azure exposes no per-deploy content hash of its own.'
+    value: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id || steps.deploy-azure-apim.outputs.version-id }}
   stacks:
     description: 'terragrunt: how many stacks this run discovered.'
     value: ${{ steps.deploy-terragrunt.outputs.stacks }}
@@ -1472,7 +1506,7 @@ runs:
         ROLE_DURATION_SECONDS: ${{ inputs.aws-role-duration-seconds }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/assume-role.sh"
 
-    # ── targets: terragrunt, azure-functions-zip ─────────────────────────────
+    # ── targets: terragrunt, azure-functions-zip, azure-apim-policy ─────────
     # The Azure counterpart of the assume-role step, gated on the input rather than on a
     # target for the same reason that one is: the question "has the caller asked for a
     # session?" is the same question whichever target consumes it.
@@ -1696,6 +1730,21 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-azure-functions-zip.sh"
 
+    - name: Deploy, API Management policies
+      id: deploy-azure-apim
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'azure-apim-policy'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SERVICE_NAME: ${{ inputs.apim-service-name }}
+        RESOURCE_GROUP: ${{ inputs.apim-resource-group }}
+        API_ID: ${{ inputs.apim-api-id }}
+        ARTIFACT_PATH: ${{ inputs.artifact-path }}
+        POLICY_FORMAT: ${{ inputs.apim-policy-format }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-azure-apim-policy.sh"
+
     # ── Verify, then tell the humans ─────────────────────────────────────────
     - name: Verify it actually went live
       id: verify
@@ -1723,6 +1772,7 @@ runs:
         TG_DEPLOYED: ${{ steps.deploy-terragrunt.outputs.deployed }}
         CF_DEPLOYED: ${{ steps.deploy-cloudflare.outputs.deployed }}
         AZ_DEPLOYED: ${{ steps.deploy-azure-functions.outputs.deployed }}
+        APIM_DEPLOYED: ${{ steps.deploy-azure-apim.outputs.deployed }}
         ANSIBLE_DEPLOYED: ${{ steps.deploy-ansible.outputs.deployed }}
         JOB_STATUS: ${{ job.status }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/collect-outcome.sh"
@@ -1739,8 +1789,8 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         COMMENT_KEY: ${{ inputs.target }}-${{ steps.resolve.outputs.environment }}
         STATUS: ${{ steps.outcome.outputs.status }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
-        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id || steps.deploy-azure-apim.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         MODE: ${{ steps.resolve.outputs.mode }}
         TARGET: ${{ inputs.target }}
@@ -1759,8 +1809,8 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
-        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id || steps.deploy-azure-apim.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/notify-webhook.sh"
@@ -1776,8 +1826,8 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url }}
-        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url }}
+        VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id || steps.deploy-azure-apim.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/record-deployment.sh"

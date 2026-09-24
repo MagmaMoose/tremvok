@@ -19,6 +19,7 @@ edit_uri: edit/main/docs/
 nav:
   - Home: index.md
   - Setup: setup.md
+  - 'Azure: a Function or API Management?': azure-functions-or-api-management.md
   - Agent readiness: agent-readiness.md
   - Reference:
       # action-reference.md is GENERATED from action.yml by scripts/gen_action_reference.py,

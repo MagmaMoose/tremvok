@@ -499,6 +499,64 @@ destination that does not take production traffic, and a Linux Consumption plan 
 so on Consumption a preview validates the package and stops, saying why. On Premium or
 Dedicated, set `functions-slot` and previews go to the slot.
 
+### `azure-apim-policy`
+
+Which Azure target fits a job is its own page:
+[a Function or API Management?](azure-functions-or-api-management.md)
+
+```yaml
+permissions: { contents: read, id-token: write, pull-requests: write }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: azure-apim-policy
+          artifact-path: apim/webhook        # api.xml and <operation-id>.xml
+          apim-service-name: ${{ vars.APIM_SERVICE_NAME }}
+          apim-resource-group: ${{ vars.APIM_RESOURCE_GROUP }}
+          apim-api-id: webhook
+          azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          verify-url: https://example.azure-api.net/webhook/receive
+          verify-method: POST
+          verify-status: '401'
+```
+
+**The API is infrastructure; the policy is behaviour.** Create the instance, the API and its
+operations with your infrastructure code. This target publishes the documents in
+`artifact-path`: `api.xml` to the API scope and `<operation-id>.xml` to each operation. A
+document named after an operation the API does not have is refused before anything is
+published, rather than creating an operation nobody declared. Keep a policy published here out
+of your infrastructure code, or the two will overwrite each other.
+
+**The same sign-in as `azure-functions-zip`**, and the same federated credential. The service
+principal needs `API Management Service Contributor` on the instance, or a custom role with
+read on the service, its APIs and operations, and write on
+`Microsoft.ApiManagement/service/apis/policies` and
+`Microsoft.ApiManagement/service/apis/operations/policies`.
+
+**All or nothing.** API Management compiles a policy, the XML and every C# expression in it,
+only when it is published; there is no dry run. So Tremvok reads each scope's current policy
+first, and if any document is refused it puts back the scopes it had already replaced (or clears
+those that had none) and fails, naming the document and quoting API Management's reason.
+
+**`rawxml` by default.** Write expressions the way the portal shows them, quotes and angle
+brackets unescaped. Set `apim-policy-format: xml` for documents written as strict XML.
+
+**Verify the behaviour, not the publish.** An accepted policy is live on the gateway within
+seconds, so the publish proves little. Assert what the route does: for a webhook receiver, an
+unsigned `POST` answering `401`. It needs `verify-method: POST`, because an operation that binds
+POST answers a GET with `404` whatever its policy says.
+
+**A pull request publishes nothing.** A policy's only destination that takes no production
+traffic is an API revision, which this target does not create. A preview checks the documents
+and stops, saying so.
+
 ### `s3-cloudfront` and `lambda-zip`
 
 See [`examples/`](https://github.com/MagmaMoose/tremvok/tree/main/examples). Both need
