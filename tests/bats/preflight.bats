@@ -72,6 +72,23 @@ setup() { setup_common; unset AWS_ACCESS_KEY_ID AWS_WEB_IDENTITY_TOKEN_FILE; }
   [[ "$(output_value skip-reason)" == *"azure-client-id"* ]]
 }
 
+@test "an azure-apim-policy run with no Azure credential skips with a reason" {
+  HOME="$WORK" IS_FORK=false TARGET=azure-apim-policy AZURE_CLIENT_ID= AZURE_SUBSCRIPTION_ID= \
+    run bash "${SCRIPTS}/preflight.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value skip)" = "true" ]
+  [[ "$(output_value skip-reason)" == *"no Azure credential"* ]]
+  [[ "$(output_value skip-reason)" == *"azure-apim-policy"* ]]
+}
+
+@test "an azure-apim-policy run with a client id proceeds" {
+  HOME="$WORK" IS_FORK=false TARGET=azure-apim-policy \
+    AZURE_CLIENT_ID=11111111-2222-3333-4444-555555555555 \
+    run bash "${SCRIPTS}/preflight.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value skip)" = "false" ]
+}
+
 @test "an azure-functions-zip run with a client id proceeds" {
   HOME="$WORK" IS_FORK=false TARGET=azure-functions-zip \
     AZURE_CLIENT_ID=11111111-2222-3333-4444-555555555555 \

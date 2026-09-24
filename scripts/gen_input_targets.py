@@ -38,6 +38,7 @@ TARGETS = [
     "ansible",
     "cloudflare-workers",
     "azure-functions-zip",
+    "azure-apim-policy",
 ]
 
 # The opening `<targets>:` marker. Bounded to one line so a description whose *body*

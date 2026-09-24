@@ -9,6 +9,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`target: azure-apim-policy`**: publish a directory of policy documents (`api.xml` for the API
+  scope, `<operation-id>.xml` per operation) into an Azure API Management API that already
+  exists. All or nothing: API Management compiles a policy only when it is published, so the
+  current policy at every scope is read first, and if any document is refused the scopes already
+  replaced are put back (or cleared, where they had none). A document for an operation the API
+  does not have is refused before anything is published, and a pull request publishes nothing.
+  New inputs `apim-service-name`, `apim-resource-group`, `apim-api-id` and `apim-policy-format`
+  (`rawxml` by default); the `azure-` sign-in inputs and `artifact-path` apply to it too. A new
+  page, *Azure: a Function or API Management?*, says when to use it rather than
+  `azure-functions-zip`.
 - **Docs sites are agent-ready by default.** A step after the page metadata and the corpus
   (`scripts/gen_docs_agents.py`, on by default as `pages-agent-ready`) writes into the built
   site, for `github-pages` and `cloudflare-docs` alike:

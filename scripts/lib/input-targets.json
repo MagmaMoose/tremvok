@@ -7,7 +7,8 @@
     "terragrunt",
     "ansible",
     "cloudflare-workers",
-    "azure-functions-zip"
+    "azure-functions-zip",
+    "azure-apim-policy"
   ],
   "inputs": {
     "mode": {
@@ -19,7 +20,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "auto"
     },
@@ -32,7 +34,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -45,7 +48,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "."
     },
@@ -58,7 +62,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "true"
     },
@@ -71,7 +76,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "false"
     },
@@ -102,21 +108,24 @@
     "azure-client-id": {
       "targets": [
         "terragrunt",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
     "azure-tenant-id": {
       "targets": [
         "terragrunt",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
     "azure-subscription-id": {
       "targets": [
         "terragrunt",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -235,7 +244,8 @@
         "s3-cloudfront",
         "lambda-zip",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -703,6 +713,30 @@
       ],
       "default": "10"
     },
+    "apim-service-name": {
+      "targets": [
+        "azure-apim-policy"
+      ],
+      "default": ""
+    },
+    "apim-resource-group": {
+      "targets": [
+        "azure-apim-policy"
+      ],
+      "default": ""
+    },
+    "apim-api-id": {
+      "targets": [
+        "azure-apim-policy"
+      ],
+      "default": ""
+    },
+    "apim-policy-format": {
+      "targets": [
+        "azure-apim-policy"
+      ],
+      "default": "rawxml"
+    },
     "verify-url": {
       "targets": [
         "github-pages",
@@ -712,7 +746,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -725,7 +760,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -738,7 +774,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -751,7 +788,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "GET"
     },
@@ -764,7 +802,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "200"
     },
@@ -777,7 +816,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "6"
     },
@@ -790,7 +830,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "10"
     },
@@ -803,7 +844,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "always"
     },
@@ -816,7 +858,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "auto"
     },
@@ -829,7 +872,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -842,7 +886,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -855,7 +900,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": ""
     },
@@ -868,7 +914,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "tremvok"
     },
@@ -881,7 +928,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "${{ github.token }}"
     },
@@ -894,7 +942,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "false"
     },
@@ -907,7 +956,8 @@
         "terragrunt",
         "ansible",
         "cloudflare-workers",
-        "azure-functions-zip"
+        "azure-functions-zip",
+        "azure-apim-policy"
       ],
       "default": "false"
     }

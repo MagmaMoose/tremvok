@@ -44,7 +44,7 @@ elif [[ "$TARGET" == "s3-cloudfront" || "$TARGET" == "lambda-zip" ]] \
   # with a message naming the provider, and that is the better message of the two.
   skip=true
   reason="no AWS credential is available for target: ${TARGET}. Set aws-role-to-assume (OIDC, preferred) or configure credentials in an earlier step. Nothing was deployed."
-elif [[ "$TARGET" == "azure-functions-zip" ]] \
+elif [[ "$TARGET" == "azure-functions-zip" || "$TARGET" == "azure-apim-policy" ]] \
   && [[ -z "$AZURE_CLIENT_ID" && -z "$AZURE_SUBSCRIPTION_ID" && ! -d "${HOME:-/nonexistent}/.azure" ]]; then
   # The Azure equivalent, and the ambient case is a directory rather than a variable: a
   # session `az login` created in an earlier step lives in ~/.azure, not in the environment.
