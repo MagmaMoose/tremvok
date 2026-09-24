@@ -917,9 +917,10 @@ inputs:
     description: |
       azure-apim-policy: how the documents are written. `rawxml` (default) is what the portal's
       editor shows: policy expressions unescaped, `@(context.Request.Headers.GetValueOrDefault("x", ""))`
-      as it reads. `xml` is strict XML, with every quote and angle bracket inside an expression
-      entity-escaped. Mixing them up fails at publish, when API Management compiles the
-      expressions.
+      as it reads. `xml` is strict XML: every quote and angle bracket inside an expression must
+      be entity-escaped. `rawxml` takes an expression either way, so it is the safe default. A
+      document API Management cannot compile is refused at publish, because it compiles every
+      expression then.
     required: false
     default: 'rawxml'
 

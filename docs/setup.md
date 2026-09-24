@@ -546,7 +546,9 @@ first, and if any document is refused it puts back the scopes it had already rep
 those that had none) and fails, naming the document and quoting API Management's reason.
 
 **`rawxml` by default.** Write expressions the way the portal shows them, quotes and angle
-brackets unescaped. Set `apim-policy-format: xml` for documents written as strict XML.
+brackets unescaped; entity-escaped ones are accepted too. Set `apim-policy-format: xml` only
+for documents written as strict XML, where every quote and angle bracket in an expression must
+be escaped.
 
 **Verify the behaviour, not the publish.** An accepted policy is live on the gateway within
 seconds, so the publish proves little. Assert what the route does: for a webhook receiver, an
