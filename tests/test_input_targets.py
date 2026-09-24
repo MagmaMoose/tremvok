@@ -80,7 +80,7 @@ SHARED_INPUTS_ONLY = {"github-pages"}
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-    "azure-apim-policy",
+        "azure-apim-policy",
     ],
 )
 def test_every_target_owns_at_least_one_input(target):
