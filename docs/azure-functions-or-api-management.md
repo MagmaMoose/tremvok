@@ -46,6 +46,21 @@ Linux Consumption retires on 30 September 2028. Create a new Function App on Fle
 - **No preview destination** on the consumption tiers. A pull request publishes nothing unless
   the Function App has a slot.
 
+## What only a live gateway shows
+
+Found by running a webhook receiver's policies on a Consumption instance with a real queue behind
+it, and worth knowing before writing the next one:
+
+- **A publish takes a few seconds to reach the gateway.** Straight after one, a request can still
+  meet the previous policy. Let `verify-attempts` and `verify-delay` cover the gap.
+- **A query value reaches the policy still percent-encoded.** Decode it with
+  `Uri.UnescapeDataString` before escaping it again for an outgoing URL, or `=` becomes `%253D`.
+- **`rawxml` takes an expression escaped or not**, so either spelling of a quote compiles.
+- **`HMACSHA256` and `Body.As<byte[]>(preserveContent: true)` return the request's exact bytes**,
+  non-ASCII text and line breaks included, so a signature over the raw body checks out.
+- **Queue Storage takes plain text.** Base64 is only needed for markup, and changes what every
+  consumer of the queue has to do with a message.
+
 ## In one line each
 
 | The endpoint | Target |
