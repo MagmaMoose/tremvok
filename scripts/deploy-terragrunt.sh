@@ -437,6 +437,7 @@ build_details() { # excerpt-bytes
       excerpt="$(tail -c "$limit" "$plain")"
       # Cut to size, the excerpt opens mid-line; start it on the next whole one.
       if (( $(wc -c <"$plain") > limit )); then excerpt="${excerpt#*$'\n'}"; fi
+      rm -f "$plain"
     else
       excerpt='No plan output was produced; see the workflow run.'
     fi
