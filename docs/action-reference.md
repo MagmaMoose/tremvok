@@ -21,7 +21,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 | `ansible` | Run a playbook over SSH, then prove it is idempotent |
 | `cloudflare-workers` | Deploy a Worker and its static assets with Wrangler |
 | `azure-functions-zip` | Publish a zip to an Azure Function App, then wait for it to answer |
-| `azure-apim-policy` | Publish policy documents to an existing API Management API, all or nothing |
+| `azure-apim-policy` | Publish policy documents to an API Management API, all or nothing |
 
 ## Inputs
 
