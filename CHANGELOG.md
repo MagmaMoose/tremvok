@@ -308,6 +308,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   codes are gone, where one used to sit between `Plan:` and its counts. An excerpt is redacted
   after it is stripped, so a colour code between a credential's name and its value cannot hide
   it from the pattern.
+- **Plan redaction covers the shapes a diff prints a credential in.** An update,
+  `~ client_secret = "old" -> "new"`, posted its new value in the clear. A quoted map key,
+  `"api_token" = "value"`, was not matched at all, and a value with an escaped quote was masked
+  only up to the quote. Tofu already hides what a provider marks sensitive, so this is a
+  credential in tags, app settings or an attribute nothing marked.
 
 ## [2.0.0]
 
