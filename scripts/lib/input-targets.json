@@ -8,7 +8,8 @@
     "ansible",
     "cloudflare-workers",
     "azure-functions-zip",
-    "azure-apim-policy"
+    "azure-apim-policy",
+    "gitops-pr"
   ],
   "inputs": {
     "mode": {
@@ -21,7 +22,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "auto"
     },
@@ -35,7 +37,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": ""
     },
@@ -49,7 +52,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "."
     },
@@ -63,7 +67,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "true"
     },
@@ -77,7 +82,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "false"
     },
@@ -743,6 +749,42 @@
       ],
       "default": "rawxml"
     },
+    "gitops-overlays": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-images": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-tag": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-base": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-branch-prefix": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": "deploy"
+    },
+    "gitops-prereleases": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": "false"
+    },
     "verify-url": {
       "targets": [
         "github-pages",
@@ -753,7 +795,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": ""
     },
@@ -767,7 +810,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": ""
     },
@@ -781,7 +825,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": ""
     },
@@ -795,7 +840,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "GET"
     },
@@ -809,7 +855,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "200"
     },
@@ -823,7 +870,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "6"
     },
@@ -837,7 +885,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "10"
     },
@@ -851,7 +900,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "always"
     },
@@ -865,7 +915,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "auto"
     },
@@ -879,7 +930,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": ""
     },
@@ -893,7 +945,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": ""
     },
@@ -907,7 +960,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": ""
     },
@@ -921,7 +975,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "tremvok"
     },
@@ -935,7 +990,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "${{ github.token }}"
     },
@@ -949,7 +1005,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "false"
     },
@@ -963,7 +1020,8 @@
         "ansible",
         "cloudflare-workers",
         "azure-functions-zip",
-        "azure-apim-policy"
+        "azure-apim-policy",
+        "gitops-pr"
       ],
       "default": "false"
     }

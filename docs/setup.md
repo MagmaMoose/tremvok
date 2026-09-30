@@ -557,6 +557,80 @@ POST answers a GET with `404` whatever its policy says.
 traffic is an API revision, which this target does not create. A preview checks the documents
 and stops, saying so.
 
+### `gitops-pr`
+
+For a service a GitOps controller deploys: Flux or Argo CD applies a kustomize overlay from
+Git, and what changes an environment is a commit to that overlay. This target makes that
+commit a pull request, one environment at a time, instead of letting image automation push
+tags to the branch the cluster reads.
+
+```yaml
+on:
+  release: { types: [published] }
+  push:
+    branches: [main]
+    paths: ['k8s/overlays/acc/**', 'k8s/overlays/prd/**']
+
+permissions: { contents: read }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.DEPLOY_APP_ID }}
+          private-key: ${{ secrets.DEPLOY_APP_PRIVATE_KEY }}
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: gitops-pr
+          mode: deploy
+          gitops-overlays: |
+            k8s/overlays/acc
+            k8s/overlays/prd
+          gitops-images: ghcr.io/acme/app
+          auth-token: ${{ steps.app-token.outputs.token }}
+```
+
+**A release opens the first pull request; a merge opens the next.** On `release: published`
+it moves every image in `gitops-images` to the release's tag in the first overlay, on a branch
+of its own (`deploy/acc/v1.2.3`), and opens a pull request. When that merges, the push starts
+the workflow again: the target finds the merged pull request, reads what it changed in the
+`acc` overlay, and opens exactly that for `prd`. So `prd` only ever gets a build `acc` ran, and
+a tag a reviewer changed on the branch is the one that travels. Prereleases are skipped unless
+`gitops-prereleases: true`, and `gitops-tag` deploys a tag by hand from `workflow_dispatch`.
+
+**An App token, not GITHUB_TOKEN.** A pull request opened with GITHUB_TOKEN starts no workflow,
+so its required checks never report and it can never merge. The App needs contents and pull
+requests write. Its commits are made through the contents API, so they are signed, which a
+signed-commits rule on the base branch requires.
+
+**Only the tag line changes.** The value on each entry's `newTag:` line is rewritten and
+nothing else, so a Flux `# {"$imagepolicy": ...}` marker, comments and blank lines survive and
+the diff is one line per image. An entry is matched by `newName` where it has one, otherwise
+`name`. A digest-pinned entry, one with no `newTag`, and a flow-style entry are refused rather
+than half-edited.
+
+**One open deploy PR per overlay.** A newer tag supersedes the open one (closed, branch
+deleted), a re-run refreshes it, an overlay that already runs the tag gets none, and an overlay
+is never moved backwards: if `prd` runs something newer, or a pull request for a newer tag is
+already open, nothing is opened.
+
+**Turn the image automation off first.** An `ImageUpdateAutomation` writing the same overlay
+commits the tag to the branch and leaves the deploy PR with nothing in it. And if the
+repository's release workflow also runs on push, give it `paths-ignore` for the overlays:
+merging a deploy PR must not cut a release. Diatreme's `deploy-paths` refuses such a release
+before it tags anything, and skips the image build on a pull request that only moves tags.
+
+**Set `mode: deploy`.** `auto` reads a push to anything but the default branch as a mistake,
+and the overlays' branch is often not the default one (`gitops-base: master` in a repository
+whose default is `dev`).
+
+**Verify on the merge, not on the pull request.** Opening a pull request deploys nothing, so
+there is nothing to request yet. The run a merge starts is the one where `verify-url` can ask
+the environment it deployed to. A pull request run deploys nothing and says so.
+
 ### `s3-cloudfront` and `lambda-zip`
 
 See [`examples/`](https://github.com/MagmaMoose/tremvok/tree/main/examples). Both need
