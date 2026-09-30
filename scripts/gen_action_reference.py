@@ -94,7 +94,8 @@ PERMISSIONS = {
         ("contents: read", "checkout"),
         ("id-token: write", "sign in to Azure by OIDC"),
         ("pull-requests: write", "the sticky preview comment"),
-    ],    "gitops-pr": [
+    ],
+    "gitops-pr": [
         ("contents: read", "nothing else: an App token in auth-token opens the deploy PRs"),
     ],
 }

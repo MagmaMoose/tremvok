@@ -86,7 +86,7 @@ while IFS= read -r o; do
     */../*|*/./*) tremvok::fail "gitops-overlays: '${o}' must not contain '.' or '..' segments" ;;
   esac
   overlays+=("$o")
-done < <(printf '%s\n' "$OVERLAYS" | tr -s ' \t' '\n\n')
+done < <(printf '%s\n' "$OVERLAYS" | tr -s '[:blank:]' '\n')
 [[ "${#overlays[@]}" -gt 0 ]] || tremvok::fail "gitops-overlays names no overlay"
 
 dup="$(printf '%s\n' "${overlays[@]}" | sed 's#.*/##' | sort | uniq -d | head -n 1)"
@@ -96,7 +96,7 @@ dup="$(printf '%s\n' "${overlays[@]}" | sed 's#.*/##' | sort | uniq -d | head -n
 images=()
 while IFS= read -r i; do
   [[ -n "$i" ]] && images+=("$i")
-done < <(printf '%s\n' "$IMAGES" | tr -s ' \t' '\n\n')
+done < <(printf '%s\n' "$IMAGES" | tr -s '[:blank:]' '\n')
 [[ "${#images[@]}" -gt 0 ]] || tremvok::fail "gitops-images names no image"
 for i in "${images[@]}"; do
   case "${i##*/}" in
