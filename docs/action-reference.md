@@ -22,15 +22,16 @@ that belongs to another target is a hard error naming both, before the checkout.
 | `cloudflare-workers` | Deploy a Worker and its static assets with Wrangler |
 | `azure-functions-zip` | Publish a zip to an Azure Function App, then wait for it to answer |
 | `azure-apim-policy` | Publish policy documents to an API Management API, all or nothing |
+| `gitops-pr` | Open a deploy PR per kustomize overlay, the next when one merges |
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 126 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 132 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
 | --- | --- | --- | --- |
-| `target` | the selector | not set | The deployment target. One of: github-pages Build an MkDocs site strictly and publish it to GitHub Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. cloudflare-workers Deploy a Worker and its static assets with Wrangler. cloudflare-docs Build an MkDocs site strictly and publish it to Cloudflare Workers Static Assets, behind the docs router. azure-functions-zip Publish a zip to an Azure Function App, then wait for it to answer. azure-apim-policy Publish policy documents to an existing Azure API Management API, putting the previous ones back if any is refused. |
+| `target` | the selector | not set | The deployment target. One of: github-pages Build an MkDocs site strictly and publish it to GitHub Pages. s3-cloudfront Sync a built static site to S3 and invalidate CloudFront. lambda-zip Publish a Lambda package to S3, update the function, move an alias. terragrunt Discover, plan and (on an approval) apply Terragrunt stacks. ansible Run an Ansible playbook over SSH, then prove it is idempotent. cloudflare-workers Deploy a Worker and its static assets with Wrangler. cloudflare-docs Build an MkDocs site strictly and publish it to Cloudflare Workers Static Assets, behind the docs router. azure-functions-zip Publish a zip to an Azure Function App, then wait for it to answer. azure-apim-policy Publish policy documents to an existing Azure API Management API, putting the previous ones back if any is refused. gitops-pr Deploy a released image through kustomize overlays by pull request: one per overlay, the next opened when one merges. |
 | `mode` | all | `auto` | What this run should do. One of: auto (default) push to the default branch = deploy, pull\_request = preview, workflow\_dispatch = deploy (pinned to the default branch). deploy Publish to the environment. preview Publish somewhere disposable; production is untouched. rollback Re-publish a previously published version. |
 | `environment` | all | not set | Logical environment name, surfaced in notifications and the deployment record. Defaults to "production" (deploy) or "preview". |
 | `working-directory` | all | `.` | Directory to run in. Paths in the other inputs are relative to it. |
@@ -140,6 +141,12 @@ is required.
 | `apim-resource-group` | `azure-apim-policy` | not set | azure-apim-policy: resource group the instance lives in. Required for this target. |
 | `apim-api-id` | `azure-apim-policy` | not set | azure-apim-policy: the API the documents are published to, by its id (the name in its resource id, not its display name). Required for this target. The API and its operations must already exist. This target publishes behaviour into them, the way azure-functions-zip publishes code into an existing Function App, and a document named after an operation the API does not have is refused before anything is published. |
 | `apim-policy-format` | `azure-apim-policy` | `rawxml` | azure-apim-policy: how the documents are written. `rawxml` (default) is what the portal's editor shows: policy expressions unescaped, `@(context.Request.Headers.GetValueOrDefault("x", ""))` as it reads. `xml` is strict XML, with every quote and angle bracket inside an expression entity-escaped. Mixing them up fails at publish, when API Management compiles the expressions. |
+| `gitops-overlays` | `gitops-pr` | not set | gitops-pr: the kustomize overlay directories a release is deployed through, in promotion order, separated by whitespace (one per line reads best). Required for this target. k8s/overlays/acc k8s/overlays/prd A release opens a deploy PR for the first; merging it opens the one for the second, and so on. An overlay is named by its last path segment (`acc`), which is part of the deploy PR branch (`deploy/acc/v1.2.3`), so the names must be unique. Each overlay's kustomization lists the images in `images:` with a `newTag`, and the image automation that used to write it must be gone, or the two fight over the same line. |
+| `gitops-images` | `gitops-pr` | not set | gitops-pr: the image repositories a deploy moves, as the overlays name them (`name`, or `newName` where an entry has one), without a tag, separated by whitespace. Required for this target. Every one moves to the release's tag; an overlay that lists none of them is an error, one that lists some of them gets a warning for the rest. |
+| `gitops-tag` | `gitops-pr` | not set | gitops-pr: deploy this tag to the first overlay instead of the release event's. For a deploy by hand from `workflow_dispatch`, or to re-open one. Empty (the default) takes the tag from the published release, or promotes what a merged deploy PR moved. |
+| `gitops-base` | `gitops-pr` | not set | gitops-pr: the branch the overlays are read from and deploy PRs target: the one the cluster's controller watches. Empty (the default) is the pushed branch on a push, and the repository's default branch otherwise. Set it when those differ, e.g. `master` in a repository whose default branch is `dev`. |
+| `gitops-branch-prefix` | `gitops-pr` | `deploy` | gitops-pr: prefix for deploy PR branches, `<prefix>/<overlay>/<tag>`. A merged pull request is recognised as a deploy PR by it, so change it only with the open ones merged or closed. |
+| `gitops-prereleases` | `gitops-pr` | `false` | gitops-pr: deploy prerelease GitHub Releases too. Off by default: only a stable release opens a deploy PR. |
 | `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green. |
 | `verify-header` | all | not set | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
 | `verify-header-match` | all | not set | Post-deploy: an extended regex the `verify-header` value must match. |
@@ -153,7 +160,7 @@ is required.
 | `teams-webhook` | all | not set | Microsoft Teams incoming-webhook URL. Empty means the sink is off. Never fails the deploy. |
 | `api-url` | all | not set | Base URL of a Tremvok API to record this deployment with. Authenticates with a GitHub OIDC token, so the repository stores no credential. Empty means no record is kept. |
 | `api-audience` | all | `tremvok` | OIDC audience the Tremvok API expects. |
-| `auth-token` | all | `${{ github.token }}` | Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. |
+| `auth-token` | all | `${{ github.token }}` | Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. For gitops-pr it also opens the deploy PRs, so it needs `contents: write`, and it must be an App token: a pull request opened with GITHUB\_TOKEN starts no workflow, so its required checks never report. |
 | `allow-fork-preview` | all | `false` | Let a fork pull request attempt a deploy. Off by default and almost always wrong: a fork cannot read secrets, so this only converts an honest skip into an auth error. |
 | `allow-dispatch-from-any-ref` | all | `false` | Let a manual run deploy from a branch other than the default one. Off by default, publishing a topic branch to production usually is not what "Run workflow" meant. |
 
@@ -164,7 +171,7 @@ is required.
 | `target` | The deployment target this run used. |
 | `mode` | The resolved mode: deploy, preview or rollback. |
 | `environment` | The resolved environment name. |
-| `url` | URL of what was deployed, when the target produces one. |
+| `url` | URL of what was deployed, when the target produces one. For gitops-pr, the deploy PR this run opened or refreshed. |
 | `deployed` | true when something was actually deployed (false for a skip). |
 | `verified` | true when post-deploy verification ran and passed. |
 | `skipped` | true when the run skipped (fork pull request, or no credential). |
@@ -172,12 +179,13 @@ is required.
 | `record-id` | Identifier returned by the Tremvok API, when api-url is set. |
 | `site-dir` | github-pages: absolute path to the built site. |
 | `pages-toolchain` | github-pages: the toolchain actually used, uv or pip. |
-| `version-id` | lambda-zip, cloudflare-workers, azure-functions-zip, azure-apim-policy: the published version. A Lambda version number, a Worker Version ID, the package sha256, or the sha256 of the policy set — Azure exposes no per-deploy content hash of its own. |
+| `version-id` | lambda-zip, cloudflare-workers, azure-functions-zip, azure-apim-policy, gitops-pr: the published version. A Lambda version number, a Worker Version ID, the package sha256, the sha256 of the policy set — Azure exposes no per-deploy content hash of its own — or the image tag a deploy PR moves to. |
 | `stacks` | terragrunt: how many stacks this run discovered. |
 | `plan-changes` | terragrunt: how many of those stacks planned with a diff. |
 | `applied` | terragrunt: true when this run applied, false when it only planned. |
 | `changed-tasks` | ansible: how many tasks reported changed on the real run. |
 | `idempotent` | ansible: true when the second check-mode run found nothing left to change. |
+| `gitops-result` | gitops-pr: what the run did: `created`, `refreshed`, `unchanged` (the overlay already runs the tag), `skipped` (it runs a newer one, or a newer deploy PR is open) or `planned` (dry run). Empty when there was nothing to deploy. |
 
 ## Required permissions
 
@@ -261,6 +269,13 @@ permissions:
   contents: read        # checkout
   id-token: write       # sign in to Azure by OIDC
   pull-requests: write  # the sticky preview comment
+```
+
+### `target: gitops-pr`
+
+```yaml
+permissions:
+  contents: read        # nothing else: an App token in auth-token opens the deploy PRs
 ```
 
 `target: github-pages` is the one target the action cannot finish on its own:

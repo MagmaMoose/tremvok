@@ -12,7 +12,7 @@ prove it, and tell everyone."*
 flowchart LR
   A[push / merge] --> B[release.yml → Diatreme]
   B -->|version · tag · release · promoted image| C[deploy.yml → Tremvok]
-  C -->|target| D[github-pages · s3-cloudfront · lambda-zip · terragrunt · ansible · cloudflare-workers]
+  C -->|target| D[github-pages · s3-cloudfront · lambda-zip · terragrunt · ansible · cloudflare-workers · gitops-pr]
   D -->|curl 200 + header · a second check-mode run| E[verify it actually went live]
   D -->|PR comment · Slack · Teams · history| F[humans]
 ```
@@ -46,4 +46,5 @@ there.
 **It does not cut versions or releases.** That is Diatreme.
 
 **It does not reconcile GitOps.** Where a service is deployed by a cluster-side reconciler,
-Tremvok's job is to report and verify, not to apply.
+Tremvok's job is to propose the change to Git (`target: gitops-pr`), report and verify, not to
+apply.

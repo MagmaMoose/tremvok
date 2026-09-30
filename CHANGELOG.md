@@ -9,6 +9,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`target: gitops-pr`**: deploy a released image through the kustomize overlays a GitOps
+  controller applies, by pull request, one overlay at a time. A published release opens a deploy
+  PR moving the `newTag` of each image in `gitops-images` in the first of `gitops-overlays`;
+  merging it opens exactly what it changed for the next, so a later environment only ever gets a
+  build the one before it ran. One open deploy PR per overlay (a newer tag supersedes it), an
+  overlay is never moved backwards, and only the tag line changes, so a Flux `$imagepolicy`
+  marker survives. New inputs `gitops-overlays`, `gitops-images`, `gitops-tag`, `gitops-base`,
+  `gitops-branch-prefix` and `gitops-prereleases`, and a `gitops-result` output; `url` and
+  `version-id` carry the deploy PR and its tag.
+
 - **`target: azure-apim-policy`**: publish a directory of policy documents (`api.xml` for the API
   scope, `<operation-id>.xml` per operation) into an Azure API Management API that already
   exists. All or nothing: API Management compiles a policy only when it is published, so the

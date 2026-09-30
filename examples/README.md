@@ -15,6 +15,7 @@ reaches you through `@v2` rather than through nine copy-paste edits.
 | [`cloudflare-workers.yml`](cloudflare-workers.yml) | `cloudflare-workers` | a Worker and its static assets, published with Wrangler |
 | [`azure-functions.yml`](azure-functions.yml) | `azure-functions-zip` | a .NET function on an Azure Function App |
 | [`azure-apim-policy.yml`](azure-apim-policy.yml) | `azure-apim-policy` | policies on an existing Azure API Management API |
+| [`gitops-pr.yml`](gitops-pr.yml) | `gitops-pr` | a released image deployed through kustomize overlays, by pull request |
 
 They differ only in `target:` and that target's inputs. Everything shared (`mode`,
 `verify-url`, the notification sinks) is spelled the same way in all seven, which is the

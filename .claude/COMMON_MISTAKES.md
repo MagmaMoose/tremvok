@@ -116,6 +116,20 @@ override this.
 `No module named 'pydantic_core._pydantic_core'` on request one. `build_api_zip.py --arch` and
 the module's `architecture` must agree; the Makefile derives both from `uname -m`.
 
+## Resetting an open pull request's branch to the base marks it MERGED
+
+GitHub treats a pull request as merged the moment its head points at a commit the base already
+contains. "Reset `deploy/acc` to main, then commit the new tag" therefore closes the open deploy
+PR as merged, with nothing in it, and the reviewer sees a merged deploy that deployed nothing.
+`gitops-open-pr.sh` makes a new branch per tag and closes the old pull request as superseded; a
+leftover branch is only deleted when no open pull request sits on it.
+
+## A deploy PR opened with GITHUB_TOKEN can never merge
+
+Events a workflow's own GITHUB_TOKEN causes start no workflow, so the deploy PR's required
+checks never run, never report, and block it for ever. `gitops-pr` needs an App token in
+`auth-token`. The same is why the release that starts it must be published by an App.
+
 ## A required check that never reports blocks the pull request forever
 
 Which is why `deploy-terragrunt.sh` publishes the check run even when it discovers **zero**

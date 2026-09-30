@@ -43,6 +43,11 @@ repo, it is wrong.
   the preview has its own URL and takes no production traffic. The Wrangler config keeps
   owning the asset directory, the routes and 404 handling. Refuses to publish an empty asset
   directory.
+- **`target: gitops-pr`**: deploy a released image through the kustomize overlays a GitOps
+  controller applies, by pull request. A published release opens the deploy PR for the first
+  overlay; merging it opens exactly what it changed for the next, so a later environment only
+  gets a build the one before it ran. Only the `newTag` line changes, one open deploy PR per
+  overlay, and an overlay is never moved backwards.
 - **Post-deploy verification**, **notifications** (sticky pull-request comment, Slack,
   Teams), and the **deployment-record API**.
 
@@ -87,4 +92,4 @@ README, a roadmap and a repository description that each described a different p
 - **Building your app.** The build is legitimately per-product. Tremvok picks up at "the
   artifact exists".
 - **Reconciling GitOps.** Where a service is deployed by a cluster-side reconciler,
-  Tremvok's job is to report and verify, not to apply.
+  Tremvok's job is to propose the change (`gitops-pr`), report and verify, not to apply.

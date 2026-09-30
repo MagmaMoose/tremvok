@@ -1,6 +1,6 @@
 {
   "name": "tremvok",
-  "description": "One composite GitHub action with nine deployment targets (github-pages, cloudflare-docs, cloudflare-workers, azure-functions-zip, azure-apim-policy, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
+  "description": "One composite GitHub action with ten deployment targets (github-pages, cloudflare-docs, cloudflare-workers, azure-functions-zip, azure-apim-policy, gitops-pr, s3-cloudfront, lambda-zip, terragrunt, ansible), plus an optional FastAPI deployment-record service on Lambda.",
   "generated": "2026-09-23",
   "generated_for": "agents — read this before grepping the tree",
   "surfaces": {
@@ -16,6 +16,8 @@
         "scripts/build-git-credentials.sh": "targets that build: private-git-host rewrites into GIT_CONFIG_COUNT/KEY_n/VALUE_n for this job only, never ~/.gitconfig; tokens masked on receipt, bad lines named by index and host",
         "scripts/collect-outcome.sh": "one status every sink shares; a plan-only run is a success, a skip is a skip",
         "scripts/deploy-ansible.sh": "pinned ansible over SSH; secrets to 0600 files under RUNNER_TEMP; second check-mode run proves idempotence",
+        "scripts/deploy-gitops-pr.sh": "target: gitops-pr. Routes by event: a published release opens the first overlay's deploy PR; a push resolves the merged PR (resolve-merged-pr.sh) and promotes what it changed to the next overlay; gitops-tag deploys by hand. Preview deploys nothing.",
+        "scripts/gitops-open-pr.sh": "gitops-pr: one overlay's deploy PR over the REST API with curl. Rewrites only the newTag line (yq to locate, sed to write), commits with the contents API on a new branch per tag, reads it back, supersedes older open PRs, never moves an overlay backwards.",
         "scripts/deploy-azure-apim-policy.sh": "target: azure-apim-policy. az rest PUT of each policy document into an API that already exists; reads every scope first and puts it back if any document is refused; refuses a document for a missing operation",
         "scripts/deploy-azure-functions-zip.sh": "target: azure-functions-zip. config-zip, then poll the app until it answers; the az exit code is corroborated against WEBSITE_RUN_FROM_PACKAGE because it lies; refuses a package whose functions.metadata/.azurefunctions are not at the root",
         "scripts/deploy-cloudflare-docs.sh": "target: cloudflare-docs. MkDocs site -> Workers Static Assets; no preview destination (workers_dev=false), refuses an empty site, and composes the URL from the router's host/path because Wrangler has none to print",
