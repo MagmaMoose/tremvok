@@ -353,6 +353,18 @@
       ],
       "default": ""
     },
+    "terragrunt-rolling": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
+    "terragrunt-rolling-pause": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "300"
+    },
     "terragrunt-check-name": {
       "targets": [
         "terragrunt"

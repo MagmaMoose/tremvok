@@ -757,6 +757,59 @@ scheduled drift run covers it. Everything above is per changed path and the resu
 merged, so one pull request that edits a shared root and one stack plans that whole subtree
 once.
 
+#### Rolling a change through a cluster, one node at a time
+
+A plan is applied in one go, and for most stacks that is what you want. It is not what you want
+when the change restarts what it touches. Resizing a cluster's VMs is the case that wrote this:
+the provider powers each VM off to change its CPU count, one apply of the whole plan does that to
+every node at the same moment, and the cluster, with everything on it, goes down with them.
+
+`terragrunt-rolling` names the stacks to roll and, for each, the `for_each` or `count` blocks
+whose instances are the units:
+
+```yaml
+with:
+  target: terragrunt
+  terragrunt-rolling: |
+    */k3s-cluster  module.node  vcd_independent_disk.longhorn
+  terragrunt-rolling-pause: '600'
+```
+
+When the plan to be applied changes two or more units, the apply:
+
+1. takes the units in plan order, and plans each on its own, with a `-target` for its key under
+   every listed address (`module.node["worker-0"]` and `vcd_independent_disk.longhorn["worker-0"]`);
+2. refuses that plan, before any of it is applied, when it changes another unit;
+3. applies it, then waits `terragrunt-rolling-pause` seconds (300 by default) before planning the
+   next unit, so the last one is back before another goes down;
+4. ends with a full plan, which applies whatever no unit holds (a shared network, say) and proves
+   every unit landed.
+
+A plan that changes one unit, or none, applies the saved plan exactly as before.
+
+**List every per-unit block, not just the main one.** tofu plans every instance of a resource a
+target depends on, unless that resource is itself targeted: a node targeted as `module.node["cp"]`
+alone pulls in every other node's disk resize, and that is the outage again. Instances of listed
+addresses that share a key are one unit, so a node and its disk roll together, and a unit is
+targeted under every listed address even where it has no instance (a control-plane node with no
+data disk), because a target that names nothing still keeps the other instances out. A change
+outside every unit that is keyed like another unit, `disk["worker-1"]` in `worker-0`'s plan, is
+taken for a per-unit block nobody listed, and refused.
+
+What it costs:
+
+- **Time.** The run waits the pause before every unit after the first: ten minutes over six nodes
+  is fifty minutes. `terragrunt-timeout` is per command, so it does not cut a long roll short,
+  but the job's own `timeout-minutes` has to allow for it.
+- **What lands is not the saved plan.** A plan file cannot be applied in part, so each unit is
+  planned again, on its own, just before it is applied. The saved plan decides which units roll.
+- **The pause is a wait, not a health check.** The roll does not know whether a node came back.
+  Pick a pause long enough for a node to rejoin and for replicated storage to catch up.
+
+A refused or failed unit fails the run and stops the roll there; the units before it stay
+applied. Fix the cause and apply again: units already applied plan clean and are skipped without
+a pause.
+
 #### Failing fast on an unreachable endpoint
 
 Terragrunt buffers plan output to a file, so a state backend or provider API the runner cannot

@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`terragrunt-rolling`**: apply a stack one unit at a time. Each line names a stack glob and
+  the `for_each` or `count` blocks whose instances are units (`*/k3s-cluster  module.node`). When
+  the plan to be applied changes two or more units, each is planned and applied on its own with
+  `-target`, `terragrunt-rolling-pause` seconds apart (300 by default), and a final full plan
+  applies the rest and proves every unit landed. A unit whose plan would also change another unit
+  is refused before any of it is applied. For changes that restart what they touch: an approved
+  resize of a cluster's worker VMs power-cycled every worker at once and took the cluster down.
+
 - **`target: gitops-pr`**: deploy a released image through the kustomize overlays a GitOps
   controller applies, by pull request, one overlay at a time. A published release opens a deploy
   PR moving the `newTag` of each image in `gitops-images` in the first of `gitops-overlays`;

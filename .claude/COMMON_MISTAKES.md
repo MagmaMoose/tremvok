@@ -403,3 +403,20 @@ a `String.raw` template now, served byte for byte whatever the bundler does, and
 `tests/test_workers_bindings.py` runs the dry-run bundle's `/webmcp.js` in an empty context so
 that going back to `toString()` fails CI. The general rule: anything the router sends to a
 browser is data, never a function's source.
+
+## An approved cluster resize powered off every node in the same second
+
+A pull request raised the CPU and memory of three k3s worker VMs. The plan was three in-place
+updates; it was reviewed, approved, and the approval applied it. The VCD provider cannot hot-add
+CPU on those VMs, so it hard powers each one off, changes it and powers it back on, and tofu
+updates independent resources in parallel. All three workers went down together, and every
+workload on the cluster with them, the identity provider and the dashboard used to look included.
+Nothing failed. The apply was green.
+
+A plan says what changes, not what the change does to whatever runs on it. `terragrunt-rolling`
+applies such a stack one unit at a time with a pause between. The trap inside the fix:
+`-target=module.node["cp"]` still plans every instance of a `for_each` resource that node depends
+on, so a control plane's apply resized every worker's disk. Targeting the unit under every listed
+address, including instances that do not exist, is what keeps a unit's plan to itself, and the
+guard that refuses a plan touching another unit catches what that misses.
+`tests/bats/terragrunt_rolling.bats` pins both.
