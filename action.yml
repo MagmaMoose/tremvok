@@ -332,10 +332,11 @@ inputs:
   terragrunt-exclude:
     description: |
       terragrunt: space-separated path segments that never hold a stack. `modules _modules`
-      by default: a module has no state of its own, and guessing which stacks use it from a
-      path is how a small module tidy-up ends up planning the whole estate. Add a stack that
-      must only ever be applied by hand, one that rewrites a firewall wholesale, say, and
-      the pipeline will not touch it.
+      by default: a module has no state of its own, so a change to one plans the stacks
+      beneath the nearest directory above it that has any. Add a stack that must only ever be
+      applied by hand, one that rewrites a firewall wholesale, say, by its directory name, and
+      the pipeline will not touch it: a change inside it plans nothing, not even the stacks
+      beside it.
     required: false
     default: 'modules _modules'
 
