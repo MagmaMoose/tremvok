@@ -420,3 +420,18 @@ on, so a control plane's apply resized every worker's disk. Targeting the unit u
 address, including instances that do not exist, is what keeps a unit's plan to itself, and the
 guard that refuses a plan touching another unit catches what that misses.
 `tests/bats/terragrunt_rolling.bats` pins both.
+
+## An edit to a hand-applied stack planned the cluster next to it
+
+`terragrunt-exclude` keeps a stack out of the pipeline, a firewall that is rewritten wholesale
+and applied in a window, say. But an edit inside it walked up past it (it is excluded, so it is
+not a stack), found no enclosing stack, and fell into the branch that widens shared
+configuration to every stack beneath the nearest ancestor: the k3s cluster beside it. The plan
+showed the cluster's VMs being resized back to the base branch's values, because a resize had
+been applied from another pull request that had not merged yet, and approving the firewall change
+would have applied that resize. The check was green and nothing looked wrong.
+
+`is_excluded_stack` in `terragrunt-discover.sh` stops the walk at a directory whose own name is
+excluded and that holds a `terragrunt.hcl`, or whose `terragrunt.hcl` is in the change list
+because it was deleted, and maps the path to nothing. The own-name test is what keeps
+`modules/x/` shared code that still widens. `tests/bats/terragrunt_discover.bats` pins both.

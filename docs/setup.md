@@ -748,14 +748,24 @@ files decide which of them run:
 | A file inside a stack | that stack, however deep the file sits inside it |
 | A file above the stacks, such as a shared `root.hcl` | every stack beneath that file's own directory, because every one of them includes it through `find_in_parent_folders` |
 | A file directly in `terragrunt-root` | every stack, for the same reason |
-| A file under `modules/` (or anything in `terragrunt-exclude`) | none |
+| A file under `modules/` (or another excluded directory of shared code) | every stack beneath the nearest directory above it that holds any |
+| A file inside a stack named in `terragrunt-exclude` | none: that stack is applied by hand, and it owns everything inside it |
 | A file outside `terragrunt-root` | none |
 
-A module maps to nothing on purpose: it has no state of its own, and guessing which stacks use
-it from its path is how a small module tidy-up ends up planning the whole estate. The
-scheduled drift run covers it. Everything above is per changed path and the results are
-merged, so one pull request that edits a shared root and one stack plans that whole subtree
-once.
+A module widens on purpose. Which stacks use it cannot be known without evaluating the HCL, and
+the narrow answer, nothing, publishes a green "No Terraform stacks affected" while the change
+lands unplanned. Planning is read-only and a stack the module does not reach plans clean, so the
+wide answer costs time, not correctness. It stops at the first directory above the module that
+holds stacks, so `terraform/eurofiber/_modules/x` never plans `terraform/azure`.
+
+A stack you exclude by name, `edge-gateway-firewall` in `terragrunt-exclude` for a directory of
+that name, is the opposite case. A change inside it is not shared configuration: it belongs to a
+stack the pipeline must not touch, so it plans nothing at all, rather than being widened to the
+stacks beside it and applied from the pull request's base on approval. A directory excluded only
+because it sits under an excluded one (`modules/x`) is still shared code.
+
+Everything above is per changed path and the results are merged, so one pull request that edits
+a shared root and one stack plans that whole subtree once.
 
 #### Rolling a change through a cluster, one node at a time
 

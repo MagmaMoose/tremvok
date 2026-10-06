@@ -307,6 +307,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A change inside an excluded stack no longer plans the stacks beside it.** A stack named in
+  `terragrunt-exclude` is applied by hand, but an edit inside it walked past it, found no
+  enclosing stack, and was widened to its siblings as if it were shared configuration. On a live
+  estate an edit to a hand-applied firewall stack planned the k3s cluster beside it, resizing its
+  VMs back to the base branch's values, and an approval would have applied that. A stack excluded
+  by its own directory name now owns everything inside it, deleted or not; a module edit still
+  widens. The setup guide no longer says a module change maps to nothing.
+
 - **A large Terragrunt plan comment was never posted.** `notify-pr.sh` handed the whole request
   to `curl` as one argument, and a plan across many stacks is past the kernel's 128 KiB cap on a
   single argument once JSON-escaped: the post died with `Argument list too long` and the run said

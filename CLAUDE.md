@@ -14,7 +14,7 @@ file; edit the two together.
 
 ## Footguns — read `.claude/COMMON_MISTAKES.md` before debugging any of these
 
-Twenty-nine incidents, each with symptom, cause and fix. The clusters:
+Thirty incidents, each with symptom, cause and fix. The clusters:
 
 - **A script exits silently under `set -e`** — a false `[[ ]]` last in `$( )`, a helper that
   re-enables errexit, a loop ending on a false test, `cmd | tee`.
