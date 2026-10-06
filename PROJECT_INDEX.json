@@ -48,7 +48,7 @@
         "scripts/terragrunt-credentials.sh": "pre-run check that the runner holds every cloud credential a stack's providers need (AWS, Azure, GCP, state backend); reports which are missing before the first plan",
         "scripts/terragrunt-discover.sh": "changed files -> stacks; modules map to nothing on purpose",
         "scripts/terragrunt-pr-head.sh": "terragrunt-pull-request -> that pull request's head sha; refuses a fork; prints the sha and nothing else",
-        "scripts/terragrunt-run.sh": "plan|apply|redact one stack; plan -out is SAVED and apply uses it, re-planning only when stale",
+        "scripts/terragrunt-run.sh": "plan|apply|redact one stack; plan -out is SAVED and apply uses it, re-planning only when stale; TG_ROLLING applies 2+ changed units one at a time (-target per unit, pause, full plan last)",
         "scripts/validate-inputs.sh": "inputs vs target; every violation named at once, before the checkout",
         "scripts/vault-read.sh": "read one secret from HashiCorp Vault by <path>#<field> reference; KV v1 and v2; token never in argv",
         "scripts/verify-live.sh": "curl status + header with retries; `verify-method` overrides GET for POST-only endpoints; catches uploaded-but-unbound"

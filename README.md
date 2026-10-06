@@ -69,7 +69,9 @@ Swap `target:` and its inputs for another target. Ready-to-copy workflows for ea
   reports `Running` while serving 503 — so only an answer from the app counts.
 - **Applies the plan that was reviewed.** The Terragrunt target plans, saves the plan, gates
   on an independent pull-request approval, then applies that saved plan, and publishes a
-  check run you can make required, which turns apply-before-merge into a rule.
+  check run you can make required, which turns apply-before-merge into a rule. A change that
+  restarts what it touches can roll instead, one node at a time with a pause between
+  (`terragrunt-rolling`).
 - **No stored cloud credential.** OIDC to a role assumed per run, expiring in an hour. The
   same argument that deletes Atlantis.
 - **Notifications that never fail a deploy.** Sticky pull-request comment, Slack, Teams,

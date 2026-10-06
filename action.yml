@@ -422,6 +422,36 @@ inputs:
     required: false
     default: ''
 
+  terragrunt-rolling:
+    description: |
+      terragrunt: stacks whose apply takes one unit at a time, `<glob> <address> [<address>
+      ...]` per line. The first matching line wins; blank lines and `#` comments are ignored.
+
+        */k3s-cluster  module.node
+
+      Each address names a `for_each` or `count` block, and each of its instances is a unit:
+      `module.node["worker-0"]` is one and `module.node["worker-1"]` another. Instances of two
+      addresses that share a key are one unit, so `module.node aws_ebs_volume.data` rolls a
+      node and its disk together.
+
+      When the plan to be applied changes two or more units, the apply plans and applies each
+      on its own with `-target`, in plan order, waits `terragrunt-rolling-pause` seconds before
+      the next, and ends with a full plan that applies whatever no unit holds and proves every
+      unit landed. A plan that changes one unit or none applies the saved plan as before.
+
+      For a change that restarts what it touches. Resizing a cluster's VMs restarts each one,
+      and one apply of the whole plan restarts every node at the same moment, which takes the
+      cluster down. A unit whose targeted plan also changes another unit (tofu plans every
+      instance of a resource that a target depends on) is refused before any of it is applied,
+      so the run fails rather than restarting several units at once.
+    required: false
+    default: ''
+
+  terragrunt-rolling-pause:
+    description: 'terragrunt: seconds to wait after a `terragrunt-rolling` unit is applied before the next one is planned, so the last one is back before another goes down.'
+    required: false
+    default: '300'
+
   terragrunt-check-name:
     description: 'terragrunt: name of the check run published against the head commit. Make it a required check to enforce apply-before-merge.'
     required: false
@@ -1695,6 +1725,8 @@ runs:
         APPLY_ON_MERGE: ${{ inputs.terragrunt-apply-on-merge }}
         APPLY_OPERATORS: ${{ inputs.terragrunt-apply-operators }}
         STACK_ENV: ${{ inputs.terragrunt-stack-env }}
+        ROLLING: ${{ inputs.terragrunt-rolling }}
+        ROLLING_PAUSE: ${{ inputs.terragrunt-rolling-pause }}
         CHECK_NAME: ${{ inputs.terragrunt-check-name }}
         TG_REFRESH: ${{ inputs.terragrunt-refresh }}
         TG_PLAN_LOCK: ${{ inputs.terragrunt-plan-lock }}
