@@ -6,7 +6,7 @@
   "surfaces": {
     "action": {
       "entrypoint": "action.yml",
-      "note": "Glue only. One action, nine targets selected by `target`; every decision lives in scripts/, which is bats-tested and bash 3.2-compatible. An input belonging to another target is a hard error, checked first, before the checkout.",
+      "note": "Glue only. One action, ten targets selected by `target`; every decision lives in scripts/, which is bats-tested and bash 3.2-compatible. An input belonging to another target is a hard error, checked first, before the checkout.",
       "scripts": {
         "scripts/access-covers.sh": "target: cloudflare-docs. refuses to publish unless a Cloudflare Access application covers <host>/<path>; covered / not covered / could-not-tell are never collapsed",
         "scripts/approval-gate.sh": "independent approvers; exits non-zero rather than reporting 'nobody'",

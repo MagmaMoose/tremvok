@@ -1,6 +1,6 @@
 # Tremvok
 
-A published Marketplace action: one composite action, nine targets (`github-pages`,
+A published Marketplace action: one composite action, ten targets (`github-pages`,
 `s3-cloudfront`, `lambda-zip`, `terragrunt`, `ansible`, `cloudflare-workers`, `cloudflare-docs`,
 `azure-functions-zip`, `azure-apim-policy`, `gitops-pr`), plus an optional FastAPI deployment-record service on Lambda. Consumers pin `@v2` and a broken release breaks
 their deploys, so the action's input contract is the thing to be careful with. Infrastructure is
