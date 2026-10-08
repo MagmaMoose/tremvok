@@ -351,7 +351,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
       - run: npm run build                       # your build, not Tremvok's
       - uses: MagmaMoose/tremvok@v2
         with:
@@ -432,7 +432,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-dotnet@v6
         with: { dotnet-version: '9.0.x' }
       - run: dotnet publish -c Release -f net9.0 -o publish
@@ -511,7 +511,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
       - uses: MagmaMoose/tremvok@v2
         with:
           target: azure-apim-policy

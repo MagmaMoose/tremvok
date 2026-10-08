@@ -19,7 +19,7 @@ flowchart LR
 
 Pick a target, pass that target's inputs. An input belonging to a different target is a hard
 error naming both, raised before the checkout. That's what keeps one listing able to
-describe six jobs honestly.
+describe ten jobs honestly.
 
 ## Start here
 
