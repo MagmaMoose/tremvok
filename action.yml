@@ -1028,6 +1028,21 @@ inputs:
     required: false
     default: 'false'
 
+  gitops-prereleases-until:
+    description: |
+      gitops-pr: the overlay a prerelease stops at, by name (`acc`) or path, for release
+      candidates. Empty (the default) sends a prerelease through every overlay like a stable
+      release, when `gitops-prereleases` is on.
+
+      Set, a prerelease's deploy PRs stop at this overlay. A stable release whose own
+      prerelease this overlay already runs (v1.4.0 while acc runs v1.4.0-rc.2) starts at the
+      overlay after it: the signed-off candidate reaches production under its stable tag,
+      without a second deploy to acceptance. A stable release with no candidate running there
+      starts at the first overlay, as usual, so production only ever gets what acceptance ran.
+      It cannot be the last overlay.
+    required: false
+    default: ''
+
   # ── Verification ─────────────────────────────────────────────────────────
   verify-url:
     description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green.'
@@ -1876,6 +1891,7 @@ runs:
         BASE: ${{ inputs.gitops-base }}
         BRANCH_PREFIX: ${{ inputs.gitops-branch-prefix }}
         PRERELEASES: ${{ inputs.gitops-prereleases }}
+        PRERELEASES_UNTIL: ${{ inputs.gitops-prereleases-until }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-gitops-pr.sh"
 
     # ── Verify, then tell the humans ─────────────────────────────────────────

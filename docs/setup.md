@@ -617,6 +617,14 @@ deleted), a re-run refreshes it, an overlay that already runs the tag gets none,
 is never moved backwards: if `prd` runs something newer, or a pull request for a newer tag is
 already open, nothing is opened.
 
+**Release candidates.** With `gitops-prereleases: true` a prerelease travels every overlay
+like a stable release. `gitops-prereleases-until: acc` stops it at acc instead. When the
+candidate is signed off and released as its stable version (Diatreme's `promote-from` releases
+`v1.4.0-rc.2` as `v1.4.0`, the same image), the stable release finds acc already running its
+candidate and opens the deploy PR for prd directly, so production runs `v1.4.0` and acc is not
+deployed twice. A stable release whose candidate acc does not run starts at acc as usual, so prd
+only ever gets what acc ran. Tags compare by SemVer: `v1.4.0` is newer than `v1.4.0-rc.2`.
+
 **Turn the image automation off first.** An `ImageUpdateAutomation` writing the same overlay
 commits the tag to the branch and leaves the deploy PR with nothing in it. And if the
 repository's release workflow also runs on push, give it `paths-ignore` for the overlays:

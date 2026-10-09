@@ -26,7 +26,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 134 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 135 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -149,6 +149,7 @@ is required.
 | `gitops-base` | `gitops-pr` | not set | gitops-pr: the branch the overlays are read from and deploy PRs target: the one the cluster's controller watches. Empty (the default) is the pushed branch on a push, and the repository's default branch otherwise. Set it when those differ, e.g. `master` in a repository whose default branch is `dev`. |
 | `gitops-branch-prefix` | `gitops-pr` | `deploy` | gitops-pr: prefix for deploy PR branches, `<prefix>/<overlay>/<tag>`. A merged pull request is recognised as a deploy PR by it, so change it only with the open ones merged or closed. |
 | `gitops-prereleases` | `gitops-pr` | `false` | gitops-pr: deploy prerelease GitHub Releases too. Off by default: only a stable release opens a deploy PR. |
+| `gitops-prereleases-until` | `gitops-pr` | not set | gitops-pr: the overlay a prerelease stops at, by name (`acc`) or path, for release candidates. Empty (the default) sends a prerelease through every overlay like a stable release, when `gitops-prereleases` is on. Set, a prerelease's deploy PRs stop at this overlay. A stable release whose own prerelease this overlay already runs (v1.4.0 while acc runs v1.4.0-rc.2) starts at the overlay after it: the signed-off candidate reaches production under its stable tag, without a second deploy to acceptance. A stable release with no candidate running there starts at the first overlay, as usual, so production only ever gets what acceptance ran. It cannot be the last overlay. |
 | `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green. |
 | `verify-header` | all | not set | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
 | `verify-header-match` | all | not set | Post-deploy: an extended regex the `verify-header` value must match. |

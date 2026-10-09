@@ -16,6 +16,15 @@
 #   anything, with       Open the deploy PR for the first overlay at that tag: a deploy by
 #   `gitops-tag` set     hand, or a re-run.
 #
+# RELEASE CANDIDATES (`gitops-prereleases-until`)
+#
+# Set to an overlay, it splits the chain in two. A prerelease is deployed up to and including
+# that overlay and stops there. A stable release whose own prerelease that overlay already runs
+# (v1.4.0 while acc runs v1.4.0-rc.2) starts at the overlay after it: the candidate was signed
+# off and released as the same image, so it goes on to production under its stable tag without
+# a second trip through acceptance. A stable release with no candidate running there starts at
+# the first overlay, as without the input. Either way production only gets what acceptance ran.
+#
 # Tremvok never applies anything to a cluster. Merging a deploy PR is the deployment, and the
 # controller does the applying; a run the merge starts can prove the result with `verify-url`.
 # There is no preview: a pull request is how this target deploys, so it has nothing to publish
@@ -29,7 +38,8 @@
 # request did not move is not carried along.
 #
 # Env: MODE, DRY_RUN, EVENT_NAME, EVENT_PATH, SHA, REF_NAME, DEFAULT_BRANCH, GITHUB_API_URL,
-#      GITHUB_REPOSITORY, AUTH_TOKEN, OVERLAYS, IMAGES, TAG, BASE, BRANCH_PREFIX, PRERELEASES
+#      GITHUB_REPOSITORY, AUTH_TOKEN, OVERLAYS, IMAGES, TAG, BASE, BRANCH_PREFIX, PRERELEASES,
+#      PRERELEASES_UNTIL
 # Outputs: deployed, url, version-id, number, result
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,6 +62,7 @@ TAG="${TAG:-}"
 BASE="${BASE:-}"
 BRANCH_PREFIX="${BRANCH_PREFIX:-deploy}"
 PRERELEASES="${PRERELEASES:-false}"
+PRERELEASES_UNTIL="${PRERELEASES_UNTIL:-}"
 
 export GITHUB_API_URL GITHUB_REPOSITORY AUTH_TOKEN BRANCH_PREFIX DRY_RUN
 
@@ -130,6 +141,45 @@ images_at() {
   printf '%s\n' "${images[@]}" | jq -Rn --arg t "$1" '[inputs | {key: ., value: $t}] | from_entries'
 }
 
+managed="$(printf '%s\n' "${images[@]}" | jq -Rn '[inputs]')"
+
+# The position of the overlay called $1 in gitops-overlays.
+index_of() {
+  local i
+  for ((i = 0; i < ${#overlays[@]}; i++)); do
+    if [[ "$(name_of "${overlays[$i]}")" == "$1" ]]; then printf '%s' "$i"; return 0; fi
+  done
+  printf '%s' -1
+}
+
+# ── Where prereleases stop ─────────────────────────────────────────────────────────────
+until_name=""
+if [[ -n "$PRERELEASES_UNTIL" ]]; then
+  u="${PRERELEASES_UNTIL#./}"
+  u="${u%/}"
+  until_name="$(name_of "$u")"
+  until_path="$(overlay_named "$until_name")"
+  if [[ -z "$until_path" ]] || [[ "$u" == */* && "$u" != "$until_path" ]]; then
+    tremvok::fail "gitops-prereleases-until: '${PRERELEASES_UNTIL}' is not one of gitops-overlays"
+  fi
+  [[ -n "$(next_after "$until_name")" ]] \
+    || tremvok::fail "gitops-prereleases-until: '${until_name}' is the last overlay, so a stable release would have nowhere left to go. Leave it empty to send prereleases through every overlay."
+fi
+
+# A SemVer prerelease: a version core, a hyphen, identifiers (v1.4.0-rc.2).
+is_prerelease() { [[ "$1" =~ [0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]; }
+
+# Does tag $2 stop at overlay $1? A prerelease does, at the until overlay and any after it.
+stops_at() {
+  [[ -n "$until_name" ]] && is_prerelease "$2" && (($(index_of "$1") >= $(index_of "$until_name")))
+}
+
+# The overlay a deploy PR for tag $2 on overlay $1 hands on to when it merges, or nothing.
+hand_on_to() {
+  if stops_at "$1" "$2"; then return 0; fi
+  next_after "$1"
+}
+
 base="$BASE"
 if [[ -z "$base" ]]; then
   if [[ "$EVENT_NAME" == "push" ]]; then base="$REF_NAME"; else base="$DEFAULT_BRANCH"; fi
@@ -158,12 +208,45 @@ open_pr() { # overlay images tag next source-note
 }
 
 first="${overlays[0]}"
-second="$(next_after "$(name_of "$first")")"
+
+# The managed images' tags in overlay $1 at ref $2, as {image: tag}. An overlay that did not
+# exist yet reads as no images.
+overlay_tags() {
+  local overlay="$1" ref="$2" f code
+  for f in kustomization.yaml kustomization.yml Kustomization; do
+    code="$(curl --silent --show-error --location --retry 2 --max-time 20 \
+      --output "${WORK}/file.json" --write-out '%{http_code}' \
+      --header "authorization: Bearer ${AUTH_TOKEN}" \
+      --header 'accept: application/vnd.github+json' \
+      --header 'x-github-api-version: 2022-11-28' \
+      "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/contents/${overlay}/${f}?ref=${ref}")" || code=000
+    case "$code" in
+      200)
+        jq -r '.content' "${WORK}/file.json" | base64 --decode \
+          | yq -o=json -I=0 '[(.images // [])[] | select(has("newTag")) | {"key": (.newName // .name), "value": (.newTag | tostring)}] | from_entries' \
+          | tr -d '\r'
+        return 0 ;;
+      404) ;;
+      *) tremvok::fail "gitops-pr: reading ${overlay}/${f} at ${ref:0:12} failed (HTTP ${code})" ;;
+    esac
+  done
+  printf '{}'
+}
+
+# Does the until overlay run a prerelease of stable tag $1 (v1.4.0-rc.2 for v1.4.0) for
+# every managed image it lists?
+candidate_runs() {
+  local current
+  current="$(overlay_tags "$(overlay_named "$until_name")" "$base")"
+  jq -e --arg t "$1" --argjson m "$managed" '
+    [to_entries[] | select(.key as $k | $m | index($k))] as $e
+    | ($e | length) > 0 and ($e | all(.value | startswith($t + "-")))' <<<"$current" >/dev/null
+}
 
 # ── A tag by hand ──────────────────────────────────────────────────────────────────────
 if [[ -n "$TAG" ]]; then
   : >"${WORK}/open.out"
-  open_pr "$first" "$(images_at "$TAG")" "$TAG" "$(name_of "$second")" \
+  open_pr "$first" "$(images_at "$TAG")" "$TAG" "$(name_of "$(hand_on_to "$(name_of "$first")" "$TAG")")" \
     "Requested by hand, from run ${GITHUB_RUN_ID:-this run}."
   exit 0
 fi
@@ -180,8 +263,14 @@ case "$EVENT_NAME" in
     link="$(jq -r '.release.html_url // empty' "$EVENT_PATH")"
     note="Released as \`${tag}\`."
     [[ -z "$link" ]] || note="Released as [\`${tag}\`](${link})."
+    target="$first"
+    if [[ -n "$until_name" ]] && ! is_prerelease "$tag" && candidate_runs "$tag"; then
+      target="$(next_after "$until_name")"
+      note="${note} **${until_name}** already runs its release candidate, so it goes straight to **$(name_of "$target")**."
+      tremvok::log "${until_name} runs a release candidate of ${tag}; deploying it to $(name_of "$target")"
+    fi
     : >"${WORK}/open.out"
-    open_pr "$first" "$(images_at "$tag")" "$tag" "$(name_of "$second")" "$note"
+    open_pr "$target" "$(images_at "$tag")" "$tag" "$(name_of "$(hand_on_to "$(name_of "$target")" "$tag")")" "$note"
     ;;
 
   push)
@@ -218,31 +307,6 @@ case "$EVENT_NAME" in
       tremvok::notice "gitops-pr: ${source_overlay} is the last overlay; nothing to promote."
       exit 0
     fi
-    after_next="$(next_after "$(name_of "$next")")"
-
-    # The overlay's managed images at a ref, as {image: tag}. An overlay that did not exist
-    # yet reads as no images.
-    tags_at() {
-      local ref="$1" f code
-      for f in kustomization.yaml kustomization.yml Kustomization; do
-        code="$(curl --silent --show-error --location --retry 2 --max-time 20 \
-          --output "${WORK}/file.json" --write-out '%{http_code}' \
-          --header "authorization: Bearer ${AUTH_TOKEN}" \
-          --header 'accept: application/vnd.github+json' \
-          --header 'x-github-api-version: 2022-11-28' \
-          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/contents/${source_overlay}/${f}?ref=${ref}")" || code=000
-        case "$code" in
-          200)
-            jq -r '.content' "${WORK}/file.json" | base64 --decode \
-              | yq -o=json -I=0 '[(.images // [])[] | select(has("newTag")) | {"key": (.newName // .name), "value": (.newTag | tostring)}] | from_entries' \
-              | tr -d '\r'
-            return 0 ;;
-          404) ;;
-          *) tremvok::fail "gitops-pr: reading ${source_overlay}/${f} at ${ref:0:12} failed (HTTP ${code})" ;;
-        esac
-      done
-      printf '{}'
-    }
 
     code="$(curl --silent --show-error --location --retry 2 --max-time 20 \
       --output "${WORK}/commit.json" --write-out '%{http_code}' \
@@ -254,9 +318,8 @@ case "$EVENT_NAME" in
     parent="$(jq -r '.parents[0].sha // empty' "${WORK}/commit.json")"
     [[ -n "$parent" ]] || tremvok::fail "gitops-pr: commit ${SHA:0:12} has no parent to compare with"
 
-    before="$(tags_at "$parent")"
-    after="$(tags_at "$SHA")"
-    managed="$(printf '%s\n' "${images[@]}" | jq -Rn '[inputs]')"
+    before="$(overlay_tags "$source_overlay" "$parent")"
+    after="$(overlay_tags "$source_overlay" "$SHA")"
     changed="$(jq -cn --argjson b "$before" --argjson a "$after" --argjson m "$managed" \
       '$a | with_entries(select((.key as $k | $m | index($k)) and $b[.key] != .value))')"
     if [[ "$(jq 'length' <<<"$changed")" == "0" ]]; then
@@ -266,6 +329,11 @@ case "$EVENT_NAME" in
     # One tag names the pull request. A release moves every image to the same tag; should a
     # reviewer have left them apart, the newest one names it.
     tag="$(jq -r '.[]' <<<"$changed" | sort -V | tail -n 1)"
+    if stops_at "$name" "$tag"; then
+      tremvok::notice "gitops-pr: ${tag} is a prerelease, and prereleases stop at ${until_name} (gitops-prereleases-until). Release it as a stable version to deploy it further."
+      exit 0
+    fi
+    after_next="$(hand_on_to "$(name_of "$next")" "$tag")"
     tremvok::log "promoting ${changed} from ${source_overlay} (#${number}) to ${next}"
     : >"${WORK}/open.out"
     open_pr "$next" "$changed" "$tag" "$(name_of "$after_next")" \

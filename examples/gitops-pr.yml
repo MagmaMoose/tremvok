@@ -51,6 +51,10 @@ jobs:
             k8s/overlays/acc
             k8s/overlays/prd
           gitops-images: ghcr.io/${{ github.repository }}
+          # Release candidates: prereleases deploy to acc only, and the stable release of a
+          # candidate acc runs goes straight to prd.
+          # gitops-prereleases: true
+          # gitops-prereleases-until: acc
           gitops-tag: ${{ inputs.tag }}
           auth-token: ${{ steps.app-token.outputs.token }}
           teams-webhook: ${{ secrets.TEAMS_WEBHOOK }}

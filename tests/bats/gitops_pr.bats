@@ -363,3 +363,113 @@ merged_push() { # head-ref
   [[ "$output" == *"without moving a tag in gitops-images"* ]]
   [ ! -f "${STATE}/writes.log" ]
 }
+
+# ── Release candidates: gitops-prereleases-until ─────────────────────────────────────
+
+# acc runs a candidate: every managed image at <tag> in the overlay at the base tip.
+acc_runs() {
+  sed "s/newTag: v1.2.18 #/newTag: $1 #/" "${STATE}/files/k8s/overlays/acc/kustomization.yaml" >"${WORK}/acc.yaml"
+  mv "${WORK}/acc.yaml" "${STATE}/files/k8s/overlays/acc/kustomization.yaml"
+}
+
+# A merged acc deploy PR that moved the image to <tag>.
+merged_acc_push() { # head-ref tag
+  merged_push "$1"
+  sed "s/newTag: v1.2.18/newTag: $2/" "${STATE}/files@before-sha/k8s/overlays/acc/kustomization.yaml" \
+    >"${STATE}/files@merge-sha/k8s/overlays/acc/kustomization.yaml"
+}
+
+@test "until: a candidate's deploy PR for acc says nothing about prd" {
+  release_event v1.2.19-rc.1 true
+  PRERELEASES=true PRERELEASES_UNTIL=acc deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx 'POST git/refs deploy/acc/v1.2.19-rc.1' "${STATE}/writes.log"
+  refute grep -q 'opens the same change for' <(jq -r .body "${STATE}/pr-create.json")
+}
+
+@test "until: a merged candidate stops at acc and opens nothing for prd" {
+  merged_acc_push deploy/acc/v1.2.19-rc.1 v1.2.19-rc.1
+  unset BASE
+  PRERELEASES_UNTIL=acc deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"prereleases stop at acc"* ]]
+  [ ! -f "${STATE}/writes.log" ]
+}
+
+@test "until: without it, a merged candidate still goes on to prd" {
+  merged_acc_push deploy/acc/v1.2.19-rc.1 v1.2.19-rc.1
+  unset BASE
+  deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx 'POST git/refs deploy/prd/v1.2.19-rc.1' "${STATE}/writes.log"
+}
+
+@test "until: a stable release whose candidate acc runs goes straight to prd" {
+  acc_runs v1.2.19-rc.2
+  release_event v1.2.19 false
+  PRERELEASES_UNTIL=acc deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx 'POST git/refs deploy/prd/v1.2.19' "${STATE}/writes.log"
+  refute grep -q 'deploy/acc/' "${STATE}/writes.log"
+  committed deploy/prd/v1.2.19 k8s/overlays/prd/kustomization.yaml | grep -qF '    newTag: v1.2.19'
+  jq -r .body "${STATE}/pr-create.json" | grep -qF '**acc** already runs its release candidate, so it goes straight to **prd**.'
+}
+
+@test "until: a stable release with no candidate in acc starts at acc" {
+  release_event v1.2.19 false
+  PRERELEASES_UNTIL=acc deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx 'POST git/refs deploy/acc/v1.2.19' "${STATE}/writes.log"
+  jq -r .body "${STATE}/pr-create.json" | grep -qF 'opens the same change for **prd**'
+}
+
+@test "until: a candidate of another version in acc does not count" {
+  acc_runs v1.2.20-rc.1
+  release_event v1.2.19 false
+  PRERELEASES_UNTIL=acc deploy
+  [ "$status" -eq 0 ]
+  refute grep -q 'deploy/prd/' "${STATE}/writes.log"
+}
+
+@test "until: a stable tag merged on acc still goes on to prd" {
+  merged_acc_push deploy/acc/v1.2.19 v1.2.19
+  unset BASE
+  PRERELEASES_UNTIL=acc deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx 'POST git/refs deploy/prd/v1.2.19' "${STATE}/writes.log"
+}
+
+@test "until: the overlay is named or given as its path, must exist, and cannot be the last" {
+  release_event v1.2.19 false
+  PRERELEASES_UNTIL=k8s/overlays/acc deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+
+  PRERELEASES_UNTIL=qa deploy
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"'qa' is not one of gitops-overlays"* ]]
+
+  PRERELEASES_UNTIL=other/acc deploy
+  [ "$status" -eq 1 ]
+
+  PRERELEASES_UNTIL=prd deploy
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"is the last overlay"* ]]
+}
+
+@test "a candidate's own stable release is not a downgrade, and the candidate after it is" {
+  acc_runs v1.2.19-rc.2
+  release_event v1.2.19 false
+  deploy
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qx 'POST git/refs deploy/acc/v1.2.19' "${STATE}/writes.log"
+  [ "$(output_value result)" = "created" ]
+
+  rm -f "${STATE}/writes.log"
+  acc_runs_stable() { sed 's/newTag: v1.2.19-rc.2 #/newTag: v1.2.19 #/' "${STATE}/files/k8s/overlays/acc/kustomization.yaml" >"${WORK}/a" && mv "${WORK}/a" "${STATE}/files/k8s/overlays/acc/kustomization.yaml"; }
+  acc_runs_stable
+  release_event v1.2.19-rc.3 true
+  PRERELEASES=true deploy
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already runs a newer tag"* ]]
+  [ ! -f "${STATE}/writes.log" ]
+}
