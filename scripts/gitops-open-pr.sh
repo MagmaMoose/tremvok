@@ -127,11 +127,8 @@ must() {
   esac
 }
 
-# `sort -V` puts 1.2.3 before 1.2.3-rc.1, the reverse of SemVer. Tags in one overlay's chain
-# share a channel, so it only ever compares like with like.
-version_gt() {
-  [[ "$1" != "$2" ]] && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" == "$1" ]]
-}
+# SemVer precedence, so a release candidate's own stable release is newer than it, not older.
+version_gt() { tremvok::version_gt "$1" "$2"; }
 
 # yq prints CRLF on Windows runners.
 yqv() { yq "$@" | tr -d '\r'; }

@@ -435,3 +435,14 @@ would have applied that resize. The check was green and nothing looked wrong.
 excluded and that holds a `terragrunt.hcl`, or whose `terragrunt.hcl` is in the change list
 because it was deleted, and maps the path to nothing. The own-name test is what keeps
 `modules/x/` shared code that still widens. `tests/bats/terragrunt_discover.bats` pins both.
+
+## `sort -V` ranks 1.2.3 below 1.2.3-rc.1, so a candidate's own release read as a downgrade
+
+gitops-pr refuses to move an overlay backwards, and it decided "backwards" with `sort -V`. That
+puts `v1.4.0` BEFORE `v1.4.0-rc.2`, the reverse of SemVer. Harmless while every overlay only saw
+one channel; fatal for release candidates: acc runs `v1.4.0-rc.2`, the candidate is signed off
+and released as `v1.4.0`, and the deploy PR is skipped as "already runs a newer tag", with a
+notice and a green run. `tremvok::version_gt` in `scripts/lib/common.sh` applies SemVer
+precedence when both tags are versions and falls back to `sort -V` otherwise; never swap it
+back. `tests/bats/version_gt.bats` pins the cases, and `gitops-prereleases-until` (prereleases
+stop at acc, their stable release goes straight to prd) depends on it.

@@ -797,6 +797,12 @@
       ],
       "default": "false"
     },
+    "gitops-prereleases-until": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
     "verify-url": {
       "targets": [
         "github-pages",
