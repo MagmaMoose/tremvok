@@ -2,8 +2,8 @@
 
 <!-- sources: action.yml -->
 
-v1 is the docs-only action. v2 is one action covering multiple deployment targets, so the input surface had
-to grow a selector and the docs inputs had to move out of the way of it.
+v1 is the docs-only action. v2 is one action covering multiple deployment targets, so the input
+surface had to grow a selector and the docs inputs had to move out of the way of it.
 
 **`@v1` is frozen at v1.0.18 and keeps working.** It is not deprecated by this. Migrate
 when you want another target, or when you want the input validation.
