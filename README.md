@@ -118,3 +118,9 @@ and keeps working unchanged; see [Migrating to v2](https://magmamoose.github.io/
 [Report a vulnerability](https://github.com/MagmaMoose/tremvok/security/advisories/new) ·
 [Contributing](https://github.com/MagmaMoose/.github/blob/main/CONTRIBUTING.md) ·
 Apache-2.0, see [LICENSE](LICENSE).
+
+### Independently versioned suite promotions
+
+For `target: gitops-pr`, set `gitops-suite-images` to a JSON image-to-tag map, `gitops-suite-overlay` to one environment directory, and `gitops-base` to the controller's branch. Each image keeps its own version. The action maintains one PR per environment at `<gitops-branch-prefix>/<environment>`, merges the current base into its existing branch, and keeps pending updates when another application is released. Older per-image events cannot replace newer pending versions.
+
+`gitops-suite-repositories` optionally maps images to `owner/repository` for release links generated from the final selections. Manual dispatch requires both the original and rerun actors in `gitops-suite-allowed-actors`; an empty list denies manual changes. `gitops-suite-allow-downgrade` permits a downgrade only after that manual check. The action requires mikefarah/yq v4 on the runner.

@@ -26,7 +26,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 135 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 140 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -143,6 +143,11 @@ is required.
 | `apim-resource-group` | `azure-apim-policy` | not set | azure-apim-policy: resource group the instance lives in. Required for this target. |
 | `apim-api-id` | `azure-apim-policy` | not set | azure-apim-policy: the API the documents are published to, by its id (the name in its resource id, not its display name). Required for this target. The API and its operations must already exist. This target publishes behaviour into them, the way azure-functions-zip publishes code into an existing Function App, and a document named after an operation the API does not have is refused before anything is published. |
 | `apim-policy-format` | `azure-apim-policy` | `rawxml` | azure-apim-policy: how the documents are written. `rawxml` (default) is what the portal's editor shows: policy expressions unescaped, `@(context.Request.Headers.GetValueOrDefault("x", ""))` as it reads. `xml` is strict XML, with every quote and angle bracket inside an expression entity-escaped. Mixing them up fails at publish, when API Management compiles the expressions. |
+| `gitops-suite-images` | `gitops-pr` | not set | gitops-pr: opt-in suite promotion, JSON image repository to tag map. Each app keeps its own version; one stable PR per environment accumulates pending changes. |
+| `gitops-suite-overlay` | `gitops-pr` | not set | gitops-pr: exact overlay directory for suite promotion. Requires gitops-suite-images and gitops-base. |
+| `gitops-suite-repositories` | `gitops-pr` | not set | gitops-pr: optional JSON image repository to owner/repository map for current selected release links in the suite PR. |
+| `gitops-suite-allowed-actors` | `gitops-pr` | not set | gitops-pr: comma or whitespace separated GitHub logins allowed to dispatch manual suite changes. Both original and rerun actors must match; empty denies manual changes. |
+| `gitops-suite-allow-downgrade` | `gitops-pr` | `false` | gitops-pr: permit a suite downgrade only on an authorized manual dispatch. |
 | `gitops-overlays` | `gitops-pr` | not set | gitops-pr: the kustomize overlay directories a release is deployed through, in promotion order, separated by whitespace (one per line reads best). Required for this target. k8s/overlays/acc k8s/overlays/prd A release opens a deploy PR for the first; merging it opens the one for the second, and so on. An overlay is named by its last path segment (`acc`), which is part of the deploy PR branch (`deploy/acc/v1.2.3`), so the names must be unique. Each overlay's kustomization lists the images in `images:` with a `newTag`, and the image automation that used to write it must be gone, or the two fight over the same line. |
 | `gitops-images` | `gitops-pr` | not set | gitops-pr: the image repositories a deploy moves, as the overlays name them (`name`, or `newName` where an entry has one), without a tag, separated by whitespace. Required for this target. Every one moves to the release's tag; an overlay that lists none of them is an error, one that lists some of them gets a warning for the rest. |
 | `gitops-tag` | `gitops-pr` | not set | gitops-pr: deploy this tag to the first overlay instead of the release event's. For a deploy by hand from `workflow_dispatch`, or to re-open one. Empty (the default) takes the tag from the published release, or promotes what a merged deploy PR moved. |

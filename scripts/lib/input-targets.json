@@ -761,6 +761,36 @@
       ],
       "default": "rawxml"
     },
+    "gitops-suite-images": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-suite-overlay": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-suite-repositories": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-suite-allowed-actors": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-suite-allow-downgrade": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": "false"
+    },
     "gitops-overlays": {
       "targets": [
         "gitops-pr"
