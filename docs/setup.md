@@ -1191,7 +1191,10 @@ policy. The LocalStack smoke suite exists to make that distinction cheap to test
 
 ### One promotion PR for a suite
 
-Use `gitops-suite-images` when apps have independent tags. Set one `gitops-suite-overlay` and the controller's `gitops-base`. A stable branch `<gitops-branch-prefix>/<environment>` retains pending images and refreshes the same PR. The action merges the current base into that branch; a merge conflict stops the run instead of resetting pending work.
+Use `gitops-suite-images` when apps have independent tags. Set one `gitops-suite-overlay` and
+the controller's `gitops-base`. A stable branch `<gitops-branch-prefix>/<environment>` retains
+pending images and refreshes the same PR. The action merges the current base into that branch;
+a merge conflict stops the run instead of resetting pending work.
 
 ```yaml
 - uses: MagmaMoose/tremvok@v2
@@ -1206,6 +1209,14 @@ Use `gitops-suite-images` when apps have independent tags. Set one `gitops-suite
     gitops-suite-repositories: '{"ghcr.io/example/web":"example/web","ghcr.io/example/api":"example/api"}'
 ```
 
-`gitops-suite-repositories` is optional and creates links to the final selected app releases. Suite mode ignores stale versions per image, preserving a newer pending release even if an older event arrives later. It writes only the `newTag` lines; workload resources stay wherever the overlay references them. The runner needs mikefarah/yq v4, curl and jq. The token needs repository contents and pull requests write.
+`gitops-suite-repositories` is optional and creates links to the final selected app releases.
+Suite mode ignores stale versions per image, preserving a newer pending release even if an
+older event arrives later. It writes only the `newTag` lines; workload resources stay wherever
+the overlay references them. The runner needs mikefarah/yq v4, curl and jq. The token needs
+repository contents and pull requests write.
 
-For manual dispatch, configure `gitops-suite-allowed-actors` with GitHub logins. Both `github.actor` and `github.triggering_actor` must match; an empty list denies manual changes. A caller can resolve an identity-provider group into the authorized login list before this step. `gitops-suite-allow-downgrade: true` only works on an authorized manual dispatch. Dry runs produce a plan without a branch, commit or PR.
+For manual dispatch, configure `gitops-suite-allowed-actors` with GitHub logins. Both
+`github.actor` and `github.triggering_actor` must match; an empty list denies manual changes.
+A caller can resolve an identity-provider group into the authorized login list before this
+step. `gitops-suite-allow-downgrade: true` only works on an authorized manual dispatch.
+Dry runs produce a plan without a branch, commit or PR.

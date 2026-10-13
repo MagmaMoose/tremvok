@@ -50,14 +50,14 @@ jobs:
           verify-url: https://example.com
 ```
 
-Swap `target:` and its inputs for another target. Ready-to-copy workflows for each live in
-[`examples/`](examples/).
+Swap `target:` and its inputs. Ready-to-copy workflows: [`examples/`](examples/).
+For suite promotions, see [Setup](https://magmamoose.github.io/tremvok/setup/).
 
 ## What it does
 
 - **Ten targets, one action**: `github-pages`, `cloudflare-docs`, `cloudflare-workers`,
   `azure-functions-zip`, `azure-apim-policy`, `s3-cloudfront`, `lambda-zip`, `terragrunt`,
-  `ansible`, [`gitops-pr` (suite promotions)](https://magmamoose.github.io/tremvok/setup/#one-promotion-pr-for-a-suite). `target` is the only required input.
+  `ansible`, `gitops-pr`. `target` is the only required input.
 - **Every input is checked against the target.** An input belonging to another target is a
   hard error naming both, before the checkout, never a silent no-op. That is what stops a
   target enum from becoming a listing that cannot say what it does.
