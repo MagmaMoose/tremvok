@@ -972,6 +972,31 @@ inputs:
     default: 'rawxml'
 
   # ── target: gitops-pr ─────────────────────────────────────────────────────
+  gitops-suite-images:
+    description: 'gitops-pr: opt-in suite promotion, JSON image repository to tag map. Each app keeps its own version; one stable PR per environment accumulates pending changes.'
+    required: false
+    default: ''
+
+  gitops-suite-overlay:
+    description: 'gitops-pr: exact overlay directory for suite promotion. Requires gitops-suite-images and gitops-base.'
+    required: false
+    default: ''
+
+  gitops-suite-repositories:
+    description: 'gitops-pr: optional JSON image repository to owner/repository map for current selected release links in the suite PR.'
+    required: false
+    default: ''
+
+  gitops-suite-allowed-actors:
+    description: 'gitops-pr: comma or whitespace separated GitHub logins allowed to dispatch manual suite changes. Both original and rerun actors must match; empty denies manual changes.'
+    required: false
+    default: ''
+
+  gitops-suite-allow-downgrade:
+    description: 'gitops-pr: permit a suite downgrade only on an authorized manual dispatch.'
+    required: false
+    default: 'false'
+
   gitops-overlays:
     description: |
       gitops-pr: the kustomize overlay directories a release is deployed through, in
@@ -1149,7 +1174,7 @@ outputs:
     value: ${{ steps.resolve.outputs.environment }}
   url:
     description: 'URL of what was deployed, when the target produces one. For gitops-pr, the deploy PR this run opened or refreshed.'
-    value: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url }}
+    value: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url || steps.deploy-suite.outputs.url }}
   deployed:
     description: 'true when something was actually deployed (false for a skip).'
     value: ${{ steps.outcome.outputs.deployed }}
@@ -1874,7 +1899,7 @@ runs:
 
     - name: Deploy, GitOps pull request
       id: deploy-gitops
-      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'gitops-pr'
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'gitops-pr' && inputs.gitops-suite-images == ''
       shell: bash
       env:
         MODE: ${{ steps.resolve.outputs.mode }}
@@ -1893,6 +1918,34 @@ runs:
         PRERELEASES: ${{ inputs.gitops-prereleases }}
         PRERELEASES_UNTIL: ${{ inputs.gitops-prereleases-until }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/deploy-gitops-pr.sh"
+
+    - name: Deploy, suite promotion pull request
+      id: deploy-suite
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'gitops-pr' && inputs.gitops-suite-images != ''
+      shell: bash
+      env:
+        MODE: ${{ steps.resolve.outputs.mode }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        EVENT_NAME: ${{ github.event_name }}
+        GITHUB_ACTOR: ${{ github.actor }}
+        GITHUB_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        AUTH_TOKEN: ${{ inputs.auth-token }}
+        OVERLAY: ${{ inputs.gitops-suite-overlay }}
+        IMAGES: ${{ inputs.gitops-suite-images }}
+        RELEASE_REPOSITORIES: ${{ inputs.gitops-suite-repositories }}
+        BASE: ${{ inputs.gitops-base }}
+        BRANCH_PREFIX: ${{ inputs.gitops-branch-prefix }}
+        ALLOWED_ACTORS: ${{ inputs.gitops-suite-allowed-actors }}
+        ALLOW_DOWNGRADE: ${{ inputs.gitops-suite-allow-downgrade }}
+      run: |
+        set -euo pipefail
+        if [ "${MODE}" != "deploy" ]; then
+          echo "::notice::Suite promotions create reviewable PRs in deploy mode."
+          echo "deployed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        bash "${GITHUB_ACTION_PATH}/scripts/gitops-suite-pr.sh"
+        echo "deployed=true" >> "$GITHUB_OUTPUT"
 
     # ── Verify, then tell the humans ─────────────────────────────────────────
     - name: Verify it actually went live
@@ -1922,7 +1975,7 @@ runs:
         CF_DEPLOYED: ${{ steps.deploy-cloudflare.outputs.deployed }}
         AZ_DEPLOYED: ${{ steps.deploy-azure-functions.outputs.deployed }}
         APIM_DEPLOYED: ${{ steps.deploy-azure-apim.outputs.deployed }}
-        GITOPS_DEPLOYED: ${{ steps.deploy-gitops.outputs.deployed }}
+        GITOPS_DEPLOYED: ${{ steps.deploy-gitops.outputs.deployed || steps.deploy-suite.outputs.deployed }}
         ANSIBLE_DEPLOYED: ${{ steps.deploy-ansible.outputs.deployed }}
         JOB_STATUS: ${{ job.status }}
       run: bash "${GITHUB_ACTION_PATH}/scripts/collect-outcome.sh"
@@ -1939,7 +1992,7 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         COMMENT_KEY: ${{ inputs.target }}-${{ steps.resolve.outputs.environment }}
         STATUS: ${{ steps.outcome.outputs.status }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url || steps.deploy-suite.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id || steps.deploy-azure-apim.outputs.version-id || steps.deploy-gitops.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         MODE: ${{ steps.resolve.outputs.mode }}
@@ -1959,7 +2012,7 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url || steps.deploy-suite.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id || steps.deploy-azure-apim.outputs.version-id || steps.deploy-gitops.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -1976,7 +2029,7 @@ runs:
         TARGET: ${{ inputs.target }}
         MODE: ${{ steps.resolve.outputs.mode }}
         ENVIRONMENT: ${{ steps.resolve.outputs.environment }}
-        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url }}
+        URL: ${{ steps.deploy-s3.outputs.url || steps.deploy-cloudflare.outputs.url || steps.deploy-azure-functions.outputs.url || steps.deploy-azure-apim.outputs.url || steps.deploy-gitops.outputs.url || steps.deploy-suite.outputs.url }}
         VERSION: ${{ steps.deploy-lambda.outputs.version-id || steps.deploy-cloudflare.outputs.version-id || steps.deploy-azure-functions.outputs.version-id || steps.deploy-azure-apim.outputs.version-id || steps.deploy-gitops.outputs.version-id }}
         VERIFIED: ${{ steps.verify.outputs.verified }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

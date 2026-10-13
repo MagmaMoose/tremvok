@@ -1188,3 +1188,35 @@ curl -si https://your-site/ | head -1        # the site answers
 and for the API, a **real signed POST**, not a `GET /healthz`. A health check passing proves
 the function imported; it proves nothing at all about the write path, the table, or the IAM
 policy. The LocalStack smoke suite exists to make that distinction cheap to test.
+
+### One promotion PR for a suite
+
+Use `gitops-suite-images` when apps have independent tags. Set one `gitops-suite-overlay` and
+the controller's `gitops-base`. A stable branch `<gitops-branch-prefix>/<environment>` retains
+pending images and refreshes the same PR. The action merges the current base into that branch;
+a merge conflict stops the run instead of resetting pending work.
+
+```yaml
+- uses: MagmaMoose/tremvok@v2
+  with:
+    target: gitops-pr
+    mode: deploy
+    auth-token: ${{ steps.token.outputs.token }}
+    gitops-base: main
+    gitops-branch-prefix: chore/promote
+    gitops-suite-overlay: k8s/prd
+    gitops-suite-images: '{"ghcr.io/example/web":"v1.2.0","ghcr.io/example/api":"v3.1.4"}'
+    gitops-suite-repositories: '{"ghcr.io/example/web":"example/web","ghcr.io/example/api":"example/api"}'
+```
+
+`gitops-suite-repositories` is optional and creates links to the final selected app releases.
+Suite mode ignores stale versions per image, preserving a newer pending release even if an
+older event arrives later. It writes only the `newTag` lines; workload resources stay wherever
+the overlay references them. The runner needs mikefarah/yq v4, curl and jq. The token needs
+repository contents and pull requests write.
+
+For manual dispatch, configure `gitops-suite-allowed-actors` with GitHub logins. Both
+`github.actor` and `github.triggering_actor` must match; an empty list denies manual changes.
+A caller can resolve an identity-provider group into the authorized login list before this
+step. `gitops-suite-allow-downgrade: true` only works on an authorized manual dispatch.
+Dry runs produce a plan without a branch, commit or PR.

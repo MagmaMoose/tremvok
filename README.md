@@ -50,8 +50,8 @@ jobs:
           verify-url: https://example.com
 ```
 
-Swap `target:` and its inputs for another target. Ready-to-copy workflows for each live in
-[`examples/`](examples/).
+Swap `target:` and its inputs. Ready-to-copy workflows: [`examples/`](examples/).
+For suite promotions, see [Setup](https://magmamoose.github.io/tremvok/setup/).
 
 ## What it does
 
