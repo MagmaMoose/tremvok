@@ -99,6 +99,7 @@ tag() { GITOPS_IMAGE="$1" yq '(.images // [])[] | select(.name == strenv(GITOPS_
   [[ "$(tag ghcr.io/acme/app-b)" == v2.1.0 ]]
   [[ "$(grep -c '^POST pulls$' "$STUB_LOG")" -eq 1 ]]
   body="$(jq -r '.[0].body' "${STATE}/prs")"
+  [[ "$body" == *'| `ghcr.io/acme/app-a` | `v1.0.0` | `v1.2.0` |'* ]]
   [[ "$body" == *'https://example/acme/app-a/releases/tag/v1.2.0'* ]]
   [[ "$body" == *'https://example/acme/app-b/releases/tag/v2.1.0'* ]]
   [[ "$body" != *'/releases/tag/v1.1.0'* ]]

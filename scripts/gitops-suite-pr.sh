@@ -185,6 +185,7 @@ TITLE="chore(promote): release to ${NAME}"
     repository="$(jq -r --arg image "$image" '.[$image] // empty' <<<"$RELEASE_REPOSITORIES")"
     link=''
     [[ -z "$repository" ]] || link="[Changes](${GITHUB_SERVER_URL%/}/${repository}/releases/tag/${tag})"
+    # shellcheck disable=SC2016  # Backticks delimit Markdown code spans in the printf format.
     printf '| `%s` | `%s` | `%s` | %s |\n' "$image" "$old" "$tag" "$link"
   done <"${TASK_WORK}/changes"
   printf '\nMerging this PR promotes all listed images together.\n'
