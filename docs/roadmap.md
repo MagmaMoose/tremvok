@@ -43,6 +43,14 @@ repo, it is wrong.
   the preview has its own URL and takes no production traffic. The Wrangler config keeps
   owning the asset directory, the routes and 404 handling. Refuses to publish an empty asset
   directory.
+- **`target: azure-functions-zip`**: publish a zip to an Azure Function App over OIDC, then
+  poll until it answers. Corroborates the exit code against `WEBSITE_RUN_FROM_PACKAGE` (the
+  CLI has been observed lying), refuses a package whose `functions.metadata` is not at the
+  root, and previews to a slot when one is configured.
+- **`target: azure-apim-policy`**: publish policy documents to an existing API Management
+  API over OIDC — `api.xml` to the API scope, one file per operation. Reads the current set
+  first, and if any document is refused by the gateway it puts every replaced scope back and
+  names the cause. Refuses a document named after an operation the API does not have.
 - **`target: gitops-pr`**: deploy a released image through the kustomize overlays a GitOps
   controller applies, by pull request. A published release opens the deploy PR for the first
   overlay; merging it opens exactly what it changed for the next, so a later environment only
