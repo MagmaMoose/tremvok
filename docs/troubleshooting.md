@@ -21,8 +21,9 @@ holding its default changes nothing, so the blind spot is harmless.
 
 ### `unknown target '<value>'`
 
-`target` accepts `github-pages`, `s3-cloudfront`, `lambda-zip`, `terragrunt`, `ansible` or
-`cloudflare-workers`. The message lists them. There's no default, on purpose: guessing
+`target` accepts `github-pages`, `cloudflare-docs`, `cloudflare-workers`, `s3-cloudfront`,
+`lambda-zip`, `terragrunt`, `ansible`, `azure-functions-zip`, `azure-apim-policy` or
+`gitops-pr`. The message lists them. There's no default, on purpose: guessing
 `github-pages` would silently build a site for someone who meant to deploy a Lambda.
 
 ### `Tremvok skipped: this pull request comes from a fork`
