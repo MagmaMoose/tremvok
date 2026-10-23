@@ -245,6 +245,19 @@ line_of() { grep -nx "$1" "${STATE}/writes.log" | head -n 1 | cut -d: -f1; }
   refute grep -q 'COMMENT 12' "${STATE}/writes.log"
 }
 
+@test "when the holder lets go, a pull request still carrying the label is told it holds it" {
+  open_pr 12
+  open_pr 15 "$L"
+  commented 12 held
+  event unlabeled 12 "$L"
+  claim
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [ "$(output_value result)" = released ]
+  comment_on 12 | grep -qF '`deploy/preview-1` was released'
+  comment_on 15 | grep -qF '<!-- tremvok-claim:held -->'
+  refute grep -q UNLABEL "${STATE}/writes.log"
+}
+
 @test "a refused label taken off by an App token does not tell that pull request it released anything" {
   open_pr 12 "$L"
   commented 15 refused
