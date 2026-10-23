@@ -16,6 +16,7 @@ reaches you through `@v2` rather than through nine copy-paste edits.
 | [`azure-functions.yml`](azure-functions.yml) | `azure-functions-zip` | a .NET function on an Azure Function App |
 | [`azure-apim-policy.yml`](azure-apim-policy.yml) | `azure-apim-policy` | policies on an existing Azure API Management API |
 | [`gitops-pr.yml`](gitops-pr.yml) | `gitops-pr` | a released image deployed through kustomize overlays, by pull request |
+| [`gitops-preview-claim.yml`](gitops-preview-claim.yml) | `gitops-pr` | one open pull request per preview label, for a label-driven preview controller |
 
 They differ only in `target:` and that target's inputs. Everything shared (`mode`,
 `verify-url`, the notification sinks) is spelled the same way in all seven, which is the

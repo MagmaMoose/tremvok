@@ -833,6 +833,18 @@
       ],
       "default": ""
     },
+    "gitops-preview-labels": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
+    "gitops-preview-urls": {
+      "targets": [
+        "gitops-pr"
+      ],
+      "default": ""
+    },
     "verify-url": {
       "targets": [
         "github-pages",

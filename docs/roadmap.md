@@ -56,6 +56,11 @@ repo, it is wrong.
   overlay; merging it opens exactly what it changed for the next, so a later environment only
   gets a build the one before it ran. Only the `newTag` line changes, one open deploy PR per
   overlay, and an overlay is never moved backwards.
+- **Preview claims for label-driven preview controllers** (`gitops-pr`,
+  `gitops-preview-labels`): one open pull request per preview label. The first pull request to
+  take a label holds it; one that takes it later loses the label again and is told which pull
+  request holds it, so a controller with `filter.limit: 1` never switches environments
+  silently. Deploys nothing itself.
 - **Post-deploy verification**, **notifications** (sticky pull-request comment, Slack,
   Teams), and the **deployment-record API**.
 

@@ -9,6 +9,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Preview claims on `gitops-pr`**: `gitops-preview-labels` keeps each preview label to one
+  open pull request, for a controller that deploys the pull request carrying a label (Flux
+  Operator's `GitHubPullRequest` input provider with `filter.labels` and `filter.limit: 1`,
+  which takes the newest of two silently). On `pull_request` `labeled`, the first pull request
+  to take the label holds it, ranked by its issue events; one that takes it later loses the
+  label again and gets a comment naming the holder, and the run is still green. Taking the
+  label off or closing the pull request releases it, and closing also takes the label off, so
+  a reopened pull request does not take the environment back. `gitops-preview-urls` puts each
+  environment's URL in the holder's comment, and the `gitops-preview-result` output says
+  `claimed`, `refused`, `released` or `ignored`. It deploys nothing, and needs only
+  `pull-requests: write`. `examples/gitops-preview-claim.yml` is the workflow.
+
 - **`terragrunt-rolling`**: apply a stack one unit at a time. Each line names a stack glob and
   the `for_each` or `count` blocks whose instances are units (`*/k3s-cluster  module.node`). When
   the plan to be applied changes two or more units, each is planned and applied on its own with

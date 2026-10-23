@@ -1068,6 +1068,33 @@ inputs:
     required: false
     default: ''
 
+  gitops-preview-labels:
+    description: |
+      gitops-pr: labels that each claim one preview environment, one per line, for a
+      controller that deploys the open pull request carrying a label: Flux Operator's
+      `GitHubPullRequest` input provider with `filter.labels` and `filter.limit: 1`. Empty
+      (the default) leaves labels alone.
+
+        deploy/preview-1
+        deploy/preview-2
+
+      On a pull request run, the first pull request to take a label holds it, and one that
+      takes it later loses the label again, with a comment naming the holder. Taking the label
+      off, or closing the pull request, releases it; closing also takes the label off, so a
+      reopened pull request does not take the environment back. Nothing is deployed: the
+      controller does that. Run it on `pull_request` `labeled`, `unlabeled` and `closed`,
+      with a concurrency group per label.
+    required: false
+    default: ''
+
+  gitops-preview-urls:
+    description: |
+      gitops-pr: each preview environment's URL, as a JSON object from a label in
+      `gitops-preview-labels` to its URL, for the comment on the pull request that holds it.
+      Optional.
+    required: false
+    default: ''
+
   # ── Verification ─────────────────────────────────────────────────────────
   verify-url:
     description: 'Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green.'
@@ -1147,7 +1174,7 @@ inputs:
     default: 'tremvok'
 
   auth-token:
-    description: 'Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. For gitops-pr it also opens the deploy PRs, so it needs `contents: write`, and it must be an App token: a pull request opened with GITHUB_TOKEN starts no workflow, so its required checks never report.'
+    description: 'Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. For gitops-pr it also opens the deploy PRs, so it needs `contents: write`, and it must be an App token: a pull request opened with GITHUB_TOKEN starts no workflow, so its required checks never report. Preview claims (`gitops-preview-labels`) need only `pull-requests: write`, and GITHUB_TOKEN will do.'
     required: false
     default: ${{ github.token }}
 
@@ -1217,6 +1244,9 @@ outputs:
   gitops-result:
     description: 'gitops-pr: what the run did: `created`, `refreshed`, `unchanged` (the overlay already runs the tag), `skipped` (it runs a newer one, or a newer deploy PR is open) or `planned` (dry run). Empty when there was nothing to deploy.'
     value: ${{ steps.deploy-gitops.outputs.result }}
+  gitops-preview-result:
+    description: 'gitops-pr: with gitops-preview-labels, what a pull request run did with its claim: `claimed` (it holds the label), `refused` (another pull request holds it, so the label came off), `released` (it held the label and let it go) or `ignored` (the event changed no claim of its own). Empty on any other run.'
+    value: ${{ steps.preview-claim.outputs.result }}
 
 runs:
   using: 'composite'
@@ -1947,6 +1977,20 @@ runs:
         bash "${GITHUB_ACTION_PATH}/scripts/gitops-suite-pr.sh"
         echo "deployed=true" >> "$GITHUB_OUTPUT"
 
+    # A preview controller deploys the open pull request carrying a label. This keeps that to
+    # one pull request per label and tells the others; it deploys nothing itself.
+    - name: Settle the preview label claims
+      id: preview-claim
+      if: steps.preflight.outputs.skip != 'true' && inputs.target == 'gitops-pr' && inputs.gitops-preview-labels != '' && steps.resolve.outputs.mode == 'preview'
+      shell: bash
+      env:
+        EVENT_PATH: ${{ github.event_path }}
+        AUTH_TOKEN: ${{ inputs.auth-token }}
+        LABELS: ${{ inputs.gitops-preview-labels }}
+        URLS: ${{ inputs.gitops-preview-urls }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/gitops-preview-claim.sh"
+
     # ── Verify, then tell the humans ─────────────────────────────────────────
     - name: Verify it actually went live
       id: verify
@@ -1983,9 +2027,9 @@ runs:
     - name: Notify, sticky pull-request comment
       # `always()` on every notification step. A deploy that failed is exactly when the humans
       # most need to be told, and a step without it is skipped the moment anything upstream
-      # goes red. The terragrunt target keeps its own rolling comment, so it is excluded here
-      # rather than commented on twice.
-      if: always() && steps.preflight.outputs.skip != 'true' && github.event.pull_request.number && inputs.target != 'terragrunt' && (inputs.pr-comment == 'true' || (inputs.pr-comment == 'auto' && steps.resolve.outputs.mode == 'preview'))
+      # goes red. The terragrunt target keeps its own rolling comment, and so do gitops-pr's
+      # preview claims, so both are excluded here rather than commented on twice.
+      if: always() && steps.preflight.outputs.skip != 'true' && github.event.pull_request.number && inputs.target != 'terragrunt' && inputs.gitops-preview-labels == '' && (inputs.pr-comment == 'true' || (inputs.pr-comment == 'auto' && steps.resolve.outputs.mode == 'preview'))
       shell: bash
       env:
         AUTH_TOKEN: ${{ inputs.auth-token }}
