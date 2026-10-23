@@ -96,7 +96,8 @@ PERMISSIONS = {
         ("pull-requests: write", "the sticky preview comment"),
     ],
     "gitops-pr": [
-        ("contents: read", "nothing else: an App token in auth-token opens the deploy PRs"),
+        ("contents: read", "deploys: an App token in auth-token opens the deploy PRs"),
+        ("pull-requests: write", "preview claims with GITHUB_TOKEN: the labels and comments"),
     ],
 }
 

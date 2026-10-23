@@ -26,7 +26,7 @@ that belongs to another target is a hard error naming both, before the checkout.
 
 ## Inputs
 
-`MagmaMoose/tremvok@v2` takes 140 inputs. `target` is the only one that
+`MagmaMoose/tremvok@v2` takes 142 inputs. `target` is the only one that
 is required.
 
 | Input | Applies to | Default | Description |
@@ -155,6 +155,8 @@ is required.
 | `gitops-branch-prefix` | `gitops-pr` | `deploy` | gitops-pr: prefix for deploy PR branches, `<prefix>/<overlay>/<tag>`. A merged pull request is recognised as a deploy PR by it, so change it only with the open ones merged or closed. |
 | `gitops-prereleases` | `gitops-pr` | `false` | gitops-pr: deploy prerelease GitHub Releases too. Off by default: only a stable release opens a deploy PR. |
 | `gitops-prereleases-until` | `gitops-pr` | not set | gitops-pr: the overlay a prerelease stops at, by name (`acc`) or path, for release candidates. Empty (the default) sends a prerelease through every overlay like a stable release, when `gitops-prereleases` is on. Set, a prerelease's deploy PRs stop at this overlay. A stable release whose own prerelease this overlay already runs (v1.4.0 while acc runs v1.4.0-rc.2) starts at the overlay after it: the signed-off candidate reaches production under its stable tag, without a second deploy to acceptance. A stable release with no candidate running there starts at the first overlay, as usual, so production only ever gets what acceptance ran. It cannot be the last overlay. |
+| `gitops-preview-labels` | `gitops-pr` | not set | gitops-pr: labels that each claim one preview environment, one per line, for a controller that deploys the open pull request carrying a label: Flux Operator's `GitHubPullRequest` input provider with `filter.labels` and `filter.limit: 1`. Empty (the default) leaves labels alone. deploy/preview-1 deploy/preview-2 On a pull request run, the first pull request to take a label holds it, and one that takes it later loses the label again, with a comment naming the holder. Taking the label off, or closing the pull request, releases it; closing also takes the label off, so a reopened pull request does not take the environment back. Nothing is deployed: the controller does that. Run it on `pull_request` `labeled`, `unlabeled` and `closed`, with a concurrency group per label. |
+| `gitops-preview-urls` | `gitops-pr` | not set | gitops-pr: each preview environment's URL, as a JSON object from a label in `gitops-preview-labels` to its URL, for the comment on the pull request that holds it. Optional. |
 | `verify-url` | all | not set | Post-deploy: the URL that must answer. Empty skips verification. Catches the deploy that uploaded but did not bind, the one failure that otherwise looks green. |
 | `verify-header` | all | not set | Post-deploy: a response header that must be present on `verify-url` (e.g. content-security-policy). |
 | `verify-header-match` | all | not set | Post-deploy: an extended regex the `verify-header` value must match. |
@@ -168,7 +170,7 @@ is required.
 | `teams-webhook` | all | not set | Microsoft Teams incoming-webhook URL. Empty means the sink is off. Never fails the deploy. |
 | `api-url` | all | not set | Base URL of a Tremvok API to record this deployment with. Authenticates with a GitHub OIDC token, so the repository stores no credential. Empty means no record is kept. |
 | `api-audience` | all | `tremvok` | OIDC audience the Tremvok API expects. |
-| `auth-token` | all | `${{ github.token }}` | Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. For gitops-pr it also opens the deploy PRs, so it needs `contents: write`, and it must be an App token: a pull request opened with GITHUB\_TOKEN starts no workflow, so its required checks never report. |
+| `auth-token` | all | `${{ github.token }}` | Token used for the pull-request comment and the check run. Needs `pull-requests: write` and, for the terragrunt target, `checks: write`. For gitops-pr it also opens the deploy PRs, so it needs `contents: write`, and it must be an App token: a pull request opened with GITHUB\_TOKEN starts no workflow, so its required checks never report. Preview claims (`gitops-preview-labels`) need only `pull-requests: write`, and GITHUB\_TOKEN will do. |
 | `allow-fork-preview` | all | `false` | Let a fork pull request attempt a deploy. Off by default and almost always wrong: a fork cannot read secrets, so this only converts an honest skip into an auth error. |
 | `allow-dispatch-from-any-ref` | all | `false` | Let a manual run deploy from a branch other than the default one. Off by default, publishing a topic branch to production usually is not what "Run workflow" meant. |
 
@@ -194,6 +196,7 @@ is required.
 | `changed-tasks` | ansible: how many tasks reported changed on the real run. |
 | `idempotent` | ansible: true when the second check-mode run found nothing left to change. |
 | `gitops-result` | gitops-pr: what the run did: `created`, `refreshed`, `unchanged` (the overlay already runs the tag), `skipped` (it runs a newer one, or a newer deploy PR is open) or `planned` (dry run). Empty when there was nothing to deploy. |
+| `gitops-preview-result` | gitops-pr: with gitops-preview-labels, what a pull request run did with its claim: `claimed` (it holds the label), `refused` (another pull request holds it, so the label came off), `released` (it held the label and let it go) or `ignored` (the event changed no claim of its own). Empty on any other run. |
 
 ## Required permissions
 
@@ -283,7 +286,8 @@ permissions:
 
 ```yaml
 permissions:
-  contents: read        # nothing else: an App token in auth-token opens the deploy PRs
+  contents: read        # deploys: an App token in auth-token opens the deploy PRs
+  pull-requests: write  # preview claims with GITHUB_TOKEN: the labels and comments
 ```
 
 `target: github-pages` is the one target the action cannot finish on its own:

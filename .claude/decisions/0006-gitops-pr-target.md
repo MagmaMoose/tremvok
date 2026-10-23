@@ -45,7 +45,9 @@ Add `target: gitops-pr`.
   only changed the overlays (the merge of a deploy PR), and skipping the image build on a pull
   request that only moves tags.
 - A pull request run deploys nothing, and there is no rollback mode: reverting a deploy is
-  reverting its merge, which is reviewed like the deploy was.
+  reverting its merge, which is reviewed like the deploy was. With `gitops-preview-labels` a
+  pull request run settles preview label claims, which deploys nothing either: see
+  [0007](0007-gitops-preview-claims.md).
 - "Did it take effect?" is answered in two halves. The target reads the deploy branch back and
   checks every tag. What the cluster did is `verify-url`'s, on the run the merge starts; waiting
   for the reconciler's own commit status would be stronger and needs the reconciler to report

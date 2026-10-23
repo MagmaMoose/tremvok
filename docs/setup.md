@@ -639,6 +639,95 @@ whose default is `dev`).
 there is nothing to request yet. The run a merge starts is the one where `verify-url` can ask
 the environment it deployed to. A pull request run deploys nothing and says so.
 
+#### Preview environments by label
+
+Flux Operator runs one preview environment per label: a `ResourceSetInputProvider` of type
+`GitHubPullRequest` with `filter.labels` and `filter.limit: 1` hands a `ResourceSet` the open
+pull request carrying the label, and the environment follows it. When two open pull requests
+carry the label it takes the newest and says nothing, so a second pull request takes the
+environment from the first without either author knowing. `gitops-preview-labels` makes each
+label a claim: the first pull request to take it holds it, and one that takes it later loses
+the label again, with a comment naming the holder.
+
+```yaml
+on:
+  pull_request:
+    types: [labeled, unlabeled, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-claim-${{ github.event.label.name || github.event.pull_request.number }}
+  queue: max
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: gitops-pr
+          gitops-preview-labels: |
+            deploy/preview-1
+            deploy/preview-2
+          gitops-preview-urls: |
+            {"deploy/preview-1": "https://preview-1.example.com",
+             "deploy/preview-2": "https://preview-2.example.com"}
+```
+
+And on the cluster, one provider per label:
+
+```yaml
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSetInputProvider
+metadata:
+  name: app-preview-1
+  namespace: app-preview
+spec:
+  type: GitHubPullRequest
+  url: https://github.com/org/app
+  secretRef:
+    name: github-auth
+  filter:
+    labels: ['deploy/preview-1']
+    limit: 1
+```
+
+**The first label on wins.** Every open pull request carrying the label is a claim, ranked by
+when its label last went on, from its issue events. The holder gets a comment saying it holds
+the environment, with its URL when `gitops-preview-urls` names one. Every other claim loses
+the label and gets a comment: *deploy/preview-1 is in use by #12. Remove it there first.* Two
+pull requests labelled at once end the same way in both runs, because both read the same
+events. The controller reads the pull requests on its own schedule
+(`fluxcd.controlplane.io/reconcileEvery`, ten minutes by default), so a refused label is
+normally gone before it looks.
+
+**Each run settles the whole label**, not only its own pull request, so a run that never
+happened leaves nothing unsettled for the next one. The concurrency group runs a label's
+events one after another; `queue: max` keeps every waiting run, where the default lets a third
+event cancel the one waiting. A `closed` event carries no label, so it queues per pull request.
+
+**Taking the label off, or closing the pull request, releases it.** The holder's comment then
+says the environment was released. Closing also takes the label off, so a pull request reopened
+later does not take the environment back: label it again.
+
+**A refused claim is a green run.** The job did what it is for. `gitops-preview-result` says
+what became of this pull request's claim: `claimed`, `refused`, `released` or `ignored`. A
+comment that cannot be posted only warns; a label that cannot be taken off fails the run,
+because the controller would still deploy that pull request.
+
+**`pull-requests: write` is the whole grant.** The open pull requests are listed through the
+pulls API, so GITHUB_TOKEN with that permission will do. An App token works too; a label it
+takes off starts the workflow again, and that run reads the comment, sees the pull request
+never held the label, and changes nothing.
+
+**Nothing is deployed.** The controller deploys; the run only takes labels off and comments,
+as any gitops-pr pull request run deploys nothing. A pull request from a fork is skipped like
+every fork run, because its token cannot write. `dry-run: true` reports what it would do and
+writes nothing.
+
 ### `s3-cloudfront` and `lambda-zip`
 
 See [`examples/`](https://github.com/MagmaMoose/tremvok/tree/main/examples). Both need
