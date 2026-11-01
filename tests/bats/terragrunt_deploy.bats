@@ -17,18 +17,30 @@ setup() {
   export CHANGED_FILES="${WORK}/changed.txt"
   export WORK_DIR="${WORK}/tg"
   export HEAD_SHA=abc123
+  export GITHUB_REF_NAME=main
   export APPROVERS='[]'
 
   # `terragrunt` whose plan exit code is the interesting variable: 0 no changes, 2 changes,
-  # anything else an error. That is the contract `-detailed-exitcode` gives.
+  # anything else an error. That is the contract `-detailed-exitcode` gives. It saves a plan the
+  # way tofu does, so an apply goes down the path a real one takes.
   stub_script terragrunt <<'STUBEOF'
 #!/usr/bin/env bash
 printf 'terragrunt %s (cwd=%s)\n' "$*" "${PWD##*/}" >>"${STUB_LOG}"
 printf '%s ARM_ACCESS_KEY=%s\n' "$1" "${ARM_ACCESS_KEY:-<unset>}" >>"${STUB_LOG}.env"
 printf '%s TG_ROLLING=%s\n' "$1" "${TG_ROLLING:-<unset>}" >>"${STUB_LOG}.env"
+printf '%s TG_HOLD_DESTROYS=%s\n' "$1" "${TG_HOLD_DESTROYS:-<unset>}" >>"${STUB_LOG}.env"
 case "$1" in
   init) exit 0 ;;
-  plan) printf '%s\n' "${PLAN_SUMMARY:-Plan: 1 to add, 0 to change, 0 to destroy.}"; exit "${PLAN_EXIT:-2}" ;;
+  plan)
+    for arg in "$@"; do
+      case "$arg" in -out=*) printf 'saved plan\n' >"${arg#-out=}" ;; esac
+    done
+    printf '%s\n' "${PLAN_SUMMARY:-Plan: 1 to add, 0 to change, 0 to destroy.}"; exit "${PLAN_EXIT:-2}" ;;
+  show)
+    if [ -n "${SHOW_EXIT:-}" ]; then exit "$SHOW_EXIT"; fi
+    actions="${PLAN_ACTIONS:-}"
+    if [ -z "$actions" ]; then actions='["create"]'; fi
+    printf '{"resource_changes":[{"change":{"actions":%s}}]}\n' "$actions"; exit 0 ;;
   apply) printf 'Apply complete.\n'; exit "${APPLY_EXIT:-0}" ;;
 esac
 exit 0
@@ -54,7 +66,7 @@ esac
 STUBEOF
 }
 
-merged() { export MERGED_PULLS='[{"number":123,"merged_at":"2026-08-18T10:00:00Z"}]'; }
+merged() { export MERGED_PULLS='[{"number":123,"merged_at":"2026-08-18T10:00:00Z","base":{"ref":"main"}}]'; }
 
 approved() {
   export APPROVERS='[{"user":{"login":"reviewer"},"state":"APPROVED","submitted_at":"2026-08-18T10:00:00Z"}]'
@@ -1083,6 +1095,23 @@ STUBEOF
   refute grep -q 'Dismiss the approval' "${WORK_DIR}/comment.md"
 }
 
+@test "without-approval: an approval event on an open pull request applies nothing" {
+  approved
+  PR_NUMBER=42 APPLY_ON_MERGE=without-approval EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "without-approval: a merge into another branch is no merge into this one" {
+  export MERGED_PULLS='[{"number":7,"merged_at":"2026-08-18T10:00:00Z","base":{"ref":"develop"}}]'
+  APPLY_ON_MERGE=without-approval EVENT_NAME=push run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
 @test "scope direct: a merge applies the stack it changed" {
   merged
   SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
@@ -1103,7 +1132,14 @@ STUBEOF
   [[ "$output" == *"terraform/root.hcl belongs to no single stack"* ]]
 }
 
-destroying() { export PLAN_SUMMARY='Plan: 1 to add, 0 to change, 1 to destroy.'; }
+@test "an unknown scope fails rather than running as changed" {
+  SCOPE=Direct run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"terragrunt-scope must be"* ]]
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+destroying() { export PLAN_ACTIONS='["delete","create"]' PLAN_SUMMARY='Plan: 1 to add, 0 to change, 1 to destroy.'; }
 
 @test "the hold applies nothing, fails the run, and names the stack" {
   merged
@@ -1113,7 +1149,7 @@ destroying() { export PLAN_SUMMARY='Plan: 1 to add, 0 to change, 1 to destroy.';
   [ "$status" -ne 0 ]
   [ "$(output_value applied)" = "false" ]
   refute grep -q 'terragrunt apply' "$STUB_LOG"
-  grep -q 'Held: the plan destroys or replaces something in aws/prod/api' "${WORK_DIR}/comment.md"
+  grep -q 'Held: the plan destroys, replaces or forgets something in aws/prod/api' "${WORK_DIR}/comment.md"
   [[ "$output" == *"apply it by hand with terragrunt-apply: force"* ]]
   grep -q '"conclusion": "failure"' "$STUB_LOG"
 }
@@ -1135,22 +1171,48 @@ destroying() { export PLAN_SUMMARY='Plan: 1 to add, 0 to change, 1 to destroy.';
   [ "$(output_value applied)" = "true" ]
 }
 
-@test "the hold still sees a destroy when the plan also imports" {
+@test "the hold reads the saved plan, so a clean summary line cannot hide a destroy" {
   merged
-  export PLAN_SUMMARY='Plan: 1 to import, 0 to add, 0 to change, 2 to destroy.'
+  export PLAN_ACTIONS='["delete"]' PLAN_SUMMARY='Plan: 0 to add, 0 to change, 0 to destroy.'
   HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -ne 0 ]
   refute grep -q 'terragrunt apply' "$STUB_LOG"
 }
 
-@test "the hold still sees a destroy when the plan also forgets" {
+@test "the hold counts a forget, which is what a replacement with destroy = false plans" {
   merged
-  export PLAN_SUMMARY='Plan: 0 to add, 0 to change, 2 to destroy, 1 to forget.'
+  export PLAN_ACTIONS='["forget","create"]' PLAN_SUMMARY='Plan: 1 to add, 0 to change, 0 to destroy, 1 to forget.'
   HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -ne 0 ]
   refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "the hold fails closed on a plan it cannot read back" {
+  merged
+  SHOW_EXIT=1 HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -q 'its plan could not be read' "${WORK_DIR}/comment.md"
+}
+
+@test "a summary line that reads like a destroy does not hold a plan that destroys nothing" {
+  merged
+  export PLAN_SUMMARY='Plan: 0 to add, 0 to change, 2 to destroy.'
+  HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "the comment's row shows what a plan imports and forgets" {
+  export PLAN_SUMMARY='Plan: 1 to import, 0 to add, 0 to change, 0 to destroy, 1 to forget.'
+  PR_NUMBER=42 EVENT_NAME=pull_request run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'Plan: 1 to import, 0 to add, 0 to change, 0 to destroy, 1 to forget' "${WORK_DIR}/comment.md"
 }
 
 @test "a plan that destroys nothing is not held" {
@@ -1159,35 +1221,46 @@ destroying() { export PLAN_SUMMARY='Plan: 1 to add, 0 to change, 1 to destroy.';
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value applied)" = "true" ]
+  grep -q 'terragrunt apply' "$STUB_LOG"
 }
 
-@test "the hold is off by default" {
+@test "the hold is off by default, and nothing reads the plan back" {
   merged
   destroying
   APPLY_ON_MERGE=without-approval EVENT_NAME=push run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value applied)" = "true" ]
+  refute grep -q 'terragrunt show' "$STUB_LOG"
 }
 
-@test "the hold reaches the apply, for the re-plan of a stale saved plan, and force switches it off" {
+@test "the hold cannot be combined with a rolling apply, whose unit plans it would never see" {
+  ROLLING='* module.node' HOLD_DESTROYS=true run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"terragrunt-hold-destroys cannot check"* ]]
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "the hold reaches the plan and the apply, and force switches it off" {
   merged
-  stub_script terragrunt <<'STUBEOF'
-#!/usr/bin/env bash
-printf '%s TG_HOLD_DESTROYS=%s\n' "$1" "${TG_HOLD_DESTROYS:-<unset>}" >>"${STUB_LOG}.env"
-case "$1" in
-  plan) exit 2 ;;
-esac
-exit 0
-STUBEOF
   HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
+  grep -q '^plan TG_HOLD_DESTROYS=true$' "${STUB_LOG}.env"
   grep -q '^apply TG_HOLD_DESTROYS=true$' "${STUB_LOG}.env"
   : >"${STUB_LOG}.env"
   HOLD_DESTROYS=true APPLY=force GITHUB_ACTOR=operator APPLY_OPERATORS=operator \
     EVENT_NAME=workflow_dispatch run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
+  grep -q '^plan TG_HOLD_DESTROYS=false$' "${STUB_LOG}.env"
   grep -q '^apply TG_HOLD_DESTROYS=false$' "${STUB_LOG}.env"
+}
+
+@test "terragrunt-stacks that is only whitespace fails, because force would then apply every stack" {
+  NAMED_STACKS='  ' APPLY=force GITHUB_ACTOR=operator APPLY_OPERATORS=operator \
+    EVENT_NAME=workflow_dispatch run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"terragrunt-stacks holds only whitespace"* ]]
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
 }
 
 web_stack() {
@@ -1234,8 +1307,14 @@ web_stack() {
   refute grep -q '^terragrunt ' "$STUB_LOG"
 }
 
-@test "blank named stacks leave the scope in charge" {
-  NAMED_STACKS=$' \n ' run bash "${SCRIPTS}/deploy-terragrunt.sh"
+@test "empty named stacks leave the scope in charge" {
+  NAMED_STACKS='' run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   [ "$(output_value stacks)" = "1" ]
+}
+
+@test "named stacks that are only newlines fail like any other whitespace" {
+  NAMED_STACKS=$' \n ' run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
 }

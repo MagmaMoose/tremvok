@@ -264,7 +264,23 @@ plain_text() { # [file]
 validate_stack_env
 validate_rolling
 
+# The hold checks one saved plan, and a rolling apply makes a plan of its own for every unit.
+if [[ -n "$ROLLING" ]] && tremvok::is_true "$HOLD_DESTROYS"; then
+  tremvok::fail "terragrunt-hold-destroys cannot check the plans terragrunt-rolling makes for each unit. Set one or the other."
+fi
+
+# `force` is the way past the hold, because that is somebody who read the plan.
+holds_destroys=false
+if [[ "$APPLY" != "force" ]] && tremvok::is_true "$HOLD_DESTROYS"; then
+  holds_destroys=true
+fi
+
 # ── which stacks ─────────────────────────────────────────────────────────────────────────
+# Refused rather than run as `changed`: `Direct` would widen what a merge reaches, silently.
+case "$SCOPE" in
+  auto|all|changed|direct) ;;
+  *) tremvok::fail "terragrunt-scope must be auto, all, changed or direct (got '${SCOPE}')" ;;
+esac
 scope="$SCOPE"
 if [[ "$scope" == "auto" ]]; then
   if [[ -n "$PR_NUMBER" ]]; then
@@ -295,6 +311,10 @@ if [[ -n "${NAMED_STACKS//[[:space:]]/}" ]]; then
       || tremvok::fail "terragrunt-stacks names '${stack}', which is not a stack this pipeline runs under ${ROOT_DIR}."
   done
   discover_output="$(printf '%s\n' "${named_stacks[@]}" | sort -u)"
+elif [[ -n "$NAMED_STACKS" ]]; then
+  # A stray space in a dispatch form must not read as no input: beside `terragrunt-apply: force`
+  # that is every stack, destroys included.
+  tremvok::fail "terragrunt-stacks holds only whitespace, so it names nothing. Leave it empty or name a stack."
 elif [[ "$scope" == "all" ]]; then
   discover_output="$(ROOT_DIR="$ROOT_DIR" "${here}/terragrunt-discover.sh" all)"
 else
@@ -446,10 +466,8 @@ fi
 # ── plan every stack, continuing past failures ───────────────────────────────────────────
 plan_failures=0
 plan_changes=0
-# The stacks whose plan destroys something. A replacement counts: tofu reports it as both an add
-# and a destroy.
+# The stacks whose saved plan destroys, replaces or forgets something, under the hold.
 destroying=()
-destroy_pattern=', ([0-9]+) to destroy$'
 rows=""
 details=""
 # The stacks that get a plan excerpt in the comment, filled by the loop and rendered once the
@@ -474,6 +492,7 @@ for stack in "${stacks[@]}"; do
       [[ -n "$assignment" ]] && stack_env+=( "$assignment" )
     done < <(stack_env_for "$stack")
     env ${stack_env[@]+"${stack_env[@]}"} TG_STATE_LOCK="$plan_state_lock" \
+      TG_HOLD_DESTROYS="$holds_destroys" \
       "${here}/terragrunt-run.sh" plan "$stack" "$out"
     code=$?
     set -e
@@ -497,12 +516,18 @@ for stack in "${stacks[@]}"; do
     changes) badge='📝 changes' ;;
     *) badge='❌ failed' ;;
   esac
-  summary_line="$(plain_text "${out}/plan.txt" 2>/dev/null | grep -aoE 'Plan: ([0-9]+ to import, )?[0-9]+ to add, [0-9]+ to change, [0-9]+ to destroy' | tail -1 || true)"
+  summary_line="$(plain_text "${out}/plan.txt" 2>/dev/null | grep -aoE 'Plan: ([0-9]+ to import, )?[0-9]+ to add, [0-9]+ to change, [0-9]+ to destroy(, [0-9]+ to forget)?' | tail -1 || true)"
   [[ -z "$summary_line" ]] && summary_line=$([[ "$status" == "no-changes" ]] && printf 'No changes' || printf 'see details')
   short="${stack#"${ROOT_DIR}"/}"
   rows+="| \`${short}\` | ${badge} | ${summary_line} |"$'\n'
-  if [[ "$summary_line" =~ $destroy_pattern ]] && (( BASH_REMATCH[1] > 0 )); then
-    destroying+=("$short")
+  # Anything but a plain 0 holds, a missing file included: the hold fails closed.
+  if [[ "$holds_destroys" == true && "$status" == "changes" ]]; then
+    destroys="$(cat "${out}/destroys" 2>/dev/null || true)"
+    case "$destroys" in
+      0) ;;
+      [1-9]*) destroying+=("$short") ;;
+      *) destroying+=("${short} (its plan could not be read)") ;;
+    esac
   fi
 
   # A stack with no changes is fully described by its table row; an excerpt would only spend the
@@ -585,7 +610,7 @@ if [[ -z "$PR_NUMBER" && "$EVENT_NAME" == "push" ]] && tremvok::is_true "$APPLY_
   # `|| merged_pr_status=$?` rather than a bare assignment: under `set -e` the assignment's
   # failure would kill the run, and the exit code is the whole signal. 0 found, 2 no merged
   # pull request, 1 unreadable, never collapsed.
-  merged_pr="$(SHA="$lookup_sha" "$RESOLVE_MERGED_PR_BIN" 2>/dev/null)" \
+  merged_pr="$(SHA="$lookup_sha" REQUIRE_BASE="$MERGE_IS_APPROVAL" "$RESOLVE_MERGED_PR_BIN" 2>/dev/null)" \
     || merged_pr_status=$?
   case "$merged_pr_status" in
     0) tremvok::log "this commit was merged from pull request #${merged_pr}" ;;
@@ -713,20 +738,20 @@ case "$APPLY" in
     apply_reason="applied by hand by @${GITHUB_ACTOR:-unknown}"
     ;;
   auto|*)
-    if [[ -n "$approver_list" && "$apply_authorised" == true ]]; then
+    # First: only the merge applies here, so an approval event on the pull request must not, and
+    # telling somebody to dismiss a review and re-approve would send them the wrong way.
+    if [[ "$MERGE_IS_APPROVAL" == true && -n "$merged_pr" ]]; then
+      may_apply=true
+      apply_reason="merged as #${merged_pr}"
+    elif [[ "$MERGE_IS_APPROVAL" == true && -n "$PR_NUMBER" ]]; then
+      apply_reason="it has not merged yet"
+    elif [[ -n "$approver_list" && "$apply_authorised" == true ]]; then
       may_apply=true
       if [[ -n "$merged_pr" ]]; then
         apply_reason="approved by ${approver_list} on #${merged_pr}"
       else
         apply_reason="approved by ${approver_list}"
       fi
-    elif [[ "$MERGE_IS_APPROVAL" == true && -n "$merged_pr" ]]; then
-      may_apply=true
-      apply_reason="merged as #${merged_pr}"
-    elif [[ "$MERGE_IS_APPROVAL" == true && -n "$PR_NUMBER" ]]; then
-      # Before the standing-approval arm: a review changes nothing here, and telling somebody to
-      # dismiss one and re-approve would send them the wrong way.
-      apply_reason="it has not merged yet"
     elif [[ -n "$approver_list" ]]; then
       # Reachable only with PR_NUMBER set: an approval needs a pull request in scope, and the
       # merged path is authorised by definition. So the check below lands on a head a merge is
@@ -771,17 +796,12 @@ if (( plan_failures > 0 )) && [[ "$may_apply" == true ]]; then
   apply_reason="${plan_failures} stack(s) failed to plan"
 fi
 
-# After the decision rather than inside it, so it holds whatever authorised the apply. `force` is
-# the way past it, because that is somebody who read the plan.
-holds_destroys=false
-if [[ "$APPLY" != "force" ]] && tremvok::is_true "$HOLD_DESTROYS"; then
-  holds_destroys=true
-fi
+# After the decision rather than inside it, so it holds whatever authorised the apply.
 apply_held=false
 if [[ "$may_apply" == true && "$holds_destroys" == true ]] && (( ${#destroying[@]} > 0 )); then
   may_apply=false
   apply_held=true
-  apply_reason="the plan destroys or replaces something in ${destroying[*]}"
+  apply_reason="the plan destroys, replaces or forgets something in ${destroying[*]}"
 fi
 
 # Gated on plan_changes so a clean plan says nothing. Warning about nothing outstanding is

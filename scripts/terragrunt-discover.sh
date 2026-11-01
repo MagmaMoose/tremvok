@@ -6,7 +6,8 @@
 #
 #   all             every stack under ROOT_DIR (the scheduled drift run, and manual full runs)
 #   changed <file>  only the stacks that own a changed path
-#   direct <file>   the same without the widening below: a path no stack owns maps to nothing
+#   direct <file>   the same without the widening below: a path no stack owns maps to nothing,
+#                   and neither does a path outside ROOT_DIR
 #
 # Changed-file mapping walks *up* from each changed path to the nearest enclosing stack, so
 # editing a file three directories inside a stack still finds it.
@@ -33,6 +34,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 ROOT_DIR="${ROOT_DIR:-terraform}"
 # Directory names that hold shared code rather than a stack. Matched as a whole path segment.
 EXCLUDE_SEGMENTS="${EXCLUDE_SEGMENTS:-modules _modules .terragrunt-cache .terraform}"
+# `terraform/aws/` and `./terraform/aws` would otherwise exclude nothing, without a word.
+normalised=""
+for segment in $EXCLUDE_SEGMENTS; do
+  segment="${segment#./}"
+  normalised="${normalised} ${segment%/}"
+done
+EXCLUDE_SEGMENTS="$normalised"
 
 mode="${1:-all}"
 changed_file="${2:-}"
@@ -99,8 +107,11 @@ changed_stacks() {
   every_stack="$(all_stacks)"
   while read -r path; do
     [[ -n "$path" ]] || continue
-    # Documentation moves nothing, so under `direct` it cannot be what applies a stack.
-    if [[ "$mode" == "direct" && "$path" == *.md ]]; then continue; fi
+    # Documentation moves nothing, and a stack outside ROOT_DIR is no stack this run may apply.
+    if [[ "$mode" == "direct" ]]; then
+      if [[ "$path" == *.md ]]; then continue; fi
+      if [[ "$ROOT_DIR" != "." && "$path" != "$ROOT_DIR"/* ]]; then continue; fi
+    fi
     dir="$(dirname "$path")"
     found=false
     owned=false

@@ -282,9 +282,20 @@ firewall_beside_stacks() {
   [ -z "$output" ]
 }
 
-@test "direct ignores a path outside the root" {
-  printf 'README.md\ndocs/setup.txt\n' >changed.txt
+@test "direct ignores a path outside the root, a stack there included" {
+  mkdir -p other/stack
+  touch other/stack/terragrunt.hcl
+  printf 'README.md\ndocs/setup.txt\nother/stack/main.tf\n' >changed.txt
   run bash "${SCRIPTS}/terragrunt-discover.sh" direct changed.txt
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+@test "an exclude entry means the same with a trailing slash or a leading ./" {
+  mkdir -p terraform/aws/prod/x terraform/gcp/prod/y
+  touch terraform/aws/prod/x/terragrunt.hcl terraform/gcp/prod/y/terragrunt.hcl
+  EXCLUDE_SEGMENTS='modules terraform/aws/ ./terraform/gcp' run bash "${SCRIPTS}/terragrunt-discover.sh" all
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"terraform/aws/prod/x"* ]]
+  [[ "$output" != *"terraform/gcp/prod/y"* ]]
 }

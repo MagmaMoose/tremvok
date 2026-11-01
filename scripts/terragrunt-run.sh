@@ -50,8 +50,9 @@ TG_ROLLING_PAUSE="${TG_ROLLING_PAUSE:-300}"
 # `read -a` rather than an unquoted expansion, which would glob an address holding a `[`.
 rolling_addresses=()
 read -r -a rolling_addresses <<<"$TG_ROLLING"
-# deploy-terragrunt.sh checked the plan it saw against terragrunt-hold-destroys. This holds the
-# re-plan that replaces a stale saved plan to the same rule.
+# terragrunt-hold-destroys. `plan` records how much its saved plan destroys, for
+# deploy-terragrunt.sh to check, and `apply` refuses any plan it has to make itself, because nobody
+# checked that one.
 TG_HOLD_DESTROYS="${TG_HOLD_DESTROYS:-false}"
 
 # Redact before anything is shown. Terraform marks its own sensitive outputs, but a provider
@@ -59,19 +60,24 @@ TG_HOLD_DESTROYS="${TG_HOLD_DESTROYS:-false}"
 # public repository. Matches `name = "value"` where the name looks like a credential, and the
 # two other shapes a plan diff prints one in: a quoted map key, `"api_token" = "value"`, and an
 # update, whose new value after `->` is as secret as the old one, `null` or not. A `:` counts as
-# well as an `=`, for JSON in a heredoc. A PEM block and an OCI key's OCID have no name to go by.
+# well as an `=`, for JSON or YAML in a heredoc, where the value may have no quotes at all. A PEM
+# block and an OCI key's OCID have no name to go by.
 redact() {
-  local name value
-  name='(password|secret|token|api_key|access_key|private_key|client_secret)[a-z_]*"?[[:space:]]*[=:][[:space:]]*'
+  local names name value pem
+  names='(password|secret|token|api_key|access_key|private_key|client_secret)[a-z_]*'
+  name="${names}\"?[[:space:]]*[=:][[:space:]]*"
   # Escaped quotes and all, so `"pa\"ss"` is masked whole rather than leaving `ss"` behind.
   value='"([^"\\]|\\.)*"'
+  # Whatever the kind: `RSA PRIVATE KEY`, `ED25519 PRIVATE KEY`, `PGP PRIVATE KEY BLOCK`.
+  pem='[A-Z0-9 ]*PRIVATE KEY[A-Z ]*'
   sed -E \
-    -e 's/-----BEGIN [A-Z ]*PRIVATE KEY-----.*-----END [A-Z ]*PRIVATE KEY-----/[REDACTED PRIVATE KEY]/' \
-    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\
-[REDACTED PRIVATE KEY]' \
+    -e "s/-----BEGIN ${pem}-----.*-----END ${pem}-----/[REDACTED PRIVATE KEY]/" \
+    -e "/-----BEGIN ${pem}-----/,/-----END ${pem}-----/c\\
+[REDACTED PRIVATE KEY]" \
     -e 's/ocid1\.(apikey|customersecretkey)\.[A-Za-z0-9.-]+/ocid1.\1.***/g' \
     -e "s/(${name})${value}/\\1\"***\"/gI" \
     -e "s/(${name}(${value}|[^\"[:space:]]+)[[:space:]]*->[[:space:]]*)${value}/\\1\"***\"/gI" \
+    -e "s/(${names}:[[:space:]]+)[^\"[:space:]]+/\\1***/gI" \
     -e 's/(AKIA|ASIA)[A-Z0-9]{16}/\1****************/g' \
     -e 's#(https?://)[^/@[:space:]]+:[^/@[:space:]]+@#\1***:***@#g'
 }
@@ -159,6 +165,23 @@ do_plan() { # -> 0 no changes, 2 changes, other failed
     *) rm -f "$plan_file"; printf 'failed\n' >"${out_dir}/status" ;;
   esac
   return $code
+}
+
+# How many resources the saved plan destroys, replaces or forgets. From the plan itself, because
+# the summary line is English and an output's value can print a clean one after the real one.
+# Prints `unknown` when the plan cannot be read back, which the hold has to treat as a destroy.
+# Piped straight to jq: the JSON holds every value in the plan, sensitive ones too.
+plan_destroys() {
+  local count=""
+  # shellcheck disable=SC2086  # deliberate word splitting: timeout_prefix is a command prefix
+  count="$( ( cd "$stack" && $timeout_prefix "$TG_BIN" show -json "$plan_file" ) 2>/dev/null \
+    | jq '[.resource_changes[]? | select(.change.actions | any(. == "delete" or . == "forget"))] | length' 2>/dev/null )" \
+    || count=""
+  if [[ "$count" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$count"
+  else
+    printf 'unknown\n'
+  fi
 }
 
 # ── rolling apply ────────────────────────────────────────────────────────────────────────
@@ -349,6 +372,9 @@ case "$action" in
     fi
     code=0
     do_plan || code=$?
+    if (( code == 2 )) && tremvok::is_true "$TG_HOLD_DESTROYS"; then
+      plan_destroys >"${out_dir}/destroys"
+    fi
     case $code in
       0|2) exit 0 ;;
       *) exit "$code" ;;
@@ -401,7 +427,11 @@ case "$action" in
         printf 'failed\n' >"${out_dir}/status"
         exit "$code"
       fi
-      tremvok::warn "the saved plan for ${stack} has gone stale; re-planning before applying. What lands is the newer plan, not the one reviewed."
+      if tremvok::is_true "$TG_HOLD_DESTROYS"; then
+        tremvok::warn "the saved plan for ${stack} has gone stale; re-planning to see what is left."
+      else
+        tremvok::warn "the saved plan for ${stack} has gone stale; re-planning before applying. What lands is the newer plan, not the one reviewed."
+      fi
       rm -f "$plan_file"
     else
       tremvok::log "PLAN SOURCE: no saved plan for ${stack}; planning now"
@@ -417,8 +447,10 @@ case "$action" in
       printf 'no-changes\n' >"${out_dir}/status"
       exit 0
     fi
-    if tremvok::is_true "$TG_HOLD_DESTROYS" && grep -aqE ', [1-9][0-9]* to destroy' "${out_dir}/plan.txt"; then
-      tremvok::error "the re-plan of ${stack} destroys or replaces something the plan checked before this apply did not. Nothing was applied."
+    # Whatever it changes. Nobody checked this plan, and with two merges close together it can be
+    # an older run's checkout undoing a newer merge.
+    if tremvok::is_true "$TG_HOLD_DESTROYS"; then
+      tremvok::error "${stack} now plans changes nobody checked, because state moved after the plan this run read. Nothing was applied to it. Read a new plan, then apply it by hand with terragrunt-apply: force."
       printf 'failed\n' >"${out_dir}/status"
       exit 1
     fi

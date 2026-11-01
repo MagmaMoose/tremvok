@@ -33,6 +33,29 @@ resolve() { run bash -c "bash '${SCRIPTS}/resolve-merged-pr.sh' 2>/dev/null"; }
   [ "$output" = "123" ]
 }
 
+@test "where the merge is the approval, a merge into another branch does not count" {
+  export PULLS_JSON='[{"number":7,"merged_at":"2026-08-18T10:00:00Z","base":{"ref":"develop"}}]'
+  export BASE_REF=main REQUIRE_BASE=true
+  resolve
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+}
+
+@test "where the merge is the approval, a merge into the pushed branch counts" {
+  export PULLS_JSON='[{"number":7,"merged_at":"2026-08-18T10:00:00Z","base":{"ref":"develop"}},{"number":8,"merged_at":"2026-08-19T10:00:00Z","base":{"ref":"main"}}]'
+  export BASE_REF=main REQUIRE_BASE=true
+  resolve
+  [ "$status" -eq 0 ]
+  [ "$output" = "8" ]
+}
+
+@test "where the merge is the approval, no branch to match on means no merge" {
+  export PULLS_JSON='[{"number":8,"merged_at":"2026-08-19T10:00:00Z","base":{"ref":"main"}}]'
+  export BASE_REF='' GITHUB_REF_NAME='' REQUIRE_BASE=true
+  resolve
+  [ "$status" -eq 2 ]
+}
+
 @test "a commit whose pull requests are all open exits 2 and prints nothing, so an unmerged pull request cannot authorise an apply" {
   export PULLS_JSON='[{"number":7,"merged_at":null}]'
   resolve

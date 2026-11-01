@@ -23,19 +23,23 @@ Chosen.
 ## Decision
 
 `without-approval` makes the merge the approval. It names what it gives up, so a reader of the
-workflow sees it, and `true` keeps meaning an independent approval. A direct push still applies
-nothing, and a lookup that can't say which pull request merged fails rather than guessing.
+workflow sees it, and `true` keeps meaning an independent approval. Only a merge into the pushed
+branch applies. A direct push and an approval on an open pull request don't, and a lookup that
+can't say which pull request merged fails rather than guessing.
 
 Three inputs limit it. Each is off by default and works on its own:
 
 - `terragrunt-scope: direct` plans only the stacks a change touched, so merging a shared file can't
   apply whatever is pending in stacks nobody reviewed by name.
-- `terragrunt-hold-destroys` stops the run when a plan destroys or replaces anything, including the
-  re-plan of a stale saved plan.
+- `terragrunt-hold-destroys` stops the run when a saved plan destroys, replaces or forgets anything.
+  It reads `show -json`, because the summary line is English and an output's value can imitate it,
+  and a plan it can't read counts as a destroy. An apply refuses any plan it has to make itself: it
+  was never checked, and it can be an older run's checkout undoing a newer merge.
 - `terragrunt-stacks` with `terragrunt-apply: force` is how someone who read a held plan applies it.
 
 ## Consequences
 
 - Anyone who can merge can apply alone. That trade is the caller's to make, and no default offers it.
-- The hold reads tofu's `Plan:` summary line, so a tofu version that rewords it could let a destroy
-  through. Check that line when bumping the default tofu version.
+- Two merges close together that reach one stack: the second finds its saved plan stale and fails,
+  and that stack needs an apply by hand. Loud and safe, and rare with one maintainer.
+- The hold and `terragrunt-rolling` can't be combined, because a roll plans each unit on its own.

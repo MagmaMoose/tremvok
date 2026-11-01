@@ -14,13 +14,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   maintainer, where an independent approval cannot exist. Three inputs limit what such a merge can
   do. `terragrunt-scope: direct` runs only the stacks a change sits inside, so a module or a shared
   `root.hcl` reaches none and the run warns. `terragrunt-hold-destroys` stops the run before
-  anything is applied when a plan destroys or replaces something. `terragrunt-stacks` names the
-  stacks to run, which with `terragrunt-apply: force` is the way past both. All are off by default.
+  anything is applied when a saved plan destroys, replaces or forgets something, and refuses any
+  plan an apply has to make itself. `terragrunt-stacks` names the stacks to run, which with
+  `terragrunt-apply: force` is the way past both. All are off by default.
 
 - **`terragrunt-exclude` takes a directory.** An entry holding a `/`, such as `terraform/aws`,
   excludes everything under it, however many stacks it holds, and a change there plans nothing. A
   by-name entry could only say this of a stack, so a change under a whole excluded tree widened to
   every stack above it.
+
+- **Redaction covers more.** Every PEM private key, whatever its kind, an OCI API key's OCID, and a
+  credential-named value after a `:`, quoted or not. Every caller gets this, and it only hides more.
+
+- **An unknown `terragrunt-scope` fails the run.** It used to run as `changed`.
 
 - **Preview claims on `gitops-pr`**: `gitops-preview-labels` keeps each preview label to one
   open pull request, for a controller that deploys the pull request carrying a label (Flux

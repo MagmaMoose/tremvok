@@ -347,14 +347,15 @@ inputs:
   terragrunt-scope:
     description: |
       terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`,
-      `changed`, or `direct`. With `terragrunt-pull-request` set, `auto` means the stacks that
-      pull request touches even on a manual run; `all` stays legal and means plan the whole
-      estate, gate on that pull request's approval, comment on that pull request.
+      `changed`, or `direct`. Anything else fails the run. With `terragrunt-pull-request` set,
+      `auto` means the stacks that pull request touches even on a manual run; `all` stays legal
+      and means plan the whole estate, gate on that pull request's approval, comment on that
+      pull request.
 
       `direct` is `changed` without the widening: only the stacks a changed path sits inside. A
       module or a shared `root.hcl` reaches none of them, and the run warns instead, because
-      those are stacks nobody named. A `.md` file counts for nothing. Use it on the push of a
-      repository where a merge applies with no reviewer.
+      those are stacks nobody named. A `.md` file or a path outside `terragrunt-root` counts for
+      nothing. Use it on the push of a repository where a merge applies with no reviewer.
     required: false
     default: 'auto'
 
@@ -364,7 +365,8 @@ inputs:
       newlines. Wins over `terragrunt-scope`. It is how `terragrunt-apply: force` applies named
       stacks by hand, and what `terragrunt-scope: direct` or `terragrunt-hold-destroys` stopped.
       A path that is not a stack, or that `terragrunt-exclude` keeps out, fails the run before
-      anything is planned. Empty (default) lets the scope decide.
+      anything is planned, and so does a value that is only whitespace. Empty (default) lets the
+      scope decide.
     required: false
     default: ''
 
@@ -408,9 +410,10 @@ inputs:
       only.
 
       `without-approval` is for a repository with nobody to give that approval. A merge from a
-      pull request applies on its own say-so, and a pull request's check stops asking for an
-      apply first. A direct push still applies nothing. The merge is then the only review, so
-      set `terragrunt-scope: direct` on the push and `terragrunt-hold-destroys` with it.
+      pull request into the pushed branch applies on its own say-so, and a pull request's check
+      stops asking for an apply first. Nothing else applies: not a direct push, and not an
+      approval on an open pull request. The merge is then the only review, so set
+      `terragrunt-scope: direct` on the push and `terragrunt-hold-destroys` with it.
 
       Separate from `terragrunt-apply` on purpose. That input answers "who may authorise an
       apply?"; this one answers "should a merge commit apply at all?". Stacking the two
@@ -429,10 +432,13 @@ inputs:
 
   terragrunt-hold-destroys:
     description: |
-      terragrunt: `true` refuses to apply when any stack's plan destroys or replaces something,
-      and fails the run so that somebody sees it. Nothing is applied, not even the stacks with
-      nothing to destroy. `terragrunt-apply: force` goes past it, because that is somebody who
-      read the plan. `false` (the default) applies what the plan says.
+      terragrunt: `true` refuses to apply when any stack's saved plan destroys, replaces or
+      forgets something, or cannot be read back, and fails the run so that somebody sees it.
+      Nothing is applied, not even the stacks with nothing to destroy. If state moves after that
+      check, a stack that still has changes fails rather than applying a plan nobody read, and
+      the others carry on. `terragrunt-apply: force` goes past it, because that is somebody who
+      read the plan. It cannot be combined with `terragrunt-rolling`. `false` (the default)
+      applies what the plan says.
     required: false
     default: 'false'
 

@@ -886,9 +886,11 @@ merge can apply, so:
   or a shared `root.hcl` reaches stacks nobody named, and whatever was pending in them would go
   with it. So its pull request plans the stacks it reaches, its merge applies none of them, and
   the run warns with the path. A `.md` file counts for nothing.
-- **`terragrunt-hold-destroys`** stops the run before anything is applied when any stack's plan
-  destroys or replaces something. The check run is a `failure` titled `Apply held: a plan
-  destroys`. It also holds the re-plan that replaces a stale saved plan.
+- **`terragrunt-hold-destroys`** stops the run before anything is applied when any stack's saved
+  plan destroys, replaces or forgets something, or cannot be read back. The check run is a `failure`
+  titled `Apply held: a plan destroys`. If state moves after that check, a stack that still has
+  changes fails rather than applying a plan nobody read, and the others carry on. It cannot be
+  combined with `terragrunt-rolling`, which plans each unit on its own.
 - **`terragrunt-stacks` with `terragrunt-apply: force`** is the way past both, by an actor named
   in `terragrunt-apply-operators`. Each path must be a stack the pipeline runs, so it cannot reach
   one `terragrunt-exclude` keeps out. Put a GitHub `environment:` on the job if only some branches

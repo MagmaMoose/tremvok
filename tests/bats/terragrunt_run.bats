@@ -16,6 +16,7 @@ printf 'terragrunt %s\n' "$*" >>"${STUB_LOG}"
 case "$1" in
   init) printf 'Initializing...\n'; exit "${INIT_EXIT:-0}" ;;
   plan) printf '%s\n' "${PLAN_SUMMARY:-Plan: 1 to add, 0 to change, 0 to destroy.}"; exit "${PLAN_EXIT:-2}" ;;
+  show) printf '%s\n' "${SHOW_JSON:-}"; exit "${SHOW_EXIT:-0}" ;;
   apply)
     # APPLY_STALE makes the FIRST apply reject the saved plan the way tofu rejects one whose
     # state moved underneath it, and the second (post-re-plan) apply succeed.
@@ -261,21 +262,58 @@ STUBEOF
   refute grep -q -- '-lock=false' "$STUB_LOG"
 }
 
-@test "a stale saved plan whose re-plan destroys is held, and nothing is applied" {
+@test "under the hold, a stale saved plan that still has changes is refused, whatever they are" {
   printf 'saved-plan\n' >out/plan.tfplan
-  PLAN_SUMMARY='Plan: 0 to add, 0 to change, 1 to destroy.' TG_HOLD_DESTROYS=true APPLY_STALE=1 \
-    run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  TG_HOLD_DESTROYS=true APPLY_STALE=1 run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
   [ "$status" -ne 0 ]
-  [[ "$output" == *"destroys or replaces something"* ]]
+  [[ "$output" == *"plans changes nobody checked"* ]]
   [ "$(cat out/status)" = "failed" ]
   [ "$(grep -c 'terragrunt apply' "$STUB_LOG")" -eq 1 ]
 }
 
-@test "a stale saved plan whose re-plan destroys nothing still applies under the hold" {
+@test "under the hold, a stale saved plan with nothing left to do passes" {
   printf 'saved-plan\n' >out/plan.tfplan
-  TG_HOLD_DESTROYS=true APPLY_STALE=1 run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  PLAN_EXIT=0 TG_HOLD_DESTROYS=true APPLY_STALE=1 run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
   [ "$status" -eq 0 ]
-  [ "$(cat out/status)" = "applied" ]
+  [ "$(cat out/status)" = "no-changes" ]
+}
+
+@test "under the hold, a stack with no saved plan that now has changes is refused" {
+  TG_HOLD_DESTROYS=true run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  [ "$status" -ne 0 ]
+  [ "$(cat out/status)" = "failed" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "under the hold, a plan records how much it destroys, replaces or forgets" {
+  SHOW_JSON='{"resource_changes":[{"change":{"actions":["delete"]}},{"change":{"actions":["delete","create"]}},{"change":{"actions":["forget","create"]}},{"change":{"actions":["create"]}},{"change":{"actions":["no-op"]}}]}' \
+    TG_HOLD_DESTROYS=true run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/destroys)" = "3" ]
+}
+
+@test "under the hold, a plan that changes only outputs records none" {
+  SHOW_JSON='{"output_changes":{}}' TG_HOLD_DESTROYS=true \
+    run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/destroys)" = "0" ]
+}
+
+@test "under the hold, a plan that cannot be read back records unknown, however it fails" {
+  SHOW_EXIT=1 TG_HOLD_DESTROYS=true run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/destroys)" = "unknown" ]
+  SHOW_JSON='not json' TG_HOLD_DESTROYS=true run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$(cat out/destroys)" = "unknown" ]
+  SHOW_JSON='' TG_HOLD_DESTROYS=true run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$(cat out/destroys)" = "unknown" ]
+}
+
+@test "without the hold, nothing reads the plan back" {
+  run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$status" -eq 0 ]
+  refute grep -q 'terragrunt show' "$STUB_LOG"
+  [ ! -e out/destroys ]
 }
 
 @test "without the hold, a stale saved plan whose re-plan destroys applies as it always has" {
@@ -284,6 +322,23 @@ STUBEOF
     run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
   [ "$status" -eq 0 ]
   [ "$(cat out/status)" = "applied" ]
+}
+
+@test "redaction takes a PEM block out whatever kind of key it holds" {
+  printf 'a\n-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYabc\n-----END PGP PRIVATE KEY BLOCK-----\nb\n-----BEGIN ED25519 PRIVATE KEY-----\nMC4def\n-----END ED25519 PRIVATE KEY-----\nc\n' >secrets.txt
+  run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"lQOYabc"* ]]
+  [[ "$output" != *"MC4def"* ]]
+  [[ "$output" == *"a"*"b"*"c"* ]]
+}
+
+@test "redaction masks an unquoted value after a colon, and leaves an unquoted one after an equals" {
+  printf '+ private_key: abc123\n+ token_ttl = module.x.ttl\n' >secrets.txt
+  run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"abc123"* ]]
+  [[ "$output" == *"token_ttl = module.x.ttl"* ]]
 }
 
 @test "redaction takes a PEM block out whole, and what surrounds it stays" {
