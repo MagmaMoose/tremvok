@@ -15,7 +15,7 @@ setup() {
 printf 'terragrunt %s\n' "$*" >>"${STUB_LOG}"
 case "$1" in
   init) printf 'Initializing...\n'; exit "${INIT_EXIT:-0}" ;;
-  plan) printf 'Plan: 1 to add, 0 to change, 0 to destroy.\n'; exit "${PLAN_EXIT:-2}" ;;
+  plan) printf '%s\n' "${PLAN_SUMMARY:-Plan: 1 to add, 0 to change, 0 to destroy.}"; exit "${PLAN_EXIT:-2}" ;;
   apply)
     # APPLY_STALE makes the FIRST apply reject the saved plan the way tofu rejects one whose
     # state moved underneath it, and the second (post-re-plan) apply succeed.
@@ -259,4 +259,64 @@ STUBEOF
   [[ "$output" == *"gone stale"* ]]
   grep -q -- 'terragrunt plan .*-lock-timeout=5m' "$STUB_LOG"
   refute grep -q -- '-lock=false' "$STUB_LOG"
+}
+
+@test "a stale saved plan whose re-plan destroys is held, and nothing is applied" {
+  printf 'saved-plan\n' >out/plan.tfplan
+  PLAN_SUMMARY='Plan: 0 to add, 0 to change, 1 to destroy.' TG_HOLD_DESTROYS=true APPLY_STALE=1 \
+    run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"destroys or replaces something"* ]]
+  [ "$(cat out/status)" = "failed" ]
+  [ "$(grep -c 'terragrunt apply' "$STUB_LOG")" -eq 1 ]
+}
+
+@test "a stale saved plan whose re-plan destroys nothing still applies under the hold" {
+  printf 'saved-plan\n' >out/plan.tfplan
+  TG_HOLD_DESTROYS=true APPLY_STALE=1 run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/status)" = "applied" ]
+}
+
+@test "without the hold, a stale saved plan whose re-plan destroys applies as it always has" {
+  printf 'saved-plan\n' >out/plan.tfplan
+  PLAN_SUMMARY='Plan: 0 to add, 0 to change, 1 to destroy.' APPLY_STALE=1 \
+    run bash "${SCRIPTS}/terragrunt-run.sh" apply stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/status)" = "applied" ]
+}
+
+@test "redaction takes a PEM block out whole, and what surrounds it stays" {
+  printf 'before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEabc\n-----END RSA PRIVATE KEY-----\nafter\n' >secrets.txt
+  run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"MIIEabc"* ]]
+  [[ "$output" == *"before"* ]]
+  [[ "$output" == *"[REDACTED PRIVATE KEY]"* ]]
+  [[ "$output" == *"after"* ]]
+}
+
+@test "redaction takes a PEM block on one line, without swallowing what follows" {
+  printf 'pem = "-----BEGIN PRIVATE KEY-----\\nMIIEabc\\n-----END PRIVATE KEY-----\\n"\nafter\n' >secrets.txt
+  run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"MIIEabc"* ]]
+  [[ "$output" == *"after"* ]]
+}
+
+@test "redaction covers an OCI key's OCID and leaves other OCIDs readable" {
+  printf 'ocid1.apikey.oc1..aaaasecret\nocid1.customersecretkey.oc1..bbbbsecret\nocid1.instance.oc1..cccc\n' >secrets.txt
+  run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"aaaasecret"* ]]
+  [[ "$output" != *"bbbbsecret"* ]]
+  [[ "$output" == *"ocid1.instance.oc1..cccc"* ]]
+}
+
+@test "redaction covers a credential in JSON, written with a colon" {
+  printf '"password": "hunter2"\n"name": "fine"\n' >secrets.txt
+  run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"hunter2"* ]]
+  [[ "$output" == *'"name": "fine"'* ]]
 }

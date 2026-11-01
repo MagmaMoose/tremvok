@@ -28,7 +28,7 @@ printf '%s ARM_ACCESS_KEY=%s\n' "$1" "${ARM_ACCESS_KEY:-<unset>}" >>"${STUB_LOG}
 printf '%s TG_ROLLING=%s\n' "$1" "${TG_ROLLING:-<unset>}" >>"${STUB_LOG}.env"
 case "$1" in
   init) exit 0 ;;
-  plan) printf 'Plan: 1 to add, 0 to change, 0 to destroy.\n'; exit "${PLAN_EXIT:-2}" ;;
+  plan) printf '%s\n' "${PLAN_SUMMARY:-Plan: 1 to add, 0 to change, 0 to destroy.}"; exit "${PLAN_EXIT:-2}" ;;
   apply) printf 'Apply complete.\n'; exit "${APPLY_EXIT:-0}" ;;
 esac
 exit 0
@@ -1016,4 +1016,226 @@ STUBEOF
     run bash "${SCRIPTS}/deploy-terragrunt.sh"
   [ "$status" -eq 0 ]
   grep -q '^apply TG_ROLLING_PAUSE=900$' "${STUB_LOG}.env"
+}
+
+# ── a merge with nobody to approve it ────────────────────────────────────────────────────
+#
+# `without-approval` is the only path that applies with no review, so these pin what it does NOT
+# do as closely as what it does: a direct push, an unreadable lookup and a failed plan apply
+# nothing, and a pull request's check asks for nothing first.
+
+@test "without-approval: a merge from a pull request applies with no review at all" {
+  merged
+  APPLY_ON_MERGE=without-approval EVENT_NAME=push run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -q 'Applied.*merged as #123' "${WORK_DIR}/comment.md"
+}
+
+@test "without-approval: unreadable reviews do not matter, because no review was needed" {
+  merged
+  REVIEWS_EXIT=22 APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "without-approval: a direct push applies nothing, because no merge authorised it" {
+  APPLY_ON_MERGE=without-approval EVENT_NAME=push run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "without-approval: an unreadable lookup fails and applies nothing, because it may be a direct push" {
+  MERGED_PULLS_EXIT=22 APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "without-approval: a failed plan blocks the apply" {
+  merged
+  PLAN_EXIT=1 APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "without-approval: a pull request plans, and its check asks for nothing first" {
+  PR_NUMBER=42 APPLY_ON_MERGE=without-approval EVENT_NAME=pull_request \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -q 'Nothing is applied until this merges' "${WORK_DIR}/comment.md"
+  grep -q '"conclusion": "success"' "$STUB_LOG"
+  refute grep -q '"conclusion": "action_required"' "$STUB_LOG"
+}
+
+@test "without-approval: a standing approval on a pull request sends nobody to re-approve" {
+  approved
+  PR_NUMBER=42 APPLY_ON_MERGE=without-approval EVENT_NAME=pull_request \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'Dismiss the approval' "${WORK_DIR}/comment.md"
+}
+
+@test "scope direct: a merge applies the stack it changed" {
+  merged
+  SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value stacks)" = "1" ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "scope direct: a merge of a shared file plans nothing and says so" {
+  merged
+  printf 'terraform/root.hcl\n' >changed.txt
+  SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value stacks)" = "0" ]
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
+  [[ "$output" == *"terraform/root.hcl belongs to no single stack"* ]]
+}
+
+destroying() { export PLAN_SUMMARY='Plan: 1 to add, 0 to change, 1 to destroy.'; }
+
+@test "the hold applies nothing, fails the run, and names the stack" {
+  merged
+  destroying
+  HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -q 'Held: the plan destroys or replaces something in aws/prod/api' "${WORK_DIR}/comment.md"
+  [[ "$output" == *"apply it by hand with terragrunt-apply: force"* ]]
+  grep -q '"conclusion": "failure"' "$STUB_LOG"
+}
+
+@test "the hold stops an approved apply too" {
+  approved
+  destroying
+  HOLD_DESTROYS=true PR_NUMBER=42 EVENT_NAME=pull_request_review REVIEW_STATE=approved \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "force goes past the hold, because that is somebody who read the plan" {
+  destroying
+  HOLD_DESTROYS=true APPLY=force GITHUB_ACTOR=operator APPLY_OPERATORS=operator \
+    EVENT_NAME=workflow_dispatch run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "the hold still sees a destroy when the plan also imports" {
+  merged
+  export PLAN_SUMMARY='Plan: 1 to import, 0 to add, 0 to change, 2 to destroy.'
+  HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "the hold still sees a destroy when the plan also forgets" {
+  merged
+  export PLAN_SUMMARY='Plan: 0 to add, 0 to change, 2 to destroy, 1 to forget.'
+  HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+}
+
+@test "a plan that destroys nothing is not held" {
+  merged
+  HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "the hold is off by default" {
+  merged
+  destroying
+  APPLY_ON_MERGE=without-approval EVENT_NAME=push run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "the hold reaches the apply, for the re-plan of a stale saved plan, and force switches it off" {
+  merged
+  stub_script terragrunt <<'STUBEOF'
+#!/usr/bin/env bash
+printf '%s TG_HOLD_DESTROYS=%s\n' "$1" "${TG_HOLD_DESTROYS:-<unset>}" >>"${STUB_LOG}.env"
+case "$1" in
+  plan) exit 2 ;;
+esac
+exit 0
+STUBEOF
+  HOLD_DESTROYS=true APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  grep -q '^apply TG_HOLD_DESTROYS=true$' "${STUB_LOG}.env"
+  : >"${STUB_LOG}.env"
+  HOLD_DESTROYS=true APPLY=force GITHUB_ACTOR=operator APPLY_OPERATORS=operator \
+    EVENT_NAME=workflow_dispatch run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  grep -q '^apply TG_HOLD_DESTROYS=false$' "${STUB_LOG}.env"
+}
+
+web_stack() {
+  mkdir -p terraform/aws/prod/web
+  touch terraform/aws/prod/web/terragrunt.hcl
+}
+
+@test "named stacks run instead of what the scope would find" {
+  web_stack
+  NAMED_STACKS='terraform/aws/prod/web' run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value stacks)" = "1" ]
+  grep -q 'terragrunt plan.*cwd=web' "$STUB_LOG"
+  refute grep -q 'cwd=api' "$STUB_LOG"
+}
+
+@test "named stacks split on spaces and newlines, and a repeat runs once" {
+  web_stack
+  NAMED_STACKS=$'terraform/aws/prod/web terraform/aws/prod/api\nterraform/aws/prod/web\n' \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value stacks)" = "2" ]
+}
+
+@test "a named path that is not a stack is refused before anything is planned" {
+  NAMED_STACKS='terraform/aws/prod/gone' run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"'terraform/aws/prod/gone', which is not a stack this pipeline runs"* ]]
+  refute grep -q '^terragrunt ' "$STUB_LOG"
+}
+
+@test "a named stack the exclude list keeps out is refused, so a manual run cannot reach it" {
+  EXCLUDE_SEGMENTS='modules terraform/aws' NAMED_STACKS='terraform/aws/prod/api' \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q '^terragrunt ' "$STUB_LOG"
+}
+
+@test "a named path is matched exactly, so a glob or a parent directory names nothing" {
+  NAMED_STACKS='terraform/aws/prod/*' run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  NAMED_STACKS='terraform/aws' run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q '^terragrunt ' "$STUB_LOG"
+}
+
+@test "blank named stacks leave the scope in charge" {
+  NAMED_STACKS=$' \n ' run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value stacks)" = "1" ]
 }

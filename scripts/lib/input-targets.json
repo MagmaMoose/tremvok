@@ -323,6 +323,12 @@
       ],
       "default": "auto"
     },
+    "terragrunt-stacks": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
     "terragrunt-pull-request": {
       "targets": [
         "terragrunt"
@@ -346,6 +352,12 @@
         "terragrunt"
       ],
       "default": ""
+    },
+    "terragrunt-hold-destroys": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": "false"
     },
     "terragrunt-stack-env": {
       "targets": [

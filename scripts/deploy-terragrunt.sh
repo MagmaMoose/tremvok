@@ -18,7 +18,10 @@
 # What is deliberately NOT here: applying an unapproved change. An approval is the
 # authorisation, and a merge that never had one is *reported* rather than applied — an
 # unapproved merge is a branch-protection problem, and turning the default branch red does not
-# fix it while leaving the stacks unapplied and invisible would.
+# fix it while leaving the stacks unapplied and invisible would. The one exception is the
+# caller's to make: `terragrunt-apply-on-merge: without-approval`, for a repository with nobody to
+# give that approval. The merge is then the authorisation, so only a merge from a pull request
+# applies, and `terragrunt-scope: direct` and `terragrunt-hold-destroys` are what limit it.
 #
 # Nor is applying a commit whose approval was given to a different one. An approval authorises
 # the commit it was given for, so the run applies on the EVENT that grants it and never on the
@@ -32,8 +35,11 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${here}/lib/common.sh"
 
 ROOT_DIR="${ROOT_DIR:-terraform}"
-SCOPE="${SCOPE:-auto}"                 # auto | all | changed
+SCOPE="${SCOPE:-auto}"                 # auto | all | changed | direct
 CHANGED_FILES="${CHANGED_FILES:-}"     # a file listing changed paths
+# Stacks named outright, separated by spaces or newlines. Wins over SCOPE, and each must be one
+# `all` would find, so a manual run cannot reach a stack terragrunt-exclude keeps out.
+NAMED_STACKS="${NAMED_STACKS:-}"
 EVENT_NAME="${EVENT_NAME:-}"
 # The review's own state on a `pull_request_review` event, from the event payload. Empty on
 # every other event, and empty when the caller's action.yml predates this field.
@@ -47,6 +53,15 @@ APPLY="${APPLY:-auto}"                 # auto | never | force
 # changed stack is not a change anyone reviews in their own diff. Off, the whole merged-pull-
 # request path below is skipped: no lookup, no approval read, plan only.
 APPLY_ON_MERGE="${APPLY_ON_MERGE:-false}"
+# `without-approval` turns that path on and lets the merge authorise it. Normalised here so that
+# everything below reads one answer to "may a merge apply?" and one to "does it need a review?".
+MERGE_IS_APPROVAL=false
+if [[ "$APPLY_ON_MERGE" == "without-approval" ]]; then
+  APPLY_ON_MERGE=true
+  MERGE_IS_APPROVAL=true
+fi
+# Refuse to apply a plan that destroys or replaces anything, unless it is forced by hand.
+HOLD_DESTROYS="${HOLD_DESTROYS:-false}"
 # Comma-separated GitHub logins allowed to force an apply by hand. Unset means nobody can:
 # the manual path fails closed. The normal path is an independent approval and needs none.
 APPLY_OPERATORS="${APPLY_OPERATORS:-}"
@@ -270,12 +285,24 @@ fi
 # loop also drops blank lines, which mapfile would have kept as empty array elements.
 stacks=()
 discover_output=""
-if [[ "$scope" == "all" ]]; then
+if [[ -n "${NAMED_STACKS//[[:space:]]/}" ]]; then
+  scope="named"
+  every_stack="$(ROOT_DIR="$ROOT_DIR" "${here}/terragrunt-discover.sh" all)"
+  # `read -a`, not an unquoted expansion: this came from a workflow input, and it would glob.
+  read -r -a named_stacks <<<"$(printf '%s' "$NAMED_STACKS" | tr '\n' ' ')"
+  for stack in "${named_stacks[@]}"; do
+    grep -Fxq -- "$stack" <<<"$every_stack" \
+      || tremvok::fail "terragrunt-stacks names '${stack}', which is not a stack this pipeline runs under ${ROOT_DIR}."
+  done
+  discover_output="$(printf '%s\n' "${named_stacks[@]}" | sort -u)"
+elif [[ "$scope" == "all" ]]; then
   discover_output="$(ROOT_DIR="$ROOT_DIR" "${here}/terragrunt-discover.sh" all)"
 else
   [[ -n "$CHANGED_FILES" && -f "$CHANGED_FILES" ]] \
-    || tremvok::fail "scope=changed needs changed-files to point at a file listing the changed paths"
-  discover_output="$(ROOT_DIR="$ROOT_DIR" "${here}/terragrunt-discover.sh" changed "$CHANGED_FILES")"
+    || tremvok::fail "scope=${scope} needs changed-files to point at a file listing the changed paths"
+  discover_mode=changed
+  if [[ "$scope" == "direct" ]]; then discover_mode=direct; fi
+  discover_output="$(ROOT_DIR="$ROOT_DIR" "${here}/terragrunt-discover.sh" "$discover_mode" "$CHANGED_FILES")"
 fi
 while IFS= read -r stack; do
   [[ -n "$stack" ]] && stacks+=("$stack")
@@ -419,6 +446,10 @@ fi
 # ── plan every stack, continuing past failures ───────────────────────────────────────────
 plan_failures=0
 plan_changes=0
+# The stacks whose plan destroys something. A replacement counts: tofu reports it as both an add
+# and a destroy.
+destroying=()
+destroy_pattern=', ([0-9]+) to destroy$'
 rows=""
 details=""
 # The stacks that get a plan excerpt in the comment, filled by the loop and rendered once the
@@ -466,10 +497,13 @@ for stack in "${stacks[@]}"; do
     changes) badge='📝 changes' ;;
     *) badge='❌ failed' ;;
   esac
-  summary_line="$(plain_text "${out}/plan.txt" 2>/dev/null | grep -aoE 'Plan: [0-9]+ to add, [0-9]+ to change, [0-9]+ to destroy' | tail -1 || true)"
+  summary_line="$(plain_text "${out}/plan.txt" 2>/dev/null | grep -aoE 'Plan: ([0-9]+ to import, )?[0-9]+ to add, [0-9]+ to change, [0-9]+ to destroy' | tail -1 || true)"
   [[ -z "$summary_line" ]] && summary_line=$([[ "$status" == "no-changes" ]] && printf 'No changes' || printf 'see details')
   short="${stack#"${ROOT_DIR}"/}"
   rows+="| \`${short}\` | ${badge} | ${summary_line} |"$'\n'
+  if [[ "$summary_line" =~ $destroy_pattern ]] && (( BASH_REMATCH[1] > 0 )); then
+    destroying+=("$short")
+  fi
 
   # A stack with no changes is fully described by its table row; an excerpt would only spend the
   # comment's size budget on "No changes." for every stack a module change reaches.
@@ -686,6 +720,13 @@ case "$APPLY" in
       else
         apply_reason="approved by ${approver_list}"
       fi
+    elif [[ "$MERGE_IS_APPROVAL" == true && -n "$merged_pr" ]]; then
+      may_apply=true
+      apply_reason="merged as #${merged_pr}"
+    elif [[ "$MERGE_IS_APPROVAL" == true && -n "$PR_NUMBER" ]]; then
+      # Before the standing-approval arm: a review changes nothing here, and telling somebody to
+      # dismiss one and re-approve would send them the wrong way.
+      apply_reason="it has not merged yet"
     elif [[ -n "$approver_list" ]]; then
       # Reachable only with PR_NUMBER set: an approval needs a pull request in scope, and the
       # merged path is authorised by definition. So the check below lands on a head a merge is
@@ -730,6 +771,19 @@ if (( plan_failures > 0 )) && [[ "$may_apply" == true ]]; then
   apply_reason="${plan_failures} stack(s) failed to plan"
 fi
 
+# After the decision rather than inside it, so it holds whatever authorised the apply. `force` is
+# the way past it, because that is somebody who read the plan.
+holds_destroys=false
+if [[ "$APPLY" != "force" ]] && tremvok::is_true "$HOLD_DESTROYS"; then
+  holds_destroys=true
+fi
+apply_held=false
+if [[ "$may_apply" == true && "$holds_destroys" == true ]] && (( ${#destroying[@]} > 0 )); then
+  may_apply=false
+  apply_held=true
+  apply_reason="the plan destroys or replaces something in ${destroying[*]}"
+fi
+
 # Gated on plan_changes so a clean plan says nothing. Warning about nothing outstanding is
 # noise, and noise is how a warning stops being read.
 if [[ "$may_apply" != true ]] && (( plan_changes > 0 )); then
@@ -753,6 +807,9 @@ if [[ -n "$gate_pr" ]]; then
   elif [[ "$apply_refused" == true ]]; then
     # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
     gate_section=$(printf '### Apply\n\n❌ **%s.**\n\nNothing was applied. Retry the run, or check the token still has `pull-requests: read`.\n' "$(capitalize "$apply_reason")")
+  elif [[ "$apply_held" == true ]]; then
+    # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
+    gate_section=$(printf '### Apply\n\n⛔ **Held: %s.**\n\nNothing was applied. Read the plan, then apply it by hand with `terragrunt-apply: force`.\n' "$apply_reason")
   elif [[ "$standing_approval" == true ]]; then
     # Deliberately not the "waiting for an approval" wording below: an approval is standing,
     # and saying it is not would send the reviewer to look for a review they already left.
@@ -761,6 +818,8 @@ if [[ -n "$gate_pr" ]]; then
   elif [[ -n "$merged_pr" ]]; then
     # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
     gate_section=$(printf '### Apply\n\n⚠️ **%s, so the affected stacks were not applied.**\n\nThis is reported rather than failed: an unapproved merge is a branch-protection matter, not a broken build. The stacks stay unapplied until someone applies them, and the scheduled drift run keeps reporting them. Re-run with `terragrunt-apply: force` to apply them by hand.\n' "$(capitalize "$apply_reason")")
+  elif [[ "$MERGE_IS_APPROVAL" == true && -n "$PR_NUMBER" ]]; then
+    gate_section=$(printf '### Apply\n\n📝 **Nothing is applied until this merges.** The merge is the approval here, so read the plan before merging.\n')
   else
     gate_section=$(printf '### Apply\n\n🔒 **%s.**\n\nApproving this pull request applies the stacks above — the run picks up the merge result, exactly what lands on the default branch — and the merge unblocks once it passes.\n' "$(capitalize "$apply_reason")")
   fi
@@ -820,6 +879,7 @@ if [[ "$may_apply" == true ]]; then
       env ${stack_env[@]+"${stack_env[@]}"} \
         PLAN_DIR="${WORK_DIR}/plan/$(sanitize "$stack")" \
         TG_ROLLING="$(rolling_for "$stack")" TG_ROLLING_PAUSE="$ROLLING_PAUSE" \
+        TG_HOLD_DESTROYS="$holds_destroys" \
         "${here}/terragrunt-run.sh" apply "$stack" "$out"
       code=$?
       set -e
@@ -894,6 +954,11 @@ elif [[ "$apply_refused" == true ]]; then
   conclusion="failure"
   title="Could not check the approval"
   summary="The reviews of #${merged_pr} could not be read, so this run cannot tell whether the merge was approved. Nothing was applied."
+elif [[ "$apply_held" == true ]]; then
+  # Red for the same reason: nothing blocks a merge that has already happened.
+  conclusion="failure"
+  title="Apply held: a plan destroys"
+  summary="$(capitalize "$apply_reason"). Nothing was applied. Read the plan, then apply it by hand with terragrunt-apply: force."
 elif [[ "$standing_approval" == true ]]; then
   # Blocking, like the arm below and for the same reason: the pending changes are not applied
   # and the merge must wait for them. Only the title and the summary differ, because this
@@ -901,6 +966,11 @@ elif [[ "$standing_approval" == true ]]; then
   conclusion="action_required"
   title="Approved, but not applied for this commit"
   summary="${plan_changes} stack(s) have pending changes. #${gate_pr} carries an approval by ${approver_list}, but no apply has run for this commit: an approval applies the commit it was given for, and this run was not started by one. Dismiss the approval and re-approve to apply this commit now, or re-run with terragrunt-apply: force."
+elif [[ "$MERGE_IS_APPROVAL" == true && -n "$PR_NUMBER" ]]; then
+  # Nothing has to happen before this merge, so the check must not block it.
+  conclusion="success"
+  title="Planned; nothing applied until it merges"
+  summary="${plan_changes} stack(s) have pending changes. The merge is the approval here, so read the plan before merging."
 elif [[ -n "$PR_NUMBER" ]]; then
   # Not a failure and not a success: there is real work outstanding and a human has to
   # authorise it. `action_required` is the only conclusion that says so and still blocks.
@@ -951,3 +1021,5 @@ tremvok::set_output approvers "$approver_list"
   || tremvok::fail "could not read the pull requests for ${lookup_sha}, so this run cannot tell which pull request authorised the merge, or whether it was approved. Nothing was applied."
 [[ "$apply_refused" != true ]] \
   || tremvok::fail "could not read the reviews of #${merged_pr}, so this run refuses to apply ${plan_changes} stack(s) that may never have been approved."
+[[ "$apply_held" != true ]] \
+  || tremvok::fail "$(capitalize "$apply_reason"). Nothing was applied. Read the plan, then apply it by hand with terragrunt-apply: force."

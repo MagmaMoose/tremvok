@@ -337,17 +337,36 @@ inputs:
       applied by hand, one that rewrites a firewall wholesale, say, by its directory name, and
       the pipeline will not touch it: a change inside it plans nothing, not even the stacks
       beside it.
+
+      An entry holding a `/` names a directory outright, such as `terraform/aws` or
+      `network/prod`. Everything under it is applied by hand, however many stacks it holds, and
+      a change there plans nothing either.
     required: false
     default: 'modules _modules'
 
   terragrunt-scope:
     description: |
       terragrunt: `auto` (changed stacks on a PR/push, all on a schedule or dispatch), `all`,
-      or `changed`. With `terragrunt-pull-request` set, `auto` means the stacks that pull
-      request touches even on a manual run; `all` stays legal and means plan the whole estate,
-      gate on that pull request's approval, comment on that pull request.
+      `changed`, or `direct`. With `terragrunt-pull-request` set, `auto` means the stacks that
+      pull request touches even on a manual run; `all` stays legal and means plan the whole
+      estate, gate on that pull request's approval, comment on that pull request.
+
+      `direct` is `changed` without the widening: only the stacks a changed path sits inside. A
+      module or a shared `root.hcl` reaches none of them, and the run warns instead, because
+      those are stacks nobody named. A `.md` file counts for nothing. Use it on the push of a
+      repository where a merge applies with no reviewer.
     required: false
     default: 'auto'
+
+  terragrunt-stacks:
+    description: |
+      terragrunt: stacks to run, as paths from the repository root, separated by spaces or
+      newlines. Wins over `terragrunt-scope`. It is how `terragrunt-apply: force` applies named
+      stacks by hand, and what `terragrunt-scope: direct` or `terragrunt-hold-destroys` stopped.
+      A path that is not a stack, or that `terragrunt-exclude` keeps out, fails the run before
+      anything is planned. Empty (default) lets the scope decide.
+    required: false
+    default: ''
 
   terragrunt-pull-request:
     description: |
@@ -388,6 +407,11 @@ inputs:
       Off, none of that happens: no commit-to-pull-request lookup, no approval read, plan
       only.
 
+      `without-approval` is for a repository with nobody to give that approval. A merge from a
+      pull request applies on its own say-so, and a pull request's check stops asking for an
+      apply first. A direct push still applies nothing. The merge is then the only review, so
+      set `terragrunt-scope: direct` on the push and `terragrunt-hold-destroys` with it.
+
       Separate from `terragrunt-apply` on purpose. That input answers "who may authorise an
       apply?"; this one answers "should a merge commit apply at all?". Stacking the two
       questions into one enum makes both harder to read.
@@ -402,6 +426,15 @@ inputs:
       here.
     required: false
     default: ''
+
+  terragrunt-hold-destroys:
+    description: |
+      terragrunt: `true` refuses to apply when any stack's plan destroys or replaces something,
+      and fails the run so that somebody sees it. Nothing is applied, not even the stacks with
+      nothing to destroy. `terragrunt-apply: force` goes past it, because that is somebody who
+      read the plan. `false` (the default) applies what the plan says.
+    required: false
+    default: 'false'
 
   terragrunt-stack-env:
     description: |
@@ -1792,9 +1825,11 @@ runs:
         ROOT_DIR: ${{ inputs.terragrunt-root }}
         EXCLUDE_SEGMENTS: ${{ inputs.terragrunt-exclude }}
         SCOPE: ${{ inputs.terragrunt-scope }}
+        NAMED_STACKS: ${{ inputs.terragrunt-stacks }}
         APPLY: ${{ inputs.terragrunt-apply }}
         APPLY_ON_MERGE: ${{ inputs.terragrunt-apply-on-merge }}
         APPLY_OPERATORS: ${{ inputs.terragrunt-apply-operators }}
+        HOLD_DESTROYS: ${{ inputs.terragrunt-hold-destroys }}
         STACK_ENV: ${{ inputs.terragrunt-stack-env }}
         ROLLING: ${{ inputs.terragrunt-rolling }}
         ROLLING_PAUSE: ${{ inputs.terragrunt-rolling-pause }}

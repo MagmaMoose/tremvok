@@ -9,6 +9,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A merge can apply in a repository with nobody to approve it.** `terragrunt-apply-on-merge:
+  without-approval` makes a merge from a pull request the authorisation, for a repository with one
+  maintainer, where an independent approval cannot exist. Three inputs limit what such a merge can
+  do. `terragrunt-scope: direct` runs only the stacks a change sits inside, so a module or a shared
+  `root.hcl` reaches none and the run warns. `terragrunt-hold-destroys` stops the run before
+  anything is applied when a plan destroys or replaces something. `terragrunt-stacks` names the
+  stacks to run, which with `terragrunt-apply: force` is the way past both. All are off by default.
+
+- **`terragrunt-exclude` takes a directory.** An entry holding a `/`, such as `terraform/aws`,
+  excludes everything under it, however many stacks it holds, and a change there plans nothing. A
+  by-name entry could only say this of a stack, so a change under a whole excluded tree widened to
+  every stack above it.
+
 - **Preview claims on `gitops-pr`**: `gitops-preview-labels` keeps each preview label to one
   open pull request, for a controller that deploys the pull request carrying a label (Flux
   Operator's `GitHubPullRequest` input provider with `filter.labels` and `filter.limit: 1`,

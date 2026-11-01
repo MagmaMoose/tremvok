@@ -50,18 +50,26 @@ TG_ROLLING_PAUSE="${TG_ROLLING_PAUSE:-300}"
 # `read -a` rather than an unquoted expansion, which would glob an address holding a `[`.
 rolling_addresses=()
 read -r -a rolling_addresses <<<"$TG_ROLLING"
+# deploy-terragrunt.sh checked the plan it saw against terragrunt-hold-destroys. This holds the
+# re-plan that replaces a stale saved plan to the same rule.
+TG_HOLD_DESTROYS="${TG_HOLD_DESTROYS:-false}"
 
 # Redact before anything is shown. Terraform marks its own sensitive outputs, but a provider
 # can print a token in an error message and a pull-request comment is world-readable on a
 # public repository. Matches `name = "value"` where the name looks like a credential, and the
 # two other shapes a plan diff prints one in: a quoted map key, `"api_token" = "value"`, and an
-# update, whose new value after `->` is as secret as the old one, `null` or not.
+# update, whose new value after `->` is as secret as the old one, `null` or not. A `:` counts as
+# well as an `=`, for JSON in a heredoc. A PEM block and an OCI key's OCID have no name to go by.
 redact() {
   local name value
-  name='(password|secret|token|api_key|access_key|private_key|client_secret)[a-z_]*"?[[:space:]]*=[[:space:]]*'
+  name='(password|secret|token|api_key|access_key|private_key|client_secret)[a-z_]*"?[[:space:]]*[=:][[:space:]]*'
   # Escaped quotes and all, so `"pa\"ss"` is masked whole rather than leaving `ss"` behind.
   value='"([^"\\]|\\.)*"'
   sed -E \
+    -e 's/-----BEGIN [A-Z ]*PRIVATE KEY-----.*-----END [A-Z ]*PRIVATE KEY-----/[REDACTED PRIVATE KEY]/' \
+    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\
+[REDACTED PRIVATE KEY]' \
+    -e 's/ocid1\.(apikey|customersecretkey)\.[A-Za-z0-9.-]+/ocid1.\1.***/g' \
     -e "s/(${name})${value}/\\1\"***\"/gI" \
     -e "s/(${name}(${value}|[^\"[:space:]]+)[[:space:]]*->[[:space:]]*)${value}/\\1\"***\"/gI" \
     -e 's/(AKIA|ASIA)[A-Z0-9]{16}/\1****************/g' \
@@ -408,6 +416,11 @@ case "$action" in
     if (( code == 0 )); then
       printf 'no-changes\n' >"${out_dir}/status"
       exit 0
+    fi
+    if tremvok::is_true "$TG_HOLD_DESTROYS" && grep -aqE ', [1-9][0-9]* to destroy' "${out_dir}/plan.txt"; then
+      tremvok::error "the re-plan of ${stack} destroys or replaces something the plan checked before this apply did not. Nothing was applied."
+      printf 'failed\n' >"${out_dir}/status"
+      exit 1
     fi
     if run "${out_dir}/apply.txt" apply -input=false -no-color -lock-timeout=5m "$plan_file"; then
       rm -f "$plan_file"
