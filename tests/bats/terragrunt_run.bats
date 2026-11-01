@@ -287,7 +287,7 @@ STUBEOF
 }
 
 @test "redaction takes a PEM block out whole, and what surrounds it stays" {
-  printf 'before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEabc\n-----END RSA PRIVATE KEY-----\nafter\n' >secrets.txt
+  printf 'before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEabc\n-----END RSA PRIVATE KEY-----\nafter\n' >secrets.txt # gitleaks:allow — fabricated PEM fixture for redaction test, not a real key
   run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
   [ "$status" -eq 0 ]
   [[ "$output" != *"MIIEabc"* ]]
