@@ -325,7 +325,7 @@ STUBEOF
 }
 
 @test "redaction takes a PEM block out whatever kind of key it holds" {
-  printf 'a\n-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYabc\n-----END PGP PRIVATE KEY BLOCK-----\nb\n-----BEGIN ED25519 PRIVATE KEY-----\nMC4def\n-----END ED25519 PRIVATE KEY-----\nc\n' >secrets.txt
+  printf 'a\n-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYabc\n-----END PGP PRIVATE KEY BLOCK-----\nb\n-----BEGIN ED25519 PRIVATE KEY-----\nMC4def\n-----END ED25519 PRIVATE KEY-----\nc\n' >secrets.txt # gitleaks:allow, fabricated PEM fixture
   run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
   [ "$status" -eq 0 ]
   [[ "$output" != *"lQOYabc"* ]]
@@ -352,7 +352,7 @@ STUBEOF
 }
 
 @test "redaction takes a PEM block on one line, without swallowing what follows" {
-  printf 'pem = "-----BEGIN PRIVATE KEY-----\\nMIIEabc\\n-----END PRIVATE KEY-----\\n"\nafter\n' >secrets.txt
+  printf 'pem = "-----BEGIN PRIVATE KEY-----\\nMIIEabc\\n-----END PRIVATE KEY-----\\n"\nafter\n' >secrets.txt # gitleaks:allow, fabricated PEM fixture
   run bash "${SCRIPTS}/terragrunt-run.sh" redact secrets.txt
   [ "$status" -eq 0 ]
   [[ "$output" != *"MIIEabc"* ]]
