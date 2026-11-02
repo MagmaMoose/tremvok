@@ -28,6 +28,9 @@ SHA="${SHA:-${GITHUB_SHA:-}}"
 # The branch the push landed on. Part of the tie-break below; empty just means the tie-break
 # falls through to the merge time.
 BASE_REF="${BASE_REF:-${GITHUB_REF_NAME:-}}"
+# Set where the merge itself is the approval. A review travels with a commit, so rule 2 below can
+# find one given on another branch, but a merge into another branch is no merge into this one.
+REQUIRE_BASE="${REQUIRE_BASE:-false}"
 
 tremvok::require GITHUB_REPOSITORY
 tremvok::require AUTH_TOKEN "a token with pull-requests: read"
@@ -66,10 +69,10 @@ body="$(curl --silent --show-error --fail --location --retry 2 --max-time 20 \
 # `.[0]` of an empty array is null and `null.number` is null, so `// empty` prints nothing and
 # the exit-2 path below is reached. `sort_by(.merged_at // "")` keeps a payload with a missing
 # merged_at from failing the whole program.
-number="$(jq -r --arg base "$BASE_REF" '
+number="$(jq -r --arg base "$BASE_REF" --arg require_base "$REQUIRE_BASE" '
     [ .[] | select(.merged_at != null) ] as $merged
     | [ $merged[] | select($base != "" and (.base.ref? == $base)) ] as $on_base
-    | (if ($on_base | length) > 0 then $on_base else $merged end)
+    | (if ($on_base | length) > 0 or $require_base == "true" then $on_base else $merged end)
     | sort_by(.merged_at // "")
     | (.[0].number // empty)
   ' <<<"$body")" \

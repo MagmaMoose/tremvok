@@ -213,3 +213,89 @@ firewall_beside_stacks() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"terraform/aws/prod/eu-west-1/api"* ]]
 }
+
+@test "an exclude entry with a slash owns its whole tree, however many stacks it holds" {
+  printf 'terraform/aws/prod/eu-west-1/api/main.tf\n' >changed.txt
+  EXCLUDE_SEGMENTS='modules terraform/aws' run bash "${SCRIPTS}/terragrunt-discover.sh" changed changed.txt
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "an exclude entry with a slash keeps its stacks out of all, and only those" {
+  EXCLUDE_SEGMENTS='modules terraform/aws' run bash "${SCRIPTS}/terragrunt-discover.sh" all
+  [ "$status" -eq 0 ]
+  [ "$output" = "terraform/oci/prod/network" ]
+}
+
+@test "an exclude entry with a slash can name one stack that shares its name with others" {
+  mkdir -p terraform/oci/dev/network
+  touch terraform/oci/dev/network/terragrunt.hcl
+  printf 'terraform/oci/dev/network/main.tf\n' >changed.txt
+  EXCLUDE_SEGMENTS='modules dev/network' run bash "${SCRIPTS}/terragrunt-discover.sh" changed changed.txt
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  EXCLUDE_SEGMENTS='modules dev/network' run bash "${SCRIPTS}/terragrunt-discover.sh" all
+  [[ "$output" == *"terraform/oci/prod/network"* ]]
+  [[ "$output" != *"terraform/oci/dev/network"* ]]
+}
+
+@test "an exclude entry with a slash does not reach a sibling whose name it merely prefixes" {
+  mkdir -p terraform/awsome/prod
+  touch terraform/awsome/prod/terragrunt.hcl
+  EXCLUDE_SEGMENTS='modules terraform/aws' run bash "${SCRIPTS}/terragrunt-discover.sh" all
+  [[ "$output" == *"terraform/awsome/prod"* ]]
+}
+
+@test "direct maps a change to the stack it sits inside" {
+  printf 'terraform/aws/prod/eu-west-1/api/nested/main.tf\n' >changed.txt
+  run bash "${SCRIPTS}/terragrunt-discover.sh" direct changed.txt
+  [ "$status" -eq 0 ]
+  [ "$output" = "terraform/aws/prod/eu-west-1/api" ]
+}
+
+@test "direct maps a shared file and a module to no stack and warns on stderr, where changed widens" {
+  printf 'terraform/root.hcl\nterraform/aws/modules/tremvok-api/main.tf\n' >changed.txt
+  stacks="$(bash "${SCRIPTS}/terragrunt-discover.sh" direct changed.txt 2>warned.txt)"
+  [ -z "$stacks" ]
+  grep -q 'terraform/root.hcl belongs to no single stack' warned.txt
+  grep -q 'terraform/aws/modules/tremvok-api/main.tf belongs to no single stack' warned.txt
+}
+
+@test "direct keeps the stacks a change sits inside beside a shared file it does not widen" {
+  printf 'terraform/root.hcl\nterraform/oci/prod/network/main.tf\n' >changed.txt
+  stacks="$(bash "${SCRIPTS}/terragrunt-discover.sh" direct changed.txt 2>/dev/null)"
+  [ "$stacks" = "terraform/oci/prod/network" ]
+}
+
+@test "direct ignores documentation, inside a stack and out, without a warning" {
+  printf 'terraform/README.md\nterraform/oci/prod/network/README.md\n' >changed.txt
+  run bash "${SCRIPTS}/terragrunt-discover.sh" direct changed.txt
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "direct maps a change inside an excluded stack to nothing, without a warning" {
+  firewall_beside_stacks
+  printf 'terraform/aws/prod/eu-west-1/firewall/rules.tf\n' >changed.txt
+  EXCLUDE_SEGMENTS='modules firewall' run bash "${SCRIPTS}/terragrunt-discover.sh" direct changed.txt
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "direct ignores a path outside the root, a stack there included" {
+  mkdir -p other/stack
+  touch other/stack/terragrunt.hcl
+  printf 'README.md\ndocs/setup.txt\nother/stack/main.tf\n' >changed.txt
+  run bash "${SCRIPTS}/terragrunt-discover.sh" direct changed.txt
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "an exclude entry means the same with a trailing slash or a leading ./" {
+  mkdir -p terraform/aws/prod/x terraform/gcp/prod/y
+  touch terraform/aws/prod/x/terragrunt.hcl terraform/gcp/prod/y/terragrunt.hcl
+  EXCLUDE_SEGMENTS='modules terraform/aws/ ./terraform/gcp' run bash "${SCRIPTS}/terragrunt-discover.sh" all
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"terraform/aws/prod/x"* ]]
+  [[ "$output" != *"terraform/gcp/prod/y"* ]]
+}

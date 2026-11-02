@@ -835,6 +835,70 @@ answers "who may authorise an apply?"; this one answers "should a merge commit a
 With it on, the path needs `pull-requests: read` on the token, which the `pull-requests: write`
 above already covers.
 
+#### When there is nobody to approve
+
+An independent approval needs a second person. In a repository with one maintainer nobody can
+give it, so `terragrunt-apply-on-merge: 'true'` never applies anything. `without-approval` makes
+the merge the authorisation:
+
+```yaml
+on:
+  pull_request:
+  push: { branches: [main], paths: ['terraform/**'] }
+  schedule: [{ cron: '0 5 * * 1-5' }]
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Stacks to plan and apply by hand. Empty plans everything and applies nothing.'
+        type: string
+        default: ''
+
+jobs:
+  terragrunt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<pinned sha>  # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: MagmaMoose/tremvok@v2
+        with:
+          target: terragrunt
+          checkout: false
+          terragrunt-apply-on-merge: without-approval
+          # Only the stacks a merge changed. A module change is planned on its pull request.
+          terragrunt-scope: ${{ github.event_name == 'push' && 'direct' || 'auto' }}
+          terragrunt-hold-destroys: 'true'
+          # The way past both: somebody read the plan and names what to apply.
+          terragrunt-stacks: ${{ inputs.apply }}
+          terragrunt-apply: ${{ inputs.apply && 'force' || 'auto' }}
+          terragrunt-apply-operators: your-login
+```
+
+A pull request plans and comments as usual, and its check run is a `success` titled `Planned;
+nothing applied until it merges`, because nothing has to happen first. A merge from a pull
+request applies, and the plan comment on that pull request is rewritten to the result. A direct
+push still plans and applies nothing. An unreadable commit-to-pull-request lookup with changes
+pending still fails the run, because the run cannot tell the commit came from a pull request.
+
+The merge is then the only review, and that is what the other inputs are for. Anyone who can
+merge can apply, so:
+
+- **`terragrunt-scope: direct` on the push** applies only the stacks the merge changed. A module
+  or a shared `root.hcl` reaches stacks nobody named, and whatever was pending in them would go
+  with it. So its pull request plans the stacks it reaches, its merge applies none of them, and
+  the run warns with the path. A `.md` file counts for nothing.
+- **`terragrunt-hold-destroys`** stops the run before anything is applied when any stack's saved
+  plan destroys, replaces or forgets something, or cannot be read back. The check run is a `failure`
+  titled `Apply held: a plan destroys`. If state moves after that check, a stack that still has
+  changes fails rather than applying a plan nobody read, and the others carry on. It cannot be
+  combined with `terragrunt-rolling`, which plans each unit on its own.
+- **`terragrunt-stacks` with `terragrunt-apply: force`** is the way past both, by an actor named
+  in `terragrunt-apply-operators`. Each path must be a stack the pipeline runs, so it cannot reach
+  one `terragrunt-exclude` keeps out. Put a GitHub `environment:` on the job if only some branches
+  may do this.
+
+This is not as strong as an approval, and it is not meant to look like one. With a second person
+available, use `'true'`.
+
 #### Which stacks a change plans
 
 A stack is a directory holding `terragrunt.hcl`. On a pull request or a push, the changed
@@ -847,6 +911,7 @@ files decide which of them run:
 | A file directly in `terragrunt-root` | every stack, for the same reason |
 | A file under `modules/` (or another excluded directory of shared code) | every stack beneath the nearest directory above it that holds any |
 | A file inside a stack named in `terragrunt-exclude` | none: that stack is applied by hand, and it owns everything inside it |
+| A file under a directory named in `terragrunt-exclude` by a path, such as `terraform/aws` | none, for the same reason, however many stacks it holds |
 | A file outside `terragrunt-root` | none |
 
 A module widens on purpose. Which stacks use it cannot be known without evaluating the HCL, and

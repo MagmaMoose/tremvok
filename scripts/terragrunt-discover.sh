@@ -2,10 +2,12 @@
 # Map a set of changed files to the Terragrunt stacks they affect.
 #
 # A "stack" is a directory containing `terragrunt.hcl` that is not the repository's root
-# configuration and not a shared module. Two modes:
+# configuration and not a shared module. Three modes:
 #
 #   all             every stack under ROOT_DIR (the scheduled drift run, and manual full runs)
 #   changed <file>  only the stacks that own a changed path
+#   direct <file>   the same without the widening below: a path no stack owns maps to nothing,
+#                   and neither does a path outside ROOT_DIR
 #
 # Changed-file mapping walks *up* from each changed path to the nearest enclosing stack, so
 # editing a file three directories inside a stack still finds it.
@@ -23,7 +25,8 @@
 # A change under `modules/` widens the same way, to the stacks beneath the nearest ancestor that
 # has any (see the long note in changed_stacks for why the wide answer is the safe one). A change
 # inside a stack excluded by name does not: that stack is applied by hand and owns its subtree,
-# so the change maps to nothing.
+# so the change maps to nothing. An exclude entry holding a `/` names a directory outright, and
+# everything under it is applied by hand the same way, however many stacks it holds.
 set -euo pipefail
 # shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
@@ -31,6 +34,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 ROOT_DIR="${ROOT_DIR:-terraform}"
 # Directory names that hold shared code rather than a stack. Matched as a whole path segment.
 EXCLUDE_SEGMENTS="${EXCLUDE_SEGMENTS:-modules _modules .terragrunt-cache .terraform}"
+# `terraform/aws/` and `./terraform/aws` would otherwise exclude nothing, without a word.
+normalised=""
+for segment in $EXCLUDE_SEGMENTS; do
+  segment="${segment#./}"
+  normalised="${normalised} ${segment%/}"
+done
+EXCLUDE_SEGMENTS="$normalised"
 
 mode="${1:-all}"
 changed_file="${2:-}"
@@ -63,6 +73,10 @@ is_excluded_stack() {
   local dir="$1" segment
   [[ "$dir" == "$ROOT_DIR" || "$dir" == "." ]] && return 1
   for segment in $EXCLUDE_SEGMENTS; do
+    if [[ "$segment" == */* ]]; then
+      if [[ "/${dir}" == */"${segment}" ]]; then return 0; fi
+      continue
+    fi
     if [[ "${dir##*/}" == "$segment" ]]; then
       [[ -f "${dir}/terragrunt.hcl" ]] || grep -qxF "${dir}/terragrunt.hcl" "$changed_file"
       return
@@ -93,6 +107,11 @@ changed_stacks() {
   every_stack="$(all_stacks)"
   while read -r path; do
     [[ -n "$path" ]] || continue
+    # Documentation moves nothing, and a stack outside ROOT_DIR is no stack this run may apply.
+    if [[ "$mode" == "direct" ]]; then
+      if [[ "$path" == *.md ]]; then continue; fi
+      if [[ "$ROOT_DIR" != "." && "$path" != "$ROOT_DIR"/* ]]; then continue; fi
+    fi
     dir="$(dirname "$path")"
     found=false
     owned=false
@@ -138,6 +157,13 @@ changed_stacks() {
     # path directly in ROOT_DIR answers at ROOT_DIR and therefore every stack, which is correct
     # rather than a case to suppress: a file every stack includes has changed every stack.
     if [[ "$found" == false && "$owned" == false && "$path" == "$ROOT_DIR"/* ]]; then
+      # `direct` is for a run that applies what it finds with no reviewer beyond the author, and a
+      # shared file reaches stacks nobody named, with whatever was pending in them. On stderr,
+      # because stdout is the stack list.
+      if [[ "$mode" == "direct" ]]; then
+        tremvok::warn "${path} belongs to no single stack, so this run plans nothing for it. Its pull request planned the stacks it reaches; apply those by name with terragrunt-stacks." >&2
+        continue
+      fi
       base="$(dirname "$path")"
       while [[ "$base" == "$ROOT_DIR"/* || "$base" == "$ROOT_DIR" ]]; do
         matched=false
@@ -162,6 +188,6 @@ changed_stacks() {
 
 case "$mode" in
   all) all_stacks ;;
-  changed) changed_stacks ;;
-  *) tremvok::fail "usage: terragrunt-discover.sh all|changed [changed-files-file]" ;;
+  changed|direct) changed_stacks ;;
+  *) tremvok::fail "usage: terragrunt-discover.sh all|changed|direct [changed-files-file]" ;;
 esac

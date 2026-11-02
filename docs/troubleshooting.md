@@ -445,6 +445,11 @@ State moved between the plan and the apply. The run re-plans and applies the new
 than refusing, and says so. `PLAN SOURCE:` in the log names which plan actually ran. If you need
 the reviewed plan or nothing, re-run the whole job so plan and apply are adjacent again.
 
+With `terragrunt-hold-destroys` on, a stack that still has changes fails instead, because the newer
+plan is one nobody read. Two merges close together can do this to one stack. Apply it by name with
+`terragrunt-stacks` and `terragrunt-apply: force` on a run from the default branch. Don't re-run the
+old job: it plans its own commit, which may be older than what is now merged.
+
 ### A scheduled run finds nothing
 
 Discovery maps changed files to stacks by path, and a change under `modules/` maps to nothing on
