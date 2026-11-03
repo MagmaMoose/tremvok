@@ -359,6 +359,12 @@
       ],
       "default": "false"
     },
+    "terragrunt-plan-pin": {
+      "targets": [
+        "terragrunt"
+      ],
+      "default": ""
+    },
     "terragrunt-stack-env": {
       "targets": [
         "terragrunt"

@@ -314,6 +314,7 @@ STUBEOF
   [ "$status" -eq 0 ]
   refute grep -q 'terragrunt show' "$STUB_LOG"
   [ ! -e out/destroys ]
+  [ ! -e out/summary ]
 }
 
 @test "without the hold, a stale saved plan whose re-plan destroys applies as it always has" {
@@ -374,4 +375,33 @@ STUBEOF
   [ "$status" -eq 0 ]
   [[ "$output" != *"hunter2"* ]]
   [[ "$output" == *'"name": "fine"'* ]]
+}
+
+@test "with a pin to check, a plan records the summary tofu prints for it, counted from the plan rather than the log" {
+  SHOW_JSON='{"resource_changes":[
+    {"mode":"managed","change":{"actions":["create"],"importing":{"id":"a"}}},
+    {"mode":"managed","change":{"actions":["no-op"],"importing":{"id":"b"}}},
+    {"mode":"managed","change":{"actions":["update"]}},
+    {"mode":"managed","change":{"actions":["delete","create"]}},
+    {"mode":"managed","change":{"actions":["delete"]}},
+    {"mode":"data","change":{"actions":["delete"]}},
+    {"mode":"data","change":{"actions":["read"]}},
+    {"mode":"managed","change":{"actions":["forget"]}},
+    {"mode":"managed","change":{"actions":["forget","create"]}},
+    {"mode":"ephemeral","change":{"actions":["create"]}}]}' \
+    PLAN_SUMMARY='Plan: 0 to add, 0 to change, 0 to destroy.' TG_PLAN_SUMMARY=true \
+    run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/summary)" = "Plan: 2 to import, 3 to add, 1 to change, 2 to destroy, 2 to forget" ]
+  [ ! -e out/destroys ]
+}
+
+@test "with a pin to check, a plan of outputs only reads as zeros, and one that cannot be read back as unknown" {
+  SHOW_JSON='{"output_changes":{}}' TG_PLAN_SUMMARY=true run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$status" -eq 0 ]
+  [ "$(cat out/summary)" = "Plan: 0 to add, 0 to change, 0 to destroy" ]
+  SHOW_EXIT=1 TG_PLAN_SUMMARY=true run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$(cat out/summary)" = "unknown" ]
+  SHOW_JSON='not json' TG_PLAN_SUMMARY=true run bash "${SCRIPTS}/terragrunt-run.sh" plan stack out
+  [ "$(cat out/summary)" = "unknown" ]
 }

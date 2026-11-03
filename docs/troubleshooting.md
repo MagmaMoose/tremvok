@@ -445,10 +445,24 @@ State moved between the plan and the apply. The run re-plans and applies the new
 than refusing, and says so. `PLAN SOURCE:` in the log names which plan actually ran. If you need
 the reviewed plan or nothing, re-run the whole job so plan and apply are adjacent again.
 
-With `terragrunt-hold-destroys` on, a stack that still has changes fails instead, because the newer
-plan is one nobody read. Two merges close together can do this to one stack. Apply it by name with
-`terragrunt-stacks` and `terragrunt-apply: force` on a run from the default branch. Don't re-run the
-old job: it plans its own commit, which may be older than what is now merged.
+With `terragrunt-hold-destroys` on, or on a stack held to its `terragrunt-plan-pin`, a stack that
+still has changes fails instead, because the newer plan is one nobody read. Two merges close together
+can do this to one stack. Apply it by name with `terragrunt-stacks` and `terragrunt-apply: force` on
+a run from the default branch. Don't re-run the old job: it plans its own commit, which may be older
+than what is now merged.
+
+### The check run says `Plan differs from its pin`
+
+A stack the change reached directly has a `terragrunt-plan-pin` file, and the saved plan's summary
+is not the one in it. The plan comment's `Plan pins` table shows both lines, and nothing was
+applied. On a pull request, either the change does something its pin does not say, or the pin is
+left over from an earlier change to the stack: fix whichever is wrong. After a merge, state has
+moved since the pull request was reviewed, so read the new plan before doing anything. To apply it
+anyway, name the stack with `terragrunt-stacks` and `terragrunt-apply: force`; the table still shows
+the difference.
+
+A plan that failed or cannot be read back, and a pin with no summary line, count as a difference.
+The line must be the summary as tofu prints it: `No changes.`, not the sentence that follows it.
 
 ### A scheduled run finds nothing
 

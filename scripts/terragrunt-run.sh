@@ -54,6 +54,9 @@ read -r -a rolling_addresses <<<"$TG_ROLLING"
 # deploy-terragrunt.sh to check, and `apply` refuses any plan it has to make itself, because nobody
 # checked that one.
 TG_HOLD_DESTROYS="${TG_HOLD_DESTROYS:-false}"
+# terragrunt-plan-pin. `plan` records the summary line of its saved plan, for deploy-terragrunt.sh
+# to compare with the stack's pin.
+TG_PLAN_SUMMARY="${TG_PLAN_SUMMARY:-false}"
 
 # Redact before anything is shown. Terraform marks its own sensitive outputs, but a provider
 # can print a token in an error message and a pull-request comment is world-readable on a
@@ -179,6 +182,33 @@ plan_destroys() {
     || count=""
   if [[ "$count" =~ ^[0-9]+$ ]]; then
     printf '%s\n' "$count"
+  else
+    printf 'unknown\n'
+  fi
+}
+
+# The summary line tofu prints for the saved plan, worked out from the plan itself for the reason
+# above. Counted the way tofu 1.12 counts: a replacement is one to add and one to destroy, a deleted
+# data source and an ephemeral resource are not counted, and an import or a forget shows only when
+# there is one. A plan that changes only outputs prints no summary and comes out as zeros here.
+# Prints `unknown` when the plan cannot be read back.
+plan_summary() {
+  local line=""
+  # shellcheck disable=SC2086  # deliberate word splitting: timeout_prefix is a command prefix
+  line="$( ( cd "$stack" && $timeout_prefix "$TG_BIN" show -json "$plan_file" ) 2>/dev/null \
+    | jq -r '
+        def n(f): [.resource_changes[]? | select(.mode != "ephemeral") | select(f)] | length;
+        n(.change.importing != null) as $import
+        | n(.change.actions | any(. == "forget")) as $forget
+        | "Plan: "
+          + (if $import > 0 then "\($import) to import, " else "" end)
+          + "\(n(.change.actions | any(. == "create"))) to add, "
+          + "\(n(.change.actions == ["update"])) to change, "
+          + "\(n(.mode != "data" and (.change.actions | any(. == "delete")))) to destroy"
+          + (if $forget > 0 then ", \($forget) to forget" else "" end)' 2>/dev/null )" \
+    || line=""
+  if [[ "$line" == "Plan: "* ]]; then
+    printf '%s\n' "$line"
   else
     printf 'unknown\n'
   fi
@@ -374,6 +404,9 @@ case "$action" in
     do_plan || code=$?
     if (( code == 2 )) && tremvok::is_true "$TG_HOLD_DESTROYS"; then
       plan_destroys >"${out_dir}/destroys"
+    fi
+    if (( code == 2 )) && tremvok::is_true "$TG_PLAN_SUMMARY"; then
+      plan_summary >"${out_dir}/summary"
     fi
     case $code in
       0|2) exit 0 ;;
