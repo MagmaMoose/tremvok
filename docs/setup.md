@@ -891,7 +891,16 @@ merge can apply, so:
   titled `Apply held: a plan destroys`. If state moves after that check, a stack that still has
   changes fails rather than applying a plan nobody read, and the others carry on. It cannot be
   combined with `terragrunt-rolling`, which plans each unit on its own.
-- **`terragrunt-stacks` with `terragrunt-apply: force`** is the way past both, by an actor named
+- **`terragrunt-plan-pin: plan.pin`** lets a change say what its plan does, in a file the
+  reviewer reads in the diff. A stack the change reached directly is compared with the first
+  line of its `plan.pin` that is not blank and not a `#` comment:
+  `Plan: 0 to add, 0 to change, 1 to destroy.` or `No changes.`, counted from the saved plan.
+  The plan comment shows whether each pinned stack matches. A plan that differs fails the pull
+  request's check, and on the merge applies nothing and fails the run, so a change whose state
+  moved on since it was reviewed never lands. A stack whose plan matches is past the hold,
+  because its pin declared what it destroys, and applies that plan or nothing. A module or a
+  shared file holds no stack to its pin, and neither does a scheduled run.
+- **`terragrunt-stacks` with `terragrunt-apply: force`** is the way past all three, by an actor named
   in `terragrunt-apply-operators`. Each path must be a stack the pipeline runs, so it cannot reach
   one `terragrunt-exclude` keeps out. Put a GitHub `environment:` on the job if only some branches
   may do this.

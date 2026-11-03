@@ -442,6 +442,32 @@ inputs:
     required: false
     default: 'false'
 
+  terragrunt-plan-pin:
+    description: |
+      terragrunt: a file name, such as `plan.pin`, looked up in each stack's directory. It holds
+      the plan summary the change to that stack is meant to produce, so a reviewer can see in the
+      diff what a merge will do. Empty (default) turns it off.
+
+      The first line that is not blank and not a `#` comment is the summary as tofu prints it,
+      `Plan: 1 to import, 0 to add, 2 to change, 1 to destroy, 1 to forget.` or `No changes.`,
+      with the trailing period optional. It is compared by its counts, so `0 to import` may be
+      written out or left off. A plan that changes only outputs prints no summary, and its pin
+      is `Plan: 0 to add, 0 to change, 0 to destroy.`
+
+      A pin counts only for a stack the change reached directly: a file inside it changed, or
+      `terragrunt-stacks` named it. A stack planned because a module or a shared file changed
+      is not held to its pin, and no stack is on a scheduled run.
+
+      The plan comment and the step summary say, per pinned stack, whether the plan matches. A
+      plan that differs, or a plan or pin that cannot be read, fails the run, and a run that
+      could apply applies nothing. A stack whose plan matches is past
+      `terragrunt-hold-destroys`, because its pin declared what it destroys, and applies the
+      plan its pin was checked against or nothing. `terragrunt-apply: force` goes past a pin as
+      it goes past the hold, and the table still shows what differed. It cannot be combined with
+      `terragrunt-rolling`.
+    required: false
+    default: ''
+
   terragrunt-stack-env:
     description: |
       terragrunt: environment applied per stack, one `<glob> KEY=VALUE` per line. The first
@@ -1836,6 +1862,7 @@ runs:
         APPLY_ON_MERGE: ${{ inputs.terragrunt-apply-on-merge }}
         APPLY_OPERATORS: ${{ inputs.terragrunt-apply-operators }}
         HOLD_DESTROYS: ${{ inputs.terragrunt-hold-destroys }}
+        PLAN_PIN: ${{ inputs.terragrunt-plan-pin }}
         STACK_ENV: ${{ inputs.terragrunt-stack-env }}
         ROLLING: ${{ inputs.terragrunt-rolling }}
         ROLLING_PAUSE: ${{ inputs.terragrunt-rolling-pause }}

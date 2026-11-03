@@ -9,6 +9,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A change can pin what its plan does.** `terragrunt-plan-pin: plan.pin` names a file in each
+  stack's directory whose first line is the plan summary the change is meant to produce, such as
+  `Plan: 0 to add, 0 to change, 1 to destroy.` or `No changes.`. For a stack the change reached
+  directly, the plan comment and the step summary say whether the saved plan matches. A plan that
+  differs fails the run and applies nothing, and a plan that matches is past
+  `terragrunt-hold-destroys` and applies only the plan it was checked against. A module, a shared
+  file or a scheduled run holds no stack to its pin, and `terragrunt-apply: force` goes past one.
+  Off by default.
+
 - **A merge can apply in a repository with nobody to approve it.** `terragrunt-apply-on-merge:
   without-approval` makes a merge from a pull request the authorisation, for a repository with one
   maintainer, where an independent approval cannot exist. Three inputs limit what such a merge can

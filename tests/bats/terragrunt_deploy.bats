@@ -1318,3 +1318,149 @@ web_stack() {
   [ "$status" -ne 0 ]
   refute grep -q 'terragrunt plan' "$STUB_LOG"
 }
+
+# The stub's saved plan creates one resource, `Plan: 1 to add, 0 to change, 0 to destroy`, unless
+# PLAN_ACTIONS says otherwise.
+pin() { printf '%s\n' "$@" >terraform/aws/prod/api/plan.pin; }
+
+@test "a pin that matches its plan says so, and the merge applies the plan it was checked against" {
+  merged
+  pin '# what this change does' '' 'Plan: 1 to add, 0 to change, 0 to destroy.'
+  PLAN_PIN=plan.pin SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  grep -qF '| `aws/prod/api` | ✅ matches | `Plan: 1 to add, 0 to change, 0 to destroy` |' "${WORK_DIR}/comment.md"
+  grep -q 'Plan pins' "$GITHUB_STEP_SUMMARY"
+  # Without the hold too, an apply that would have to plan again refuses.
+  grep -q '^apply TG_HOLD_DESTROYS=true$' "${STUB_LOG}.env"
+}
+
+@test "a pin is compared by its counts, so a 0 written out matches one tofu leaves off" {
+  merged
+  pin 'Plan: 0 to import, 1 to add, 0 to change, 0 to destroy, 0 to forget'
+  PLAN_PIN=plan.pin SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+}
+
+@test "a plan that differs from its pin fails a pull request's check and shows both lines" {
+  pin 'Plan: 0 to add, 0 to change, 1 to destroy.'
+  PLAN_PIN=plan.pin APPLY_ON_MERGE=without-approval PR_NUMBER=42 EVENT_NAME=pull_request \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  grep -qF '| `aws/prod/api` | ❌ differs | plan `Plan: 1 to add, 0 to change, 0 to destroy`<br>pin `Plan: 0 to add, 0 to change, 1 to destroy.` |' "${WORK_DIR}/comment.md"
+  grep -q 'Held: the plan differs from its pin in aws/prod/api' "${WORK_DIR}/comment.md"
+  grep -q '"conclusion": "failure"' "$STUB_LOG"
+}
+
+@test "a merge whose plan differs from its pin applies nothing and fails, as a step whose undo already ran would" {
+  merged
+  pin 'Plan: 0 to add, 0 to change, 1 to destroy.'
+  PLAN_PIN=plan.pin SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [ "$(output_value applied)" = "false" ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  [[ "$output" == *"the plan differs from its pin in aws/prod/api"* ]]
+}
+
+@test "a clean plan whose pin promised a destroy fails, rather than reading as nothing to apply" {
+  merged
+  pin 'Plan: 0 to add, 0 to change, 1 to destroy.'
+  PLAN_EXIT=0 PLAN_PIN=plan.pin SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  grep -q '"conclusion": "failure"' "$STUB_LOG"
+  grep -qF 'plan `No changes`' "${WORK_DIR}/comment.md"
+}
+
+@test "a pinned plan that matches is past the hold, destroys and all" {
+  merged
+  destroying
+  pin 'Plan: 1 to add, 0 to change, 1 to destroy.'
+  PLAN_PIN=plan.pin HOLD_DESTROYS=true SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  grep -q '^apply TG_HOLD_DESTROYS=true$' "${STUB_LOG}.env"
+}
+
+@test "a pin counts for nothing on a stack the change reached only through a shared file" {
+  pin 'Plan: 0 to add, 0 to change, 1 to destroy.'
+  printf 'terraform/root.hcl\n' >changed.txt
+  PLAN_PIN=plan.pin PR_NUMBER=42 EVENT_NAME=pull_request run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value stacks)" = "1" ]
+  refute grep -q 'Plan pins' "${WORK_DIR}/comment.md"
+  refute grep -q 'terragrunt show' "$STUB_LOG"
+}
+
+@test "a scheduled run holds no stack to its pin" {
+  pin 'No changes.'
+  PLAN_PIN=plan.pin SCOPE=auto EVENT_NAME=schedule run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  refute grep -q 'Plan pins' "$GITHUB_STEP_SUMMARY"
+}
+
+@test "a plan that cannot be read back differs from any pin, so nothing applies" {
+  merged
+  pin 'Plan: 1 to add, 0 to change, 0 to destroy.'
+  SHOW_EXIT=1 PLAN_PIN=plan.pin SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -q 'plan _could not be read_' "${WORK_DIR}/comment.md"
+}
+
+@test "a pin with no summary in it, or a line that is not one, matches nothing" {
+  merged
+  pin '# a comment and nothing else'
+  PLAN_PIN=plan.pin SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  grep -q 'pin _no summary in plan.pin_' "${WORK_DIR}/comment.md"
+  pin 'Plan: 1 to add | rm -rf `x`'
+  PLAN_PIN=plan.pin SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push \
+    run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  refute grep -q 'terragrunt apply' "$STUB_LOG"
+  grep -qF "pin \`Plan: 1 to add / rm -rf 'x'\`" "${WORK_DIR}/comment.md"
+}
+
+@test "force goes past a pin, and the summary still shows what differed" {
+  pin 'No changes.'
+  PLAN_PIN=plan.pin NAMED_STACKS=terraform/aws/prod/api APPLY=force GITHUB_ACTOR=operator \
+    APPLY_OPERATORS=operator EVENT_NAME=workflow_dispatch run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  grep -q '❌ differs' "$GITHUB_STEP_SUMMARY"
+  grep -q 'goes past a plan that differs from its pin' "$GITHUB_STEP_SUMMARY"
+  [[ "$output" == *"terragrunt-apply: force goes past it"* ]]
+}
+
+@test "the pin is off by default, and nothing reads the plan back for it" {
+  merged
+  pin 'No changes.'
+  SCOPE=direct APPLY_ON_MERGE=without-approval EVENT_NAME=push run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -eq 0 ]
+  [ "$(output_value applied)" = "true" ]
+  refute grep -q 'terragrunt show' "$STUB_LOG"
+  refute grep -q 'Plan pins' "${WORK_DIR}/comment.md"
+  grep -q '^apply TG_HOLD_DESTROYS=false$' "${STUB_LOG}.env"
+}
+
+@test "a pin named by a path rather than a file name is refused before anything is planned" {
+  PLAN_PIN=../plan.pin run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"terragrunt-plan-pin must be a file name"* ]]
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
+}
+
+@test "a pin cannot be combined with a rolling apply, whose unit plans it would never see" {
+  ROLLING='* module.node' PLAN_PIN=plan.pin run bash "${SCRIPTS}/deploy-terragrunt.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"terragrunt-plan-pin cannot check"* ]]
+  refute grep -q 'terragrunt plan' "$STUB_LOG"
+}

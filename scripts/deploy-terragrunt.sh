@@ -62,6 +62,9 @@ if [[ "$APPLY_ON_MERGE" == "without-approval" ]]; then
 fi
 # Refuse to apply a plan that destroys or replaces anything, unless it is forced by hand.
 HOLD_DESTROYS="${HOLD_DESTROYS:-false}"
+# A file name looked up in each stack's directory, holding the summary line the change to that
+# stack was reviewed as producing. Empty turns it off. See "which stacks a plan pin speaks for".
+PLAN_PIN="${PLAN_PIN:-}"
 # Comma-separated GitHub logins allowed to force an apply by hand. Unset means nobody can:
 # the manual path fails closed. The normal path is an independent approval and needs none.
 APPLY_OPERATORS="${APPLY_OPERATORS:-}"
@@ -261,6 +264,50 @@ plain_text() { # [file]
     "$@"
 }
 
+# The first line of a pin that is neither blank nor a `#` comment, trimmed, or nothing when there
+# is none or the file cannot be read. Nothing matches no plan.
+read_pin() { # file
+  local line=""
+  [[ -f "$1" && -r "$1" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    if [[ -n "$line" && "$line" != \#* ]]; then
+      printf '%s' "$line"
+      return 0
+    fi
+  done <"$1"
+  return 0
+}
+
+# A summary line as its five counts, `import add change destroy forget`, so a pin may write out
+# `0 to import` or leave it off as tofu does. `No changes` is its own answer and never five zeros: a
+# plan that changes only outputs is not a plan that changes nothing. Fails on anything else.
+summary_counts() { # line
+  local line="${1%.}"
+  local re='^Plan: (([0-9]+) to import, )?([0-9]+) to add, ([0-9]+) to change, ([0-9]+) to destroy(, ([0-9]+) to forget)?$'
+  if [[ "$line" == "No changes" ]]; then
+    printf 'none\n'
+  elif [[ "$line" =~ $re ]]; then
+    printf '%s %s %s %s %s\n' "${BASH_REMATCH[2]:-0}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}" \
+      "${BASH_REMATCH[5]}" "${BASH_REMATCH[7]:-0}"
+  else
+    return 1
+  fi
+}
+
+# A summary line as a code span in a table cell, or a note saying why there is none. A pin is a
+# file in the repository, so a backtick or a `|` in it must not end the span or the cell.
+pin_code() { # line [note]
+  if [[ -z "$1" || "$1" == "unknown" ]]; then
+    printf '_%s_' "${2:-}"
+  else
+    # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
+    printf '`%s`' "$(printf '%s' "$1" | tr '`|' "'/")"
+  fi
+}
+
 validate_stack_env
 validate_rolling
 
@@ -273,6 +320,18 @@ fi
 holds_destroys=false
 if [[ "$APPLY" != "force" ]] && tremvok::is_true "$HOLD_DESTROYS"; then
   holds_destroys=true
+fi
+
+# A file name and nothing more, so a pin is only ever read from inside the stack it pins.
+if [[ -n "$PLAN_PIN" ]]; then
+  case "$PLAN_PIN" in
+    */* | . | .. | *[[:space:]]*)
+      tremvok::fail "terragrunt-plan-pin must be a file name, not a path (got '${PLAN_PIN}')" ;;
+  esac
+  # The same reason as the hold: a pin is checked against one saved plan.
+  if [[ -n "$ROLLING" ]]; then
+    tremvok::fail "terragrunt-plan-pin cannot check the plans terragrunt-rolling makes for each unit. Set one or the other."
+  fi
 fi
 
 # ── which stacks ─────────────────────────────────────────────────────────────────────────
@@ -345,6 +404,29 @@ if (( ${#stacks[@]} == 0 )); then
   tremvok::set_output applied false
   tremvok::set_output deployed true
   exit 0
+fi
+
+# ── which stacks a plan pin speaks for ───────────────────────────────────────────────────
+# A pin is what a change says its own stack will do, so it counts only where the change reached
+# the stack directly: a file inside it changed, or terragrunt-stacks named it. A stack planned
+# because a module or a root.hcl changed is not that change's to vouch for, and a scheduled run
+# changed nothing. A stack without the file has no pin.
+pinned_stacks=""
+if [[ -n "$PLAN_PIN" && "$EVENT_NAME" != "schedule" ]]; then
+  direct_stacks=""
+  if [[ "$scope" == "named" ]]; then
+    direct_stacks="$discover_output"
+  elif [[ -n "$CHANGED_FILES" && -s "$CHANGED_FILES" ]]; then
+    # stderr dropped: `direct` warns about each shared path it leaves out, and this run plans
+    # those through the widening, as it should.
+    direct_stacks="$(ROOT_DIR="$ROOT_DIR" "${here}/terragrunt-discover.sh" direct "$CHANGED_FILES" 2>/dev/null)" \
+      || tremvok::fail "could not work out which stacks the change reached directly, so no plan pin could be checked."
+  fi
+  for stack in "${stacks[@]}"; do
+    if [[ -e "${stack}/${PLAN_PIN}" ]] && grep -Fxq -- "$stack" <<<"$direct_stacks"; then
+      pinned_stacks+="${stack}"$'\n'
+    fi
+  done
 fi
 
 # ── does this runner hold the credentials the stacks' providers need ─────────────────────
@@ -468,6 +550,9 @@ plan_failures=0
 plan_changes=0
 # The stacks whose saved plan destroys, replaces or forgets something, under the hold.
 destroying=()
+# One table row per pinned stack, and the stacks whose plan differs from their pin.
+pin_rows=""
+pin_mismatches=()
 rows=""
 details=""
 # The stacks that get a plan excerpt in the comment, filled by the loop and rendered once the
@@ -479,6 +564,8 @@ detail_files=()
 for stack in "${stacks[@]}"; do
   out="${WORK_DIR}/plan/$(sanitize "$stack")"
   mkdir -p "$out"
+  pinned=false
+  if grep -Fxq -- "$stack" <<<"$pinned_stacks"; then pinned=true; fi
   printf '::group::plan %s\n' "$stack"
   if tremvok::is_true "$DRY_RUN"; then
     printf 'no-changes\n' >"${out}/status"
@@ -492,7 +579,7 @@ for stack in "${stacks[@]}"; do
       [[ -n "$assignment" ]] && stack_env+=( "$assignment" )
     done < <(stack_env_for "$stack")
     env ${stack_env[@]+"${stack_env[@]}"} TG_STATE_LOCK="$plan_state_lock" \
-      TG_HOLD_DESTROYS="$holds_destroys" \
+      TG_HOLD_DESTROYS="$holds_destroys" TG_PLAN_SUMMARY="$pinned" \
       "${here}/terragrunt-run.sh" plan "$stack" "$out"
     code=$?
     set -e
@@ -520,8 +607,33 @@ for stack in "${stacks[@]}"; do
   [[ -z "$summary_line" ]] && summary_line=$([[ "$status" == "no-changes" ]] && printf 'No changes' || printf 'see details')
   short="${stack#"${ROOT_DIR}"/}"
   rows+="| \`${short}\` | ${badge} | ${summary_line} |"$'\n'
-  # Anything but a plain 0 holds, a missing file included: the hold fails closed.
-  if [[ "$holds_destroys" == true && "$status" == "changes" ]]; then
+
+  # Compared by counts from the saved plan, never by the line in the log, for the reason the hold
+  # reads it back. A plan or a pin that cannot be read is a mismatch.
+  pin_matched=false
+  if [[ "$pinned" == true ]]; then
+    pin_line="$(read_pin "${stack}/${PLAN_PIN}")"
+    plan_line=""
+    plan_note="could not be read"
+    case "$status" in
+      no-changes) plan_line="No changes" ;;
+      changes) plan_line="$(cat "${out}/summary" 2>/dev/null || true)" ;;
+      *) plan_note="failed to plan" ;;
+    esac
+    plan_counts="$(summary_counts "$plan_line" || true)"
+    pin_counts="$(summary_counts "$pin_line" || true)"
+    if [[ -n "$plan_counts" && "$plan_counts" == "$pin_counts" ]]; then
+      pin_matched=true
+      pin_rows+="| \`${short}\` | ✅ matches | $(pin_code "$plan_line") |"$'\n'
+    else
+      pin_mismatches+=("$short")
+      pin_rows+="| \`${short}\` | ❌ differs | plan $(pin_code "$plan_line" "$plan_note")<br>pin $(pin_code "$pin_line" "no summary in ${PLAN_PIN}") |"$'\n'
+    fi
+  fi
+
+  # Anything but a plain 0 holds, a missing file included: the hold fails closed. A plan that
+  # matches its pin is past it, because the pin declared what it destroys.
+  if [[ "$holds_destroys" == true && "$status" == "changes" && "$pin_matched" == false ]]; then
     destroys="$(cat "${out}/destroys" 2>/dev/null || true)"
     case "$destroys" in
       0) ;;
@@ -567,7 +679,7 @@ build_details() { # excerpt-bytes
 # Below a useful size, excerpts are dropped for a pointer to the run rather than shrunk to noise.
 excerpt_budget=0
 if (( ${#detail_stacks[@]} > 0 )); then
-  excerpt_budget=$(( (COMMENT_BUDGET - ${#rows} - 3000) / ${#detail_stacks[@]} - 200 ))
+  excerpt_budget=$(( (COMMENT_BUDGET - ${#rows} - ${#pin_rows} - 3000) / ${#detail_stacks[@]} - 200 ))
   if (( excerpt_budget > MAX_COMMENT_EXCERPT )); then excerpt_budget=$MAX_COMMENT_EXCERPT; fi
   if (( excerpt_budget >= 400 )); then
     details="$(build_details "$excerpt_budget")"
@@ -576,11 +688,22 @@ if (( ${#detail_stacks[@]} > 0 )); then
   fi
 fi
 
+pin_section=""
+if [[ -n "$pin_rows" ]]; then
+  pin_section="$(printf '### Plan pins\n\n| Stack | Pin | Plan |\n|:--|:--|:--|\n%s' "$pin_rows")"
+  if [[ "$APPLY" == "force" ]] && (( ${#pin_mismatches[@]} > 0 )); then
+    pin_section+=$'\n\n'"_\`terragrunt-apply: force\` goes past a plan that differs from its pin._"
+  fi
+fi
+
 tremvok::summary "## Terragrunt plan"
 tremvok::summary ""
 tremvok::summary "| Stack | Result | Plan |"
 tremvok::summary "|:--|:--|:--|"
 tremvok::summary "$rows"
+if [[ -n "$pin_section" ]]; then
+  tremvok::summary "$pin_section"
+fi
 
 # ── which pull request authorises this run ───────────────────────────────────────────────
 # A pull_request or pull_request_review carries the number in its event. A push does not, and
@@ -796,6 +919,22 @@ if (( plan_failures > 0 )) && [[ "$may_apply" == true ]]; then
   apply_reason="${plan_failures} stack(s) failed to plan"
 fi
 
+# A plan that differs from its pin is not the plan the change was reviewed as making, so the run
+# fails, applies nothing and comes before the hold. `force` goes past it, as it goes past the hold,
+# and the pin table still shows what differed.
+pin_failed=false
+if (( ${#pin_mismatches[@]} > 0 )); then
+  if [[ "$APPLY" == "force" ]]; then
+    tremvok::warn "the plan differs from its pin in ${pin_mismatches[*]}; terragrunt-apply: force goes past it."
+  else
+    pin_failed=true
+    if [[ "$may_apply" == true ]]; then
+      may_apply=false
+      apply_reason="the plan differs from its pin in ${pin_mismatches[*]}"
+    fi
+  fi
+fi
+
 # After the decision rather than inside it, so it holds whatever authorised the apply.
 apply_held=false
 if [[ "$may_apply" == true && "$holds_destroys" == true ]] && (( ${#destroying[@]} > 0 )); then
@@ -822,6 +961,10 @@ gate_section=""
 if [[ -n "$gate_pr" ]]; then
   if [[ "$may_apply" == true ]]; then
     gate_section=$(printf '### Apply\n\n⏳ **%s — applying now.**\n\nThis section is rewritten when the run finishes.\n' "$apply_reason")
+  elif [[ "$pin_failed" == true ]]; then
+    # Before "Nothing to apply": a plan with no changes is still not the plan its pin promised.
+    # shellcheck disable=SC2016  # Markdown backticks in printf format; not shell expressions
+    gate_section=$(printf '### Apply\n\n⛔ **Held: the plan differs from its pin in %s.**\n\nNothing is applied while it does. Fix the change or the pin, or apply it by hand with `terragrunt-apply: force`.\n' "${pin_mismatches[*]}")
   elif (( plan_changes == 0 && plan_failures == 0 )); then
     gate_section=$(printf '### Apply\n\n✅ **Nothing to apply.** Every affected stack planned clean.\n')
   elif [[ "$apply_refused" == true ]]; then
@@ -855,6 +998,9 @@ render_comment() {
   {
     printf '## Terragrunt plan\n\n'
     printf '| Stack | Result | Plan |\n|:--|:--|:--|\n%s\n' "$rows"
+    if [[ -n "$pin_section" ]]; then
+      printf '%s\n\n' "$pin_section"
+    fi
     printf '%s\n' "$details"
     if [[ -n "$RUN_URL" ]]; then
       printf '\n_[Full output in the workflow run](%s); credential-shaped values are redacted._\n' "$RUN_URL"
@@ -896,10 +1042,16 @@ if [[ "$may_apply" == true ]]; then
       while IFS= read -r assignment; do
         [[ -n "$assignment" ]] && stack_env+=( "$assignment" )
       done < <(stack_env_for "$stack")
+      # A pinned stack applies the plan its pin was checked against, or nothing: a plan made now
+      # was never compared with it. That is what the hold does to a plan an apply makes itself.
+      hold_stack="$holds_destroys"
+      if [[ "$APPLY" != "force" ]] && grep -Fxq -- "$stack" <<<"$pinned_stacks"; then
+        hold_stack=true
+      fi
       env ${stack_env[@]+"${stack_env[@]}"} \
         PLAN_DIR="${WORK_DIR}/plan/$(sanitize "$stack")" \
         TG_ROLLING="$(rolling_for "$stack")" TG_ROLLING_PAUSE="$ROLLING_PAUSE" \
-        TG_HOLD_DESTROYS="$holds_destroys" \
+        TG_HOLD_DESTROYS="$hold_stack" \
         "${here}/terragrunt-run.sh" apply "$stack" "$out"
       code=$?
       set -e
@@ -933,12 +1085,12 @@ if [[ "$applied" == true && -n "$gate_pr" ]]; then
 fi
 
 # ── report ───────────────────────────────────────────────────────────────────────────────
-# The arms below are in the SAME order as the gate_section arms above (applied, then clean,
-# then refused, then the rest), so the check run and the pull-request comment can never say
-# different things about one run. The two extra arms have no counterpart in gate_section
-# because neither can coexist with a comment: a plan failure is reported in the rows, and an
-# unreadable commit-to-pull-request lookup leaves gate_pr empty, so there is no thread to
-# comment on.
+# The arms below are in the SAME order as the gate_section arms above (applied, then a pin that
+# differs, then clean, then refused, then the rest), so the check run and the pull-request
+# comment can never say different things about one run. The two extra arms have no counterpart
+# in gate_section because neither can coexist with a comment: a plan failure is reported in the
+# rows, and an unreadable commit-to-pull-request lookup leaves gate_pr empty, so there is no
+# thread to comment on.
 if (( plan_failures > 0 )); then
   conclusion="failure"
   title="${plan_failures} stack(s) failed to plan"
@@ -961,6 +1113,12 @@ elif [[ "$applied" == true ]]; then
   if [[ -n "$PR_NUMBER" ]]; then
     summary="${summary} Safe to merge."
   fi
+elif [[ "$pin_failed" == true ]]; then
+  # Before "No changes to apply", as in gate_section, and red whatever the event: on a pull
+  # request it is what the pin is for, and after a merge nothing else would block.
+  conclusion="failure"
+  title="Plan differs from its pin"
+  summary="The plan differs from its pin in ${pin_mismatches[*]}. Nothing was applied. Fix the change or the pin, or apply it by hand with terragrunt-apply: force."
 elif (( plan_changes == 0 )); then
   # Before the refusal, exactly as gate_section puts "Nothing to apply" before it. An
   # unreadable review list on a run that would have applied nothing is not a failure, and
@@ -1043,3 +1201,5 @@ tremvok::set_output approvers "$approver_list"
   || tremvok::fail "could not read the reviews of #${merged_pr}, so this run refuses to apply ${plan_changes} stack(s) that may never have been approved."
 [[ "$apply_held" != true ]] \
   || tremvok::fail "$(capitalize "$apply_reason"). Nothing was applied. Read the plan, then apply it by hand with terragrunt-apply: force."
+[[ "$pin_failed" != true ]] \
+  || tremvok::fail "the plan differs from its pin in ${pin_mismatches[*]}. Nothing was applied. Fix the change or the pin, or apply it by hand with terragrunt-apply: force."
