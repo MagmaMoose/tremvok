@@ -141,6 +141,10 @@ jobs:
         # for whichever architecture the function runs on, so an arm64 package cannot be
         # imported on an x86_64 runner. That is the cross-build working, not a failure.
         #
+        # Imported on the Lambda's own Python, the runtime in terraform/modules/tremvok-api, for
+        # the same reason: the compiled wheels load on the version they were built for, and the
+        # runner's default Python is whatever its image ships this month.
+        #
         # `python -m zipfile` rather than `unzip`, which the pool image does not have.
         run: |
           set -euo pipefail
@@ -148,11 +152,12 @@ jobs:
             x86_64|amd64) arch=x86_64 ;;
             *) arch=arm64 ;;
           esac
-          uv run python scripts/build_api_zip.py --arch "$arch" --out dist/native.zip
+          py=3.12
+          uv run python scripts/build_api_zip.py --arch "$arch" --python-version "$py" --out dist/native.zip
           rm -rf dist/unpacked
           uv run python -m zipfile -e dist/native.zip dist/unpacked
           cd dist/unpacked
-          PYTHONPATH=. uv run --no-project python -c "import tremvok.aws.handler as h; assert h.handler; print('the handler imports from the package alone')"
+          PYTHONPATH=. uv run --no-project --python "$py" python -c "import tremvok.aws.handler as h; assert h.handler; print('the handler imports from the package alone')"
 
   terraform:
     name: Infrastructure (fmt + validate)
