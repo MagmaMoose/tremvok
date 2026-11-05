@@ -67,7 +67,8 @@ imported, which, given a compiled `pydantic-core`, is a genuinely useful thing t
   "run_url": "https://github.com/MagmaMoose/website/actions/runs/18234",
   "actor": "CalebSargeant",
   "verified": true,
-  "duration_ms": 41200
+  "duration_ms": 41200,
+  "detail": null
 }
 ```
 
@@ -78,24 +79,32 @@ anyway is a `422`, not a silent drop.
 `status` is one of `success`, `failure`, `skipped`, `rolled-back`. `target` is one of
 `s3-cloudfront`, `lambda-zip`, `terragrunt`, `other`. `url` and `run_url` must be `http(s)`.
 a notification renders them as links, and a `javascript:` URL in a chat card is a phishing
-primitive.
+primitive. `detail` is an optional string (max 2000 characters) for a human-readable note about
+the deployment.
 
 Response:
 
 ```json
 {"deployment_id": "9f2c…", "repository": "MagmaMoose/website",
  "recorded_at": "2026-08-19T07:41:22.104Z", "duplicate": false,
- "notified": {"slack": true}}
+ "notified": {"slack": true, "teams": false}}
 ```
 
 A repeat of the same `delivery_id` returns `200` with `duplicate: true` and sends nothing. It is
 deliberately **not** a `409`: the caller retried a notify step, which is correct behaviour, and
 a 4xx there would fail a job whose deploy succeeded.
 
-`notified` omits sinks that are not configured, and reports `false` for a sink that failed.
-which never fails the request.
+`notified` lists every configured sink (`slack`, `teams`) and reports whether the POST succeeded.
+Unconfigured sinks are absent from the map. A failed notification never fails the request.
 
 ### `GET /v1/deployments?environment=&limit=`
+
+Query parameters:
+
+| Parameter | Type | Default | Constraints | Description |
+| --- | --- | --- | --- | --- |
+| `environment` | string | none | max 100 chars | Filter to one environment. Omit to return records across all environments. |
+| `limit` | integer | `20` | 1-100 | Maximum records to return. |
 
 The calling repository's history, newest first. There is no `repository` parameter: you read
 your own. Cross-repository reads are a dashboard feature and want a different credential than a
