@@ -34,6 +34,14 @@ Slack and Teams webhook URLs are SSM Parameter Store `SecureString` values under
 anyone holding `lambda:GetFunctionConfiguration`, which is a much wider blast radius than it
 looks. Parameter Store gives you KMS at rest and an IAM-scoped read for nothing.
 
+| SSM key (relative to `TREMVOK_PARAMETER_PREFIX`) | What it holds |
+| --- | --- |
+| `slack-webhook` | Slack incoming webhook URL |
+| `teams-webhook` | Microsoft Teams incoming webhook URL |
+| `jwks-document` | Pinned JWKS for air-gapped or GitHub Enterprise Server deployments; see [API reference](api.md#pinned-keys) |
+
+All three are optional. A missing key means that sink is not configured.
+
 !!! warning "Storing a webhook URL with the AWS CLI"
     `aws ssm put-parameter --value https://hooks.slack.example/...` downloads the URL and stores
     its contents. The CLI expands any argument starting with `http://` or `https://` into the
